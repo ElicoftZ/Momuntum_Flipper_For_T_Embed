@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <furi_hal_rtc.h>
@@ -7,6 +8,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Configure whether generated names place their application prefix last. */
+void name_generator_set_prefix_after(bool prefix_after);
 
 /** Generates detailed/random name based on configuration
  *

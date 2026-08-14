@@ -2,6 +2,8 @@
 #include <furi_hal.h>
 #include <flipper.h>
 #include <applications.h>
+#include <momentum/momentum.h>
+#include <toolbox/name_generator.h>
 
 #include <esp_log.h>
 #include <esp_rom_uart.h>
@@ -139,6 +141,14 @@ void app_main(void) {
             NULL);
         furi_thread_set_appid(thread, FLIPPER_SERVICES[i].appid);
         furi_thread_start(thread);
+
+        if(FLIPPER_SERVICES[i].appid &&
+           strcmp(FLIPPER_SERVICES[i].appid, RECORD_STORAGE) == 0) {
+            // Storage publishes its record after GUI-backed SD status setup. Opening the
+            // record here waits for that point and loads settings before desktop starts.
+            momentum_settings_load();
+            name_generator_set_prefix_after(momentum_settings.file_naming_prefix_after);
+        }
 
         furi_delay_ms(10);
     }

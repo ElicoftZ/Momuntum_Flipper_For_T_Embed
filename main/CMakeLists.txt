@@ -10,6 +10,12 @@ if(NOT DEFINED FLIPPER_BOARD)
     set(FLIPPER_BOARD "waveshare_c6_1.9")
 endif()
 
+if(NOT CMAKE_BUILD_EARLY_EXPANSION AND
+   NOT FLIPPER_BOARD STREQUAL "lilygo_t_embed_cc1101")
+    message(FATAL_ERROR
+        "This Momentum port supports only FLIPPER_BOARD=lilygo_t_embed_cc1101")
+endif()
+
 set(ENV{FLIPPER_BOARD} "${FLIPPER_BOARD}")
 
 execute_process(
@@ -32,7 +38,7 @@ endif()
 idf_component_register(
     SRCS "app_main.c" "${ESP32_FAM_REGISTRY_C}"
     INCLUDE_DIRS "."
-    REQUIRES furi furi_hal input notification gui locale storage loader desktop btshim app_update
+    REQUIRES furi furi_hal input notification gui locale storage loader desktop btshim app_update momentum toolbox
     LDFRAGMENTS "main.lf"
 )
 
@@ -69,6 +75,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         idf::esp_http_server
         idf::lfrfid
         idf::mjs
+        idf::momentum
     )
 
     foreach(esp32_fam_target IN LISTS ESP32_FAM_PORTED_OBJECT_TARGETS)

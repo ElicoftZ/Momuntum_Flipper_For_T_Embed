@@ -16,6 +16,8 @@ extern float ceilf(float);
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <momentum/settings.h>
+
 typedef struct {
     int32_t x;
     int32_t y;
@@ -659,8 +661,9 @@ void elements_scrollable_text_line_str(
     FuriString* line = furi_string_alloc_set_str(string);
 
     size_t len_px = canvas_string_width(canvas, furi_string_get_cstr(line));
+    const bool marquee = momentum_settings.scroll_marquee;
     if(len_px > width) {
-        if(centered) {
+        if(centered && !marquee) {
             centered = false;
             x -= width / 2;
         }
@@ -680,9 +683,24 @@ void elements_scrollable_text_line_str(
         }
         // Ensure that we have something to scroll
         if(scroll_size) {
-            scroll_size += 3;
-            scroll = scroll % scroll_size;
-            furi_string_right(line, scroll);
+            if(marquee) {
+                const size_t delay = 3;
+                const size_t total_scroll = (scroll_size * 2U) + (delay * 2U);
+                const size_t use_scroll = scroll % total_scroll;
+
+                if(use_scroll < scroll_size) {
+                    furi_string_right(line, use_scroll);
+                } else if(use_scroll < scroll_size + delay) {
+                    furi_string_right(line, scroll_size);
+                } else if(use_scroll < scroll_size * 2U + delay) {
+                    furi_string_right(
+                        line, scroll_size - (use_scroll - (scroll_size + delay)));
+                }
+            } else {
+                scroll_size += 3;
+                scroll %= scroll_size;
+                furi_string_right(line, scroll);
+            }
         }
 
         len_px = canvas_string_width(canvas, furi_string_get_cstr(line));
@@ -735,9 +753,24 @@ void elements_scrollable_text_line(
         }
         // Ensure that we have something to scroll
         if(scroll_size) {
-            scroll_size += 3;
-            scroll = scroll % scroll_size;
-            furi_string_right(line, scroll);
+            if(momentum_settings.scroll_marquee) {
+                const size_t delay = 3;
+                const size_t total_scroll = (scroll_size * 2U) + (delay * 2U);
+                const size_t use_scroll = scroll % total_scroll;
+
+                if(use_scroll < scroll_size) {
+                    furi_string_right(line, use_scroll);
+                } else if(use_scroll < scroll_size + delay) {
+                    furi_string_right(line, scroll_size);
+                } else if(use_scroll < scroll_size * 2U + delay) {
+                    furi_string_right(
+                        line, scroll_size - (use_scroll - (scroll_size + delay)));
+                }
+            } else {
+                scroll_size += 3;
+                scroll %= scroll_size;
+                furi_string_right(line, scroll);
+            }
         }
 
         len_px = canvas_string_width(canvas, furi_string_get_cstr(line));

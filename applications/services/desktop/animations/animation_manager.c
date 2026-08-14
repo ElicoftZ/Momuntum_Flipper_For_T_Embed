@@ -11,6 +11,7 @@
 #include "views/one_shot_animation_view.h"
 #include "animation_storage.h"
 #include "animation_manager.h"
+#include <momentum/momentum.h>
 
 #define TAG "AnimationManager"
 
@@ -45,6 +46,7 @@ struct AnimationManager {
     void* context;
     FuriString* freezed_animation_name;
     int32_t freezed_animation_time_left;
+    uint32_t freezed_settings_revision;
     ViewStack* view_stack;
 
     bool dummy_mode            : 1;
@@ -68,6 +70,27 @@ static bool animation_manager_is_valid_idle_animation(
     const DolphinStats* stats);
 static void animation_manager_switch_to_one_shot_view(AnimationManager* animation_manager);
 static void animation_manager_switch_to_animation_view(AnimationManager* animation_manager);
+
+static void animation_manager_arm_idle_timer(
+    AnimationManager* animation_manager,
+    const BubbleAnimation* animation,
+    uint32_t remaining_ticks) {
+    furi_assert(animation_manager);
+    furi_assert(animation);
+
+    furi_timer_stop(animation_manager->idle_animation_timer);
+
+    bool enabled = false;
+    uint32_t period_ms = momentum_animation_cycle_period_ms(
+        momentum_settings.cycle_anims, animation->duration, &enabled);
+    if(!enabled) return;
+
+    if(period_ms >= UINT32_MAX) period_ms = UINT32_MAX - 1U;
+    uint32_t period_ticks = remaining_ticks ? remaining_ticks : furi_ms_to_ticks(period_ms);
+    if(period_ticks == 0) period_ticks = 1;
+
+    furi_timer_start(animation_manager->idle_animation_timer, period_ticks);
+}
 
 void animation_manager_set_context(AnimationManager* animation_manager, void* context) {
     furi_assert(animation_manager);
@@ -224,7 +247,7 @@ static void animation_manager_start_new_idle(AnimationManager* animation_manager
     const BubbleAnimation* bubble_animation =
         animation_storage_get_bubble_animation(animation_manager->current_animation);
     animation_manager->state = AnimationManagerStateIdle;
-    furi_timer_start(animation_manager->idle_animation_timer, bubble_animation->duration * 1000);
+    animation_manager_arm_idle_timer(animation_manager, bubble_animation, 0);
 }
 
 static bool animation_manager_check_blocking(AnimationManager* animation_manager) {
@@ -380,11 +403,13 @@ static bool animation_manager_is_valid_idle_animation(
 
         result = (sd_status == FSE_NOT_READY);
     }
-    if((stats->butthurt < info->min_butthurt) || (stats->butthurt > info->max_butthurt)) {
-        result = false;
-    }
-    if((stats->level < info->min_level) || (stats->level > info->max_level)) {
-        result = false;
+    if(!momentum_settings.unlock_anims) {
+        if((stats->butthurt < info->min_butthurt) || (stats->butthurt > info->max_butthurt)) {
+            result = false;
+        }
+        if((stats->level < info->min_level) || (stats->level > info->max_level)) {
+            result = false;
+        }
     }
 
     return result;
@@ -395,6 +420,12 @@ static StorageAnimation*
     if(animation_manager->dummy_mode) {
         return animation_storage_find_animation(HARDCODED_ANIMATION_NAME);
     }
+
+    const char* avoid_animation = NULL;
+    if(animation_manager->current_animation) {
+        avoid_animation = animation_storage_get_meta(animation_manager->current_animation)->name;
+    }
+
     StorageAnimationList_t animation_list;
     StorageAnimationList_init(animation_list);
     animation_storage_fill_animation_list(&animation_list);
@@ -402,7 +433,6 @@ static StorageAnimation*
     Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
     DolphinStats stats = dolphin_stats(dolphin);
     furi_record_close(RECORD_DOLPHIN);
-    uint32_t whole_weight = 0;
 
     StorageAnimationList_it_t it;
     for(StorageAnimationList_it(it, animation_list); !StorageAnimationList_end_p(it);) {
@@ -410,9 +440,12 @@ static StorageAnimation*
         const StorageAnimationManifestInfo* manifest_info =
             animation_storage_get_meta(storage_animation);
         bool valid = animation_manager_is_valid_idle_animation(manifest_info, &stats);
+        if(!strcmp(manifest_info->name, HARDCODED_ANIMATION_NAME)) {
+            /* The compiled fallback is selected only after normal selection fails. */
+            valid = false;
+        }
 
         if(valid) {
-            whole_weight += manifest_info->weight;
             StorageAnimationList_next(it);
         } else {
             animation_storage_free_storage_animation(&storage_animation);
@@ -421,18 +454,42 @@ static StorageAnimation*
         }
     }
 
-    uint32_t lucky_number = furi_hal_random_get() % whole_weight;
-    uint32_t weight = 0;
+    if(StorageAnimationList_size(animation_list) == 1) {
+        /* A single valid animation must remain selectable even if it is current. */
+        avoid_animation = NULL;
+    }
+
+    uint64_t whole_weight = 0;
+    for(StorageAnimationList_it(it, animation_list); !StorageAnimationList_end_p(it);) {
+        StorageAnimation* storage_animation = *StorageAnimationList_ref(it);
+        const StorageAnimationManifestInfo* manifest_info =
+            animation_storage_get_meta(storage_animation);
+
+        if(avoid_animation && !strcmp(manifest_info->name, avoid_animation)) {
+            animation_storage_free_storage_animation(&storage_animation);
+            StorageAnimationList_remove(animation_list, it);
+        } else {
+            whole_weight += manifest_info->weight;
+            StorageAnimationList_next(it);
+        }
+    }
 
     StorageAnimation* selected = NULL;
-    for
-        M_EACH(item, animation_list, StorageAnimationList_t) {
-            if(lucky_number < weight) {
-                break;
+    if(whole_weight > 0) {
+        const uint64_t random_value =
+            ((uint64_t)furi_hal_random_get() << 32) | furi_hal_random_get();
+        const uint64_t lucky_number = random_value % whole_weight;
+        uint64_t weight = 0;
+
+        for
+            M_EACH(item, animation_list, StorageAnimationList_t) {
+                weight += animation_storage_get_meta(*item)->weight;
+                if(lucky_number < weight) {
+                    selected = *item;
+                    break;
+                }
             }
-            weight += animation_storage_get_meta(*item)->weight;
-            selected = *item;
-        }
+    }
 
     for
         M_EACH(item, animation_list, StorageAnimationList_t) {
@@ -444,7 +501,10 @@ static StorageAnimation*
     StorageAnimationList_clear(animation_list);
 
     /* cache animation, if failed - choose reliable animation */
-    if(!animation_storage_get_bubble_animation(selected)) {
+    if(!selected) {
+        FURI_LOG_E(TAG, "No selectable animation, using compiled fallback");
+        selected = animation_storage_find_animation(HARDCODED_ANIMATION_NAME);
+    } else if(!animation_storage_get_bubble_animation(selected)) {
         const char* name = animation_storage_get_meta(selected)->name;
         FURI_LOG_E(TAG, "Can't upload animation described in manifest: \'%s\'", name);
         animation_storage_free_storage_animation(&selected);
@@ -468,15 +528,21 @@ void animation_manager_unload_and_stall_animation(AnimationManager* animation_ma
         (animation_manager->state == AnimationManagerStateIdle) ||
         (animation_manager->state == AnimationManagerStateBlocked));
 
+    animation_manager->freezed_settings_revision = momentum_settings_revision;
+
     if(animation_manager->state == AnimationManagerStateBlocked) {
         animation_manager->state = AnimationManagerStateFreezedBlocked;
     } else if(animation_manager->state == AnimationManagerStateIdle) { //-V547
         animation_manager->state = AnimationManagerStateFreezedIdle;
 
-        animation_manager->freezed_animation_time_left =
-            furi_timer_get_expire_time(animation_manager->idle_animation_timer) - furi_get_tick();
-        if(animation_manager->freezed_animation_time_left < 0) {
-            animation_manager->freezed_animation_time_left = 0;
+        animation_manager->freezed_animation_time_left = 0;
+        if(furi_timer_is_running(animation_manager->idle_animation_timer)) {
+            const int32_t time_left =
+                (int32_t)(furi_timer_get_expire_time(animation_manager->idle_animation_timer) -
+                          furi_get_tick());
+            if(time_left > 0) {
+                animation_manager->freezed_animation_time_left = time_left;
+            }
         }
         furi_timer_stop(animation_manager->idle_animation_timer);
     } else {
@@ -516,7 +582,9 @@ void animation_manager_load_and_continue_animation(AnimationManager* animation_m
     } else if(animation_manager->state == AnimationManagerStateFreezedIdle) { //-V547
         /* check if we missed some system notifications, and set current_animation */
         bool blocked = animation_manager_check_blocking(animation_manager);
-        if(!blocked) {
+        bool settings_changed =
+            animation_manager->freezed_settings_revision != momentum_settings_revision;
+        if(!blocked && !settings_changed) {
             /* if no blocking - try restore last one idle */
             StorageAnimation* restore_animation = animation_storage_find_animation(
                 furi_string_get_cstr(animation_manager->freezed_animation_name));
@@ -527,21 +595,21 @@ void animation_manager_load_and_continue_animation(AnimationManager* animation_m
                 const StorageAnimationManifestInfo* manifest_info =
                     animation_storage_get_meta(restore_animation);
                 bool valid = animation_manager_is_valid_idle_animation(manifest_info, &stats);
-                if(valid) {
+                if(valid && strcmp(manifest_info->name, HARDCODED_ANIMATION_NAME)) {
                     animation_manager_replace_current_animation(
                         animation_manager, restore_animation);
                     animation_manager->state = AnimationManagerStateIdle;
 
-                    if(animation_manager->freezed_animation_time_left) {
-                        furi_timer_start(
-                            animation_manager->idle_animation_timer,
-                            animation_manager->freezed_animation_time_left);
-                    } else {
-                        const BubbleAnimation* animation = animation_storage_get_bubble_animation(
-                            animation_manager->current_animation);
-                        furi_timer_start(
-                            animation_manager->idle_animation_timer, animation->duration * 1000);
-                    }
+                    const BubbleAnimation* animation = animation_storage_get_bubble_animation(
+                        animation_manager->current_animation);
+                    animation_manager_arm_idle_timer(
+                        animation_manager,
+                        animation,
+                        animation_manager->freezed_animation_time_left > 0 ?
+                            (uint32_t)animation_manager->freezed_animation_time_left :
+                            0);
+                } else {
+                    animation_storage_free_storage_animation(&restore_animation);
                 }
             } else {
                 FURI_LOG_E(
@@ -549,6 +617,8 @@ void animation_manager_load_and_continue_animation(AnimationManager* animation_m
                     "Failed to restore \'%s\'",
                     furi_string_get_cstr(animation_manager->freezed_animation_name));
             }
+        } else if(!blocked && settings_changed) {
+            FURI_LOG_I(TAG, "Momentum animation settings changed; selecting a fresh idle");
         }
     } else {
         /* Unknown state is an error. But not in release version.*/

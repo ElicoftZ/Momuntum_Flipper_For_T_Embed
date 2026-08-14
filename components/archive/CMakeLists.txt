@@ -14,5 +14,5 @@ idf_component_register(
         "archive/scenes/archive_scene_show.c"
         "archive/views/archive_browser_view.c"
     INCLUDE_DIRS "."
-    REQUIRES furi furi_hal gui toolbox assets storage loader dialogs flipper_application
+    REQUIRES furi furi_hal gui toolbox assets storage loader dialogs flipper_application momentum
 )

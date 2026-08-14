@@ -3,6 +3,7 @@
 #include <furi.h>
 #include "archive_browser_view.h"
 #include "../helpers/archive_browser.h"
+#include <momentum/settings.h>
 
 #define TAG             "Archive"
 #define SCROLL_INTERVAL (333)
@@ -374,14 +375,52 @@ static void draw_list(Canvas* canvas, ArchiveBrowserViewModel* model) {
     }
 
     if(model->menu) {
+        if(momentum_settings.popup_overlay) {
+            canvas_draw_overlay(canvas);
+        }
         render_item_menu(canvas, model);
+    }
+}
+
+static void archive_format_status_path(
+    const ArchiveBrowserViewModel* model,
+    FuriString* formatted_path) {
+    ArchiveBrowserView* browser = model->browser;
+    if(momentum_settings.browser_path_mode == BrowserPathOff || archive_is_home(browser)) {
+        furi_string_set_str(formatted_path, ArchiveTabNames[model->tab_idx]);
+        return;
+    }
+
+    const char* path = furi_string_get_cstr(browser->path);
+    if(momentum_settings.browser_path_mode == BrowserPathFull) {
+        furi_string_set(formatted_path, browser->path);
+    } else if(momentum_settings.browser_path_mode == BrowserPathCurrent) {
+        path_extract_basename(path, formatted_path);
+    } else {
+        furi_string_reset(formatted_path);
+        FuriString* remaining = furi_string_alloc_set_str(path);
+        while(furi_string_size(remaining)) {
+            const size_t slash = furi_string_search_char(remaining, '/');
+            if(slash == FURI_STRING_FAILURE) {
+                furi_string_cat_printf(
+                    formatted_path, "/%s", furi_string_get_cstr(remaining));
+                break;
+            }
+            if(slash) {
+                furi_string_cat_printf(
+                    formatted_path, "/%c", furi_string_get_char(remaining, 0));
+            }
+            furi_string_right(remaining, slash + 1U);
+        }
+        furi_string_free(remaining);
     }
 }
 
 static void archive_render_status_bar(Canvas* canvas, ArchiveBrowserViewModel* model) {
     furi_assert(model);
 
-    const char* tab_name = ArchiveTabNames[model->tab_idx];
+    FuriString* status_path = furi_string_alloc();
+    archive_format_status_path(model, status_path);
     bool clip = model->clipboard_mode != CLIPBOARD_MODE_OFF;
 
     canvas_draw_icon(canvas, 0, 0, &I_Background_128x11);
@@ -394,7 +433,15 @@ static void archive_render_status_bar(Canvas* canvas, ArchiveBrowserViewModel* m
     canvas_draw_rframe(canvas, 0, 0, 51, 13, 1); // frame
     canvas_draw_line(canvas, 49, 1, 49, 11); // shadow right
     canvas_draw_line(canvas, 1, 11, 49, 11); // shadow bottom
-    canvas_draw_str_aligned(canvas, 25, 9, AlignCenter, AlignBottom, tab_name);
+    elements_scrollable_text_line_str(
+        canvas,
+        25,
+        9,
+        45,
+        furi_string_get_cstr(status_path),
+        model->menu ? 0U : model->scroll_counter,
+        false,
+        true);
 
     canvas_draw_rframe(canvas, 107, 0, 21, 13, 1);
     canvas_draw_line(canvas, 126, 1, 126, 11);
@@ -433,6 +480,7 @@ static void archive_render_status_bar(Canvas* canvas, ArchiveBrowserViewModel* m
     }
 
     canvas_set_color(canvas, ColorBlack);
+    furi_string_free(status_path);
 }
 
 static void archive_view_render(Canvas* canvas, void* mdl) {
@@ -448,6 +496,9 @@ static void archive_view_render(Canvas* canvas, void* mdl) {
         canvas_draw_str_aligned(
             canvas, GUI_DISPLAY_WIDTH / 2, 40, AlignCenter, AlignCenter, "Empty");
         if(model->menu) {
+            if(momentum_settings.popup_overlay) {
+                canvas_draw_overlay(canvas);
+            }
             render_item_menu(canvas, model);
         }
     }
@@ -717,6 +768,7 @@ ArchiveBrowserView* browser_alloc(void) {
         browser->view,
         ArchiveBrowserViewModel * model,
         {
+            model->browser = browser;
             files_array_init(model->files);
             menu_array_init(model->context_menu);
             model->tab_idx = TAB_DEFAULT;

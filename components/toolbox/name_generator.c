@@ -19,6 +19,12 @@ const char* const name_generator_right[] = {
     "aptechka", "door", "zalaz",     "breeky",   "bunker", "pingwin", "kot",
 };
 
+static bool name_generator_prefix_after = false;
+
+void name_generator_set_prefix_after(bool prefix_after) {
+    name_generator_prefix_after = prefix_after;
+}
+
 void name_generator_make_auto_datetime(
     char* name,
     size_t max_name_size,
@@ -48,14 +54,24 @@ void name_generator_make_random_prefixed(char* name, size_t max_name_size, const
     uint8_t name_generator_left_i = rand() % COUNT_OF(name_generator_left);
     uint8_t name_generator_right_i = rand() % COUNT_OF(name_generator_right);
 
-    snprintf(
-        name,
-        max_name_size,
-        "%s%s%s_%s",
-        prefix ? prefix : "",
-        prefix ? "_" : "",
-        name_generator_left[name_generator_left_i],
-        name_generator_right[name_generator_right_i]);
+    if(prefix && name_generator_prefix_after) {
+        snprintf(
+            name,
+            max_name_size,
+            "%s_%s_%s",
+            name_generator_left[name_generator_left_i],
+            name_generator_right[name_generator_right_i],
+            prefix);
+    } else {
+        snprintf(
+            name,
+            max_name_size,
+            "%s%s%s_%s",
+            prefix ? prefix : "",
+            prefix ? "_" : "",
+            name_generator_left[name_generator_left_i],
+            name_generator_right[name_generator_right_i]);
+    }
 
     // Set first symbol to upper case
     if(islower((int)name[0])) name[0] = name[0] - 0x20;
@@ -89,17 +105,31 @@ void name_generator_make_detailed_datetime(
         dateTime.second = tm_info->tm_sec;
     }
 
-    snprintf(
-        name,
-        max_name_size,
-        "%s-%.4d_%.2d_%.2d-%.2d_%.2d_%.2d",
-        prefix ? prefix : "S",
-        dateTime.year,
-        dateTime.month,
-        dateTime.day,
-        dateTime.hour,
-        dateTime.minute,
-        dateTime.second);
+    if(prefix && name_generator_prefix_after) {
+        snprintf(
+            name,
+            max_name_size,
+            "%.4d_%.2d_%.2d-%.2d_%.2d_%.2d-%s",
+            dateTime.year,
+            dateTime.month,
+            dateTime.day,
+            dateTime.hour,
+            dateTime.minute,
+            dateTime.second,
+            prefix);
+    } else {
+        snprintf(
+            name,
+            max_name_size,
+            "%s-%.4d_%.2d_%.2d-%.2d_%.2d_%.2d",
+            prefix ? prefix : "S",
+            dateTime.year,
+            dateTime.month,
+            dateTime.day,
+            dateTime.hour,
+            dateTime.minute,
+            dateTime.second);
+    }
 
     // Set first symbol to upper case
     if(islower((int)name[0])) name[0] = name[0] - 0x20;

@@ -3,6 +3,7 @@
 
 #include <furi.h>
 #include <furi_hal.h>
+#include <momentum/settings.h>
 #include <stdint.h>
 #include <u8g2_glue.h>
 
@@ -147,11 +148,22 @@ const CanvasFontParameters* canvas_get_font_params(const Canvas* canvas, Font fo
 
 void canvas_clear(Canvas* canvas) {
     furi_check(canvas);
-    u8g2_ClearBuffer(&canvas->fb);
+    if(momentum_settings.dark_mode) {
+        u8g2_FillBuffer(&canvas->fb);
+    } else {
+        u8g2_ClearBuffer(&canvas->fb);
+    }
 }
 
 void canvas_set_color(Canvas* canvas, Color color) {
     furi_check(canvas);
+    if(momentum_settings.dark_mode) {
+        if(color == ColorBlack) {
+            color = ColorWhite;
+        } else if(color == ColorWhite) {
+            color = ColorBlack;
+        }
+    }
     u8g2_SetDrawColor(&canvas->fb, color);
 }
 
@@ -161,7 +173,11 @@ void canvas_set_font_direction(Canvas* canvas, CanvasDirection dir) {
 }
 
 void canvas_invert_color(Canvas* canvas) {
-    canvas->fb.draw_color = !canvas->fb.draw_color;
+    if(canvas->fb.draw_color == ColorXOR && momentum_settings.dark_mode) {
+        canvas->fb.draw_color = ColorBlack;
+    } else {
+        canvas->fb.draw_color = !canvas->fb.draw_color;
+    }
 }
 
 void canvas_set_font(Canvas* canvas, Font font) {
@@ -426,6 +442,19 @@ void canvas_draw_dot(Canvas* canvas, int32_t x, int32_t y) {
     x += canvas->offset_x;
     y += canvas->offset_y;
     u8g2_DrawPixel(&canvas->fb, x, y);
+}
+
+void canvas_draw_overlay(Canvas* canvas) {
+    furi_check(canvas);
+    const uint8_t original_color = canvas->fb.draw_color;
+    canvas_set_color(canvas, ColorWhite);
+    for(size_t y = 0; y < canvas->height; y++) {
+        const size_t offset = y % 2U;
+        for(size_t x = offset; x < canvas->width; x += 2U) {
+            canvas_draw_dot(canvas, x, y);
+        }
+    }
+    canvas->fb.draw_color = original_color;
 }
 
 void canvas_draw_box(Canvas* canvas, int32_t x, int32_t y, size_t width, size_t height) {

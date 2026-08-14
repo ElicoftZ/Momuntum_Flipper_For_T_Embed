@@ -20,6 +20,7 @@
 static void power_draw_battery_callback(Canvas* canvas, void* context) {
     furi_assert(context);
     Power* power = context;
+    if(power->displayBatteryPercentage == DISPLAY_BATTERY_OFF) return;
     canvas_draw_icon(canvas, 0, 0, &I_Battery_26x8);
 
     if(power->info.gauge_is_ok) {
@@ -356,6 +357,8 @@ void power_trigger_ui_update(Power* power) {
     desktop_settings_load(settings);
     power->displayBatteryPercentage = settings->displayBatteryPercentage;
     free(settings);
+    view_port_enabled_set(
+        power->battery_view_port, power->displayBatteryPercentage != DISPLAY_BATTERY_OFF);
     view_port_update(power->battery_view_port);
 }
 
@@ -689,6 +692,8 @@ static Power* power_alloc(void) {
     view_holder_attach_to_gui(power->view_holder, gui);
     // Battery view port
     power->battery_view_port = power_battery_view_port_alloc(power);
+    view_port_enabled_set(
+        power->battery_view_port, power->displayBatteryPercentage != DISPLAY_BATTERY_OFF);
     gui_add_view_port(gui, power->battery_view_port, GuiLayerStatusBarRight);
     // Event loop
     power->event_loop = furi_event_loop_alloc();

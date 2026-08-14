@@ -5,5 +5,5 @@ idf_component_register(
         "dialogs/dialogs_module_file_browser.c"
         "dialogs/dialogs_module_message.c"
     INCLUDE_DIRS "."
-    REQUIRES furi gui toolbox assets storage
+    REQUIRES furi gui toolbox assets storage momentum
 )

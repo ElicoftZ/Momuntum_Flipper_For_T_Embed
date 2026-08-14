@@ -96,6 +96,7 @@ struct ArchiveBrowserView {
 };
 
 typedef struct {
+    ArchiveBrowserView* browser;
     ArchiveTabEnum tab_idx;
     files_array_t files;
 

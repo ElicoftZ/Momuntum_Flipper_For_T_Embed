@@ -7,6 +7,7 @@
 #include <core/log.h>
 #include <gui/modules/file_browser_worker.h>
 #include <flipper_application/flipper_application.h>
+#include <momentum/settings.h>
 
 static void
     archive_folder_open_cb(void* context, uint32_t item_cnt, int32_t file_idx, bool is_root) {
@@ -475,17 +476,14 @@ void archive_switch_tab(ArchiveBrowserView* browser, InputKey key) {
 
     browser->last_tab_switch_dir = key;
 
-    if(key == InputKeyLeft) {
-        tab = ((tab - 1) + ArchiveTabTotal) % ArchiveTabTotal;
-    } else {
-        tab = (tab + 1) % ArchiveTabTotal;
-    }
-    if(tab == ArchiveTabInternal && !furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
+    for(uint8_t i = 0; i < 2; ++i) {
         if(key == InputKeyLeft) {
             tab = ((tab - 1) + ArchiveTabTotal) % ArchiveTabTotal;
         } else {
             tab = (tab + 1) % ArchiveTabTotal;
         }
+        if(tab == ArchiveTabInternal && !momentum_settings.show_internal_tab) continue;
+        break;
     }
 
     browser->is_root = true;
@@ -512,9 +510,12 @@ void archive_switch_tab(ArchiveBrowserView* browser, InputKey key) {
         bool dir_exists = archive_is_dir_exists(browser->path);
         esp_rom_printf("[ARCH] dir_exists('%s')=%d\r\n", furi_string_get_cstr(browser->path), dir_exists);
         if(dir_exists) {
-            bool skip_assets = (strcmp(archive_get_tab_ext(tab), "*") == 0) ? false : true;
-            // Hide dot files everywhere except Browser
-            bool hide_dot_files = (strcmp(archive_get_tab_ext(tab), "*") == 0) ? false : true;
+            bool is_browser = strcmp(archive_get_tab_ext(tab), "*") == 0;
+            bool skip_assets = !is_browser;
+            // Hide dot files everywhere except Internal and optionally Browser
+            bool hide_dot_files = !is_browser               ? true :
+                                  tab == ArchiveTabInternal ? false :
+                                                              !momentum_settings.show_hidden_files;
             esp_rom_printf("[ARCH] set_path ext='%s' skip=%d hide_dot=%d\r\n", archive_get_tab_ext(tab), skip_assets, hide_dot_files);
             archive_file_browser_set_path(
                 browser, browser->path, archive_get_tab_ext(tab), skip_assets, hide_dot_files);

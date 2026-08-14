@@ -1,0 +1,16 @@
+App(
+    appid="momentum_settings",
+    name="Momentum Settings",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="momentum_settings_app",
+    requires=[
+        "desktop",
+        "gui",
+        "power",
+        "storage",
+    ],
+    stack_size=4 * 1024,
+    flags=["InsomniaSafe"],
+    icon="A_Settings_14",
+    order=90,
+)
