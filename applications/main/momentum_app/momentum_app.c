@@ -966,7 +966,7 @@ static void momentum_settings_app_free(MomentumSettingsApp* app) {
     free(app);
 }
 
-int32_t momentum_settings_app(void* p) {
+int32_t momentum_app(void* p) {
     UNUSED(p);
     MomentumSettingsApp* app = momentum_settings_app_alloc();
     view_dispatcher_run(app->view_dispatcher);

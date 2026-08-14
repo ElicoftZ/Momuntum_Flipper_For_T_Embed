@@ -1,8 +1,8 @@
 App(
-    appid="momentum_settings",
-    name="Momentum Settings",
+    appid="momentum_app",
+    name="Momentum",
     apptype=FlipperAppType.MENUEXTERNAL,
-    entry_point="momentum_settings_app",
+    entry_point="momentum_app",
     requires=[
         "desktop",
         "gui",
@@ -13,4 +13,5 @@ App(
     flags=["InsomniaSafe"],
     icon="A_Settings_14",
     order=90,
+    fap_category="assets",
 )

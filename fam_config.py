@@ -80,7 +80,7 @@ _boards_without_nfc = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
 _boards_without_ir = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
 
 if _board == "lilygo_t_embed_cc1101":
-    APPS.append("momentum_settings")
+    APPS.append("momentum_app")
 
 # Wolf3D shares Doom's requirements (PSRAM, ST7789 320xN, I2S speaker).
 # Doom läuft ebenfalls nur auf T-Embed (PSRAM + 16 MB Flash) — wird aber als
