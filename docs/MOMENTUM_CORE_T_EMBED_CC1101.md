@@ -14,16 +14,16 @@ This port milestone targets only the LilyGO T-Embed CC1101 (`lilygo_t_embed_cc11
 
 `menu_style` is persisted now for Momentum file compatibility. The nine Momentum menu renderers and their T-Embed rotary navigation are a later milestone after this core passes hardware testing.
 
-## Momentum Settings on the T-Embed
+## Momentum on the T-Embed
 
-Open **Settings > Momentum Settings** from the main menu. The core page contains only settings that are active in this milestone:
+Open **Momentum** from the main menu; it sits at the bottom of the app list, matching upstream Momentum, which ships it as `applications/main/momentum_app` rather than as a settings entry. The core page contains only settings that are active in this milestone:
 
 - **Asset Pack**: `Default` or a safe, alphabetically sorted directory containing `Anims/manifest.txt` under `/ext/asset_packs`.
 - **Anim Speed**: Momentum's `25%` through `300%` presets.
 - **Cycle Anims**: `OFF`, `Meta.txt`, or the `15 S` through `24 H` presets.
 - **Unlock Anims**: bypasses animation mood and level restrictions when set to `ON`.
 
-Rotate to move between rows. Click the encoder to open Asset Pack or enter a value's edit mode, rotate to change it, and click again to finish editing. The side button goes Back. Leaving the main Momentum Settings page saves changed values and immediately selects a fresh desktop animation with a fresh cycle timer; no reboot is required.
+Rotate to move between rows. Click the encoder to open Asset Pack or enter a value's edit mode, rotate to change it, and click again to finish editing. The side button goes Back. Leaving the main Momentum page saves changed values and immediately selects a fresh desktop animation with a fresh cycle timer; no reboot is required.
 
 Because both `/int` settings compatibility and `/ext` asset packs currently use the SD layer on this ESP32 port, the controls are locked with `SD card required` when no card is mounted. A configured pack that is temporarily missing is preserved until another pack or `Default` is explicitly selected.
 
@@ -54,6 +54,35 @@ For `asset_pack: Momentum`, the animation manifest must be at:
 ```
 
 Each named animation keeps the standard `meta.txt` and `frame_N.bm` layout below that `Anims` directory. Pack icons and fonts are deliberately not enabled in this milestone.
+
+## Adding a Momentum setting
+
+Every persisted setting is described once, in the `momentum_settings_entries` table in `lib/momentum/settings_core.c`. Defaults, range clamping, change detection, loading and saving all iterate that table, so adding a setting is two edits:
+
+1. Add the field to `MomentumSettings` in `lib/momentum/settings_core.h`.
+2. Add one `ENTRY_*` row to `momentum_settings_entries`, then bump `MOMENTUM_SETTINGS_ENTRY_COUNT`.
+
+Pick the row type by how the value should behave when a file holds something out of range:
+
+- `ENTRY_UINT` / `ENTRY_INT` clamp to the nearest limit, because a number is still meaningful there.
+- `ENTRY_ENUM` falls back to the default, because no enum case sits outside its range and clamping would silently pick a neighbouring one.
+- `ENTRY_BOOL` and `ENTRY_STR` need no range.
+
+Only `ENTRY_INT` is signed. Values are carried as `int64_t` so a large `uint32_t` cannot come back negative and clamp to its minimum instead of its maximum.
+
+Fields are addressed by offset rather than by pointer, so the table applies to any `MomentumSettings` instance — the global one, a previous copy for change detection, or an app's working copy.
+
+The settings file stays Momentum-compatible: keys match upstream names, so a `.momentum_settings.txt` written by Momentum keeps the values this port understands and ignores the rest.
+
+## Host tests
+
+`lib/momentum/settings_core.c` has no furi or ESP-IDF dependencies, so its logic runs on the host. With the MSVC build tools installed:
+
+```bat
+tests\host\run_host_tests.bat
+```
+
+The tests cover defaults, sanitizing, asset pack name safety, animation speed and cycle maths, and the table itself: unique keys, no overlapping fields, in-range defaults, and that change detection compares every entry. They do not need hardware or an SD card.
 
 ## Build one merged image on Windows
 

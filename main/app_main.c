@@ -128,6 +128,10 @@ void app_main(void) {
     };
     furi_log_add_handler(log_handler);
 
+    // Services can read momentum_settings before storage is up and the file is
+    // loaded below, so give it its defaults before any of them start.
+    momentum_settings_set_defaults(&momentum_settings);
+
     furi_hal_init_early();
     furi_hal_init();
     flipper_init();

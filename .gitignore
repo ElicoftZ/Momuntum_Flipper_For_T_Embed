@@ -28,3 +28,6 @@ managed_components/
 releases/*.zip
 *-backup-*
 *.backup-*
+
+# Host-side unit test build output (tests/host/run_host_tests.bat)
+build_host/
