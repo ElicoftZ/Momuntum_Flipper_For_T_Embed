@@ -1,4 +1,6 @@
 #include "canvas_i.h"
+
+#include <momentum/asset_packs.h>
 #include "icon_animation_i.h"
 
 #include <furi.h>
@@ -143,6 +145,10 @@ size_t canvas_current_font_width(const Canvas* canvas) {
 const CanvasFontParameters* canvas_get_font_params(const Canvas* canvas, Font font) {
     furi_check(canvas);
     furi_check(font < FontTotalNumber);
+    const CanvasFontParameters* pack_params = asset_packs_swap_font_params(font);
+    if(pack_params) {
+        return pack_params;
+    }
     return &canvas_font_params[font];
 }
 
@@ -183,6 +189,11 @@ void canvas_invert_color(Canvas* canvas) {
 void canvas_set_font(Canvas* canvas, Font font) {
     furi_check(canvas);
     u8g2_SetFontMode(&canvas->fb, 1);
+    const uint8_t* pack_font = asset_packs_swap_font(font);
+    if(pack_font) {
+        u8g2_SetFont(&canvas->fb, pack_font);
+        return;
+    }
     if(font == FontPrimary) {
         u8g2_SetFont(&canvas->fb, u8g2_font_helvB08_tr);
     } else if(font == FontSecondary) {
@@ -454,6 +465,7 @@ void canvas_draw_icon_ex(
     x += canvas->offset_x;
     y += canvas->offset_y;
     uint8_t* icon_data = NULL;
+    icon = asset_packs_swap_icon(icon);
     compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
     canvas_draw_u8g2_bitmap(
         &canvas->fb, x, y, icon_get_width(icon), icon_get_height(icon), icon_data, rotation);
@@ -466,6 +478,7 @@ void canvas_draw_icon(Canvas* canvas, int32_t x, int32_t y, const Icon* icon) {
     x += canvas->offset_x;
     y += canvas->offset_y;
     uint8_t* icon_data = NULL;
+    icon = asset_packs_swap_icon(icon);
     compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
     canvas_draw_u8g2_bitmap(
         &canvas->fb, x, y, icon_get_width(icon), icon_get_height(icon), icon_data, IconRotation0);
@@ -626,6 +639,9 @@ void canvas_draw_icon_bitmap(
     x += canvas->offset_x;
     y += canvas->offset_y;
     uint8_t* icon_data = NULL;
+    // Deliberately not asset-pack swapped: this draws with the caller's w/h
+    // rather than the icon's own, so a replacement of a different size would
+    // be decoded against the wrong stride.
     compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
     u8g2_DrawXBM(&canvas->fb, x, y, w, h, icon_data);
 }

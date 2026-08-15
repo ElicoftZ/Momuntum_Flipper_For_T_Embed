@@ -38,6 +38,10 @@ idf_component_register(
         "modules/widget_elements/widget_element_string_multiline.c"
         "modules/widget_elements/widget_element_text_box.c"
         "modules/widget_elements/widget_element_text_scroll.c"
+        # Asset packs replace icons and fonts, so they need gui's own headers.
+        # Built here rather than in the momentum component because gui already
+        # requires momentum, and the reverse dependency would be a cycle.
+        "../../lib/momentum/asset_packs.c"
     INCLUDE_DIRS "." "modules" "modules/widget_elements"
     # ".." puts components/ on the path so the menu's PS4 style can reach
     # <dolphin/dolphin.h>, which is a shim forwarding into applications/.

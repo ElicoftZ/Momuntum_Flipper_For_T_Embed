@@ -152,6 +152,9 @@ void app_main(void) {
             // record here waits for that point and loads settings before desktop starts.
             momentum_settings_load();
             name_generator_set_prefix_after(momentum_settings.file_naming_prefix_after);
+            // Icons and fonts come from the SD card, so this has to wait for
+            // storage too. Runs before desktop starts, so nothing has drawn yet.
+            asset_packs_init();
         }
 
         furi_delay_ms(10);

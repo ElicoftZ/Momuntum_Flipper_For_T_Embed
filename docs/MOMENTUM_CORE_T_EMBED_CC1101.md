@@ -86,6 +86,29 @@ The locked screen is Momentum's: a cover that slides down over the display carry
 
 Unlocking without a PIN is Back three times. **With a PIN set, rotate up to open PIN entry**; the prompt draws an up arrow to match. This is Momentum's behaviour and differs from the port's previous screen, where any key opened PIN entry.
 
+## Asset packs
+
+A pack lives at `/ext/asset_packs/<pack>` and may replace animations, icons and fonts. Select one under **Momentum > Interface > Graphics > Asset Pack**; changing it frees the old pack and loads the new one without a reboot.
+
+```text
+/ext/asset_packs/<pack>/Anims/manifest.txt
+/ext/asset_packs/<pack>/Icons/<Group>/<Name>.bmx          static icon
+/ext/asset_packs/<pack>/Icons/<Group>/<Name>/meta         animated icon
+/ext/asset_packs/<pack>/Icons/<Group>/<Name>/frame_00.bm
+/ext/asset_packs/<pack>/Fonts/Primary.u8f
+```
+
+Icon paths match the upstream Momentum asset tree, so packs authored for Momentum apply unchanged. Fonts are u8g2 font data; the five names are `Primary`, `Secondary`, `Keyboard`, `BigNumbers` and `BatteryPercent`. Anything a pack omits falls back to the compiled-in asset.
+
+225 of the port's 277 icons are replaceable. The rest are icons this port splits out of upstream frame directories into individual frames (`A_Levelup1_128x64`, `I_hourglass0_24x24`, and similar); upstream has no path for them, so no pack targets them either. Regenerate the mapping after adding icons:
+
+```bat
+python tools\gen_icon_paths.py
+python tools\gen_icon_paths.py --check
+```
+
+Two deliberate differences from upstream. Icons are not swapped in `canvas_draw_icon_bitmap`, which draws using the caller's width and height rather than the icon's own, so a replacement of a different size would be decoded against the wrong stride. And `asset_packs_swap_icon` omits upstream's check that the icon pointer lies in the STM32 flash window, which has no ESP32 equivalent and only served as an early-out.
+
 ## Icons
 
 This port ships `components/assets/assets_icons.c` pre-generated and has no asset build step, so icons taken from upstream are encoded by `tools/png2icon.py`:

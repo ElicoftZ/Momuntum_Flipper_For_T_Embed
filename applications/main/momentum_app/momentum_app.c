@@ -1006,10 +1006,20 @@ int32_t momentum_app(void* p) {
     view_dispatcher_run(app->view_dispatcher);
 
     if(app->dirty) {
+        const bool pack_changed =
+            strcmp(momentum_settings.asset_pack, app->settings.asset_pack) != 0;
+
         momentum_settings = app->settings;
         name_generator_set_prefix_after(momentum_settings.file_naming_prefix_after);
         if(!momentum_settings_save()) {
             FURI_LOG_E(TAG, "Settings are active for this session but were not saved");
+        }
+
+        if(pack_changed) {
+            // Icons and fonts are held in RAM, so the old pack has to go before
+            // the new one loads.
+            asset_packs_free();
+            asset_packs_init();
         }
     }
 
