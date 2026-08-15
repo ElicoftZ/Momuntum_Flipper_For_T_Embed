@@ -13,6 +13,7 @@ typedef struct {
 extern const IconPath ICON_PATHS[];
 extern const size_t ICON_PATHS_COUNT;
 
+extern const Icon A_Momentum_14;
 extern const Icon A_Levelup1_128x64;
 extern const Icon A_Levelup2_128x64;
 

@@ -138,6 +138,47 @@ def format_icon(name, width, height, blob):
     )
 
 
+def animated_dir_to_icon(directory):
+    """Encode a frame_NN.png directory as an animated icon.
+
+    Upstream stores animated icons as a directory of frames plus a frame_rate
+    file, and names them A_<name> rather than I_<name>.
+    """
+    directory = pathlib.Path(directory)
+    frames = sorted(directory.glob("frame_*.png"))
+    if not frames:
+        raise ValueError(f"{directory}: no frame_*.png files")
+
+    rate_file = directory / "frame_rate"
+    frame_rate = int(rate_file.read_text().strip()) if rate_file.is_file() else 0
+
+    encoded = []
+    size = None
+    for frame in frames:
+        width, height, blob = png_to_icon(frame)
+        if size is None:
+            size = (width, height)
+        elif (width, height) != size:
+            raise ValueError(f"{frame.name} is {width}x{height}, expected {size[0]}x{size[1]}")
+        encoded.append(blob)
+
+    return size[0], size[1], frame_rate, encoded
+
+
+def format_animated_icon(name, width, height, frame_rate, frames):
+    lines = []
+    for i, blob in enumerate(frames):
+        body = ",".join(f"0x{b:02x}" for b in blob)
+        lines.append(f"const uint8_t _A_{name}_{i}[] = {{{body},}};\n")
+    refs = ",".join(f"_A_{name}_{i}" for i in range(len(frames)))
+    lines.append(f"const uint8_t* const _A_{name}[] = {{{refs}}};\n")
+    lines.append(
+        f"const Icon A_{name} = {{.width={width},.height={height},"
+        f".frame_count={len(frames)},.frame_rate={frame_rate},.frames=_A_{name}}};\n"
+    )
+    return "".join(lines)
+
+
 # Encoded by the upstream asset pipeline and already present in
 # components/assets/assets_icons.c; if this converter agrees with it, the bit
 # order and polarity above are right.
@@ -192,8 +233,12 @@ def main():
 
     for i in range(0, len(args.pairs), 2):
         name, path = args.pairs[i], args.pairs[i + 1]
-        width, height, blob = png_to_icon(path)
-        sys.stdout.write(format_icon(name, width, height, blob))
+        if pathlib.Path(path).is_dir():
+            width, height, rate, frames = animated_dir_to_icon(path)
+            sys.stdout.write(format_animated_icon(name, width, height, rate, frames))
+        else:
+            width, height, blob = png_to_icon(path)
+            sys.stdout.write(format_icon(name, width, height, blob))
     return 0
 
 

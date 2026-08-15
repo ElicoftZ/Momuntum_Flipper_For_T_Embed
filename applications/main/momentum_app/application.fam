@@ -11,7 +11,7 @@ App(
     ],
     stack_size=4 * 1024,
     flags=["InsomniaSafe"],
-    icon="A_Settings_14",
+    icon="A_Momentum_14",
     order=90,
     fap_category="assets",
 )
