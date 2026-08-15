@@ -117,26 +117,49 @@ static void number_input_backspace_cb(NumberInputModel* model) {
     model->current_number = strtol(furi_string_get_cstr(model->text_buffer), NULL, 10);
 }
 
-static void number_input_handle_up(NumberInputModel* model) {
-    if(model->selected_row > 0) {
-        model->selected_row--;
-        if(model->selected_column > number_input_get_row_size(model->selected_row) - 1) {
-            model->selected_column = number_input_get_row_size(model->selected_row) - 1;
+/* Up/Down walk the whole keyboard in order rather than only hopping between
+ * rows. On a rotary encoder, rotation is the only unmodified gesture and it
+ * produces Up/Down; row-only movement left every digit unreachable, because
+ * reaching one needs Left/Right. Left/Right still move within a row.
+ *
+ * The guard bounds the skip loop: every key being skippable cannot happen, but
+ * a malformed row would otherwise spin forever. */
+static void number_input_step(NumberInputModel* model, bool forward) {
+    size_t row = model->selected_row;
+    size_t column = model->selected_column;
+
+    for(size_t guard = 0; guard < 64; guard++) {
+        if(forward) {
+            if(column + 1 < number_input_get_row_size(row)) {
+                column++;
+            } else {
+                row = (row + 1) % keyboard_row_count;
+                column = 0;
+            }
+        } else {
+            if(column > 0) {
+                column--;
+            } else {
+                row = (row + keyboard_row_count - 1) % keyboard_row_count;
+                column = number_input_get_row_size(row) - 1;
+            }
         }
+
+        const NumberInputKey* keys = number_input_get_row(row);
+        if(keys[column].text == sign_symbol && !number_input_use_sign(model)) continue;
+        break;
     }
+
+    model->selected_row = row;
+    model->selected_column = column;
+}
+
+static void number_input_handle_up(NumberInputModel* model) {
+    number_input_step(model, false);
 }
 
 static void number_input_handle_down(NumberInputModel* model) {
-    if(model->selected_row < keyboard_row_count - 1) {
-        if(model->selected_column >= number_input_get_row_size(model->selected_row) - 1) {
-            model->selected_column = number_input_get_row_size(model->selected_row + 1) - 1;
-        }
-        model->selected_row += 1;
-    }
-    const NumberInputKey* keys = number_input_get_row(model->selected_row);
-    if(keys[model->selected_column].text == sign_symbol && !number_input_use_sign(model)) {
-        model->selected_column--;
-    }
+    number_input_step(model, true);
 }
 
 static void number_input_handle_left(NumberInputModel* model) {
