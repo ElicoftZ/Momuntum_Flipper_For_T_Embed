@@ -4,9 +4,6 @@
 #include <gui/view_stack.h>
 #include <stdint.h>
 #include <notification/notification.h>
-#include <momentum/momentum.h>
-#include <storage/storage.h>
-#include <power/power_service/power.h>
 #include <notification/notification_messages.h>
 
 #include "../desktop.h"
@@ -59,18 +56,8 @@ static void desktop_scene_pin_input_done_callback(const DesktopPinCode* pin_code
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopPinInputEventUnlocked);
 
     } else {
-        uint32_t pin_fails = furi_hal_rtc_get_pin_fails() + 1;
-        /* Off by default. When enabled, ten wrong PINs wipe the SD card, clear
-         * the RTC registers and reboot -- this does not return. */
-        if(pin_fails >= 10 && momentum_settings.bad_pins_format) {
-            Storage* storage = furi_record_open(RECORD_STORAGE);
-            storage_sd_format(storage);
-            furi_record_close(RECORD_STORAGE);
-            furi_hal_rtc_reset_registers();
-            Power* power = furi_record_open(RECORD_POWER);
-            power_reboot(power, PowerBootModeNormal);
-        }
-        furi_hal_rtc_set_pin_fails(pin_fails);
+        uint32_t pin_fails = furi_hal_rtc_get_pin_fails();
+        furi_hal_rtc_set_pin_fails(pin_fails + 1);
         view_dispatcher_send_custom_event(
             desktop->view_dispatcher, DesktopPinInputEventUnlockFailed);
     }

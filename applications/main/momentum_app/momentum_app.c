@@ -589,14 +589,6 @@ static void momentum_settings_menu_style_changed(VariableItem* item) {
     app->dirty = true;
 }
 
-static void momentum_settings_bad_pins_changed(VariableItem* item) {
-    MomentumSettingsApp* app = variable_item_get_context(item);
-    uint8_t index = variable_item_get_current_value_index(item);
-    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
-    app->settings.bad_pins_format = momentum_unlock_anim_values[index];
-    app->dirty = true;
-}
-
 static void momentum_settings_lock_on_boot_changed(VariableItem* item) {
     MomentumSettingsApp* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -827,16 +819,6 @@ static void momentum_settings_show_page(
             momentum_settings_locked_rpc_ble_changed,
             app);
         value_index = app->settings.allow_locked_rpc_ble ? 1U : 0U;
-        variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
-
-        item = variable_item_list_add(
-            app->variable_item_list,
-            "Wipe On 10 Bad PINs",
-            COUNT_OF(momentum_unlock_anim_values),
-            momentum_settings_bad_pins_changed,
-            app);
-        value_index = app->settings.bad_pins_format ? 1U : 0U;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
 
