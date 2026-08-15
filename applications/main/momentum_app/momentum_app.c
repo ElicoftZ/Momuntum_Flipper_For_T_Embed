@@ -3,6 +3,7 @@
 #include <desktop/desktop.h>
 #include <gui/gui.h>
 #include <gui/modules/submenu.h>
+#include <gui/modules/number_input.h>
 #include <gui/modules/text_input.h>
 #include <gui/modules/variable_item_list.h>
 #include <flipper_format/flipper_format.h>
@@ -23,11 +24,19 @@
 #define TAG "MomentumSettingsApp"
 #define MOMENTUM_MAX_SELECTABLE_PACKS 254U
 #define MOMENTUM_DIRECTORY_NAME_SIZE  256U
+#define MOMENTUM_MAX_USER_FREQS       24U
+#define MOMENTUM_SUBGHZ_USER_SETTINGS EXT_PATH("subghz/assets/setting_user")
+/* Mirrors the private constants in lib/subghz/subghz_setting.c, which are not
+ * exported by its header. They must stay in step with it. */
+#define MOMENTUM_SUBGHZ_SETTING_TYPE    "Flipper SubGhz Setting File"
+#define MOMENTUM_SUBGHZ_SETTING_VERSION 1
 
 typedef enum {
     MomentumSettingsViewList,
     MomentumSettingsViewAssetPacks,
     MomentumSettingsViewTextInput,
+    MomentumSettingsViewFreqList,
+    MomentumSettingsViewNumberInput,
 } MomentumSettingsView;
 
 typedef enum {
@@ -41,6 +50,7 @@ typedef enum {
     MomentumSettingsPageProtocols,
     MomentumSettingsPageMisc,
     MomentumSettingsPageScreen,
+    MomentumSettingsPageFrequencies,
 } MomentumSettingsPage;
 
 typedef struct {
@@ -51,7 +61,9 @@ typedef struct {
     ViewDispatcher* view_dispatcher;
     VariableItemList* variable_item_list;
     Submenu* asset_pack_submenu;
+    Submenu* freq_submenu;
     TextInput* text_input;
+    NumberInput* number_input;
     VariableItem* asset_pack_item;
     char** asset_pack_names;
     uint8_t asset_pack_count;
@@ -63,6 +75,13 @@ typedef struct {
     bool desktop_dirty;
     bool name_dirty;
     bool subghz_extended_range;
+    bool subghz_use_defaults;
+    bool subghz_freqs_dirty;
+    bool subghz_editing_hopper;
+    uint8_t subghz_static_count;
+    uint8_t subghz_hopper_count;
+    uint32_t subghz_static_freqs[MOMENTUM_MAX_USER_FREQS];
+    uint32_t subghz_hopper_freqs[MOMENTUM_MAX_USER_FREQS];
     char device_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH];
 } MomentumSettingsApp;
 
@@ -198,6 +217,8 @@ static void momentum_settings_show_page(
     MomentumSettingsApp* app,
     MomentumSettingsPage page,
     uint8_t selected_item);
+static void momentum_settings_show_freq_list(MomentumSettingsApp* app);
+static void momentum_settings_use_defaults_changed(VariableItem* item);
 
 static bool momentum_settings_add_asset_pack(MomentumSettingsApp* app, const char* name) {
     furi_assert(app);
@@ -353,6 +374,12 @@ static void momentum_settings_list_enter(void* context, uint32_t index) {
             app->asset_pack_submenu, momentum_settings_asset_pack_index(app));
         view_dispatcher_switch_to_view(
             app->view_dispatcher, MomentumSettingsViewAssetPacks);
+    } else if(app->current_page == MomentumSettingsPageProtocols && index == 2U) {
+        view_dispatcher_send_custom_event(
+            app->view_dispatcher, MomentumSettingsPageFrequencies);
+    } else if(app->current_page == MomentumSettingsPageFrequencies && index > 0U) {
+        app->subghz_editing_hopper = (index == 2U);
+        momentum_settings_show_freq_list(app);
     } else if(app->current_page == MomentumSettingsPageMisc) {
         if(index == 0U) {
             view_dispatcher_send_custom_event(
@@ -975,6 +1002,23 @@ static void momentum_settings_show_page(
         value_index = app->subghz_extended_range ? 1U : 0U;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
+
+        variable_item_list_add(app->variable_item_list, "Frequencies", 1, NULL, app);
+    } else if(page == MomentumSettingsPageFrequencies) {
+        variable_item_list_set_header(app->variable_item_list, "Frequencies");
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Default Freqs",
+            COUNT_OF(momentum_unlock_anim_values),
+            momentum_settings_use_defaults_changed,
+            app);
+        value_index = app->subghz_use_defaults ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
+
+        variable_item_list_add(app->variable_item_list, "Static Freqs", 1, NULL, app);
+        variable_item_list_add(app->variable_item_list, "Hopper Freqs", 1, NULL, app);
     } else if(page == MomentumSettingsPageMisc) {
         variable_item_list_set_header(app->variable_item_list, "Misc");
         variable_item_list_add(app->variable_item_list, "Screen", 1, NULL, app);
@@ -1056,6 +1100,8 @@ static bool momentum_settings_back_event(void* context) {
         momentum_settings_show_page(app, MomentumSettingsPageRoot, 1);
     } else if(app->current_page == MomentumSettingsPageMisc) {
         momentum_settings_show_page(app, MomentumSettingsPageRoot, 2);
+    } else if(app->current_page == MomentumSettingsPageFrequencies) {
+        momentum_settings_show_page(app, MomentumSettingsPageProtocols, 2);
     } else if(app->current_page == MomentumSettingsPageScreen) {
         momentum_settings_show_page(app, MomentumSettingsPageMisc, 0);
     }
@@ -1084,6 +1130,170 @@ static void momentum_settings_load_device_name(MomentumSettingsApp* app) {
     flipper_format_free(file);
 }
 
+/* Frequency lists live in the same file subghz_setting_load() reads, so edits
+ * here are picked up by SubGHz and SubGHz Remote without a reboot of anything
+ * but the app that reads them. */
+static void momentum_settings_load_freqs(MomentumSettingsApp* app) {
+    app->subghz_use_defaults = true;
+    app->subghz_static_count = 0;
+    app->subghz_hopper_count = 0;
+
+    FlipperFormat* file = flipper_format_file_alloc(app->storage);
+    FuriString* str = furi_string_alloc();
+
+    do {
+        uint32_t version;
+        if(!flipper_format_file_open_existing(file, MOMENTUM_SUBGHZ_USER_SETTINGS)) break;
+        if(!flipper_format_read_header(file, str, &version)) break;
+        if(furi_string_cmp_str(str, MOMENTUM_SUBGHZ_SETTING_TYPE) ||
+           version != MOMENTUM_SUBGHZ_SETTING_VERSION)
+            break;
+
+        bool use_defaults = true;
+        flipper_format_read_bool(file, "Add_standard_frequencies", &use_defaults, 1);
+        app->subghz_use_defaults = use_defaults;
+
+        uint32_t value;
+        if(flipper_format_rewind(file)) {
+            while(app->subghz_static_count < MOMENTUM_MAX_USER_FREQS &&
+                  flipper_format_read_uint32(file, "Frequency", &value, 1)) {
+                app->subghz_static_freqs[app->subghz_static_count++] = value;
+            }
+        }
+
+        if(flipper_format_rewind(file)) {
+            while(app->subghz_hopper_count < MOMENTUM_MAX_USER_FREQS &&
+                  flipper_format_read_uint32(file, "Hopper_frequency", &value, 1)) {
+                app->subghz_hopper_freqs[app->subghz_hopper_count++] = value;
+            }
+        }
+    } while(false);
+
+    furi_string_free(str);
+    flipper_format_free(file);
+}
+
+static void momentum_settings_save_freqs(MomentumSettingsApp* app) {
+    FlipperFormat* file = flipper_format_file_alloc(app->storage);
+
+    do {
+        if(!flipper_format_file_open_always(file, MOMENTUM_SUBGHZ_USER_SETTINGS)) break;
+        if(!flipper_format_write_header_cstr(
+               file, MOMENTUM_SUBGHZ_SETTING_TYPE, MOMENTUM_SUBGHZ_SETTING_VERSION))
+            break;
+
+        /* Keys are deleted before rewriting: flipper_format appends, so without
+         * this every save would leave the previous entries in place. */
+        while(flipper_format_delete_key(file, "Add_standard_frequencies"))
+            ;
+        flipper_format_write_bool(
+            file, "Add_standard_frequencies", &app->subghz_use_defaults, 1);
+
+        if(!flipper_format_rewind(file)) break;
+        while(flipper_format_delete_key(file, "Frequency"))
+            ;
+        for(uint8_t i = 0; i < app->subghz_static_count; i++) {
+            flipper_format_write_uint32(file, "Frequency", &app->subghz_static_freqs[i], 1);
+        }
+
+        if(!flipper_format_rewind(file)) break;
+        while(flipper_format_delete_key(file, "Hopper_frequency"))
+            ;
+        for(uint8_t i = 0; i < app->subghz_hopper_count; i++) {
+            flipper_format_write_uint32(
+                file, "Hopper_frequency", &app->subghz_hopper_freqs[i], 1);
+        }
+    } while(false);
+
+    flipper_format_free(file);
+}
+
+static uint32_t* momentum_settings_freq_list(MomentumSettingsApp* app, uint8_t** count) {
+    if(app->subghz_editing_hopper) {
+        *count = &app->subghz_hopper_count;
+        return app->subghz_hopper_freqs;
+    }
+    *count = &app->subghz_static_count;
+    return app->subghz_static_freqs;
+}
+
+static void momentum_settings_freq_submenu_callback(void* context, uint32_t index);
+
+static void momentum_settings_show_freq_list(MomentumSettingsApp* app) {
+    uint8_t* count;
+    uint32_t* freqs = momentum_settings_freq_list(app, &count);
+
+    submenu_reset(app->freq_submenu);
+    submenu_set_header(
+        app->freq_submenu, app->subghz_editing_hopper ? "Hopper Freqs" : "Static Freqs");
+
+    static char labels[MOMENTUM_MAX_USER_FREQS][24];
+    for(uint8_t i = 0; i < *count; i++) {
+        snprintf(
+            labels[i],
+            sizeof(labels[i]),
+            "%lu.%02lu MHz",
+            (unsigned long)(freqs[i] / 1000000UL),
+            (unsigned long)((freqs[i] % 1000000UL) / 10000UL));
+        submenu_add_item(
+            app->freq_submenu, labels[i], i, momentum_settings_freq_submenu_callback, app);
+    }
+
+    if(*count < MOMENTUM_MAX_USER_FREQS) {
+        submenu_add_item(
+            app->freq_submenu,
+            "Add frequency...",
+            MOMENTUM_MAX_USER_FREQS,
+            momentum_settings_freq_submenu_callback,
+            app);
+    }
+
+    view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewFreqList);
+}
+
+static void momentum_settings_freq_added(void* context, int32_t number) {
+    MomentumSettingsApp* app = context;
+    uint8_t* count;
+    uint32_t* freqs = momentum_settings_freq_list(app, &count);
+
+    const uint32_t value = (uint32_t)number * 1000UL; // entered in kHz
+    if(*count < MOMENTUM_MAX_USER_FREQS && furi_hal_subghz_is_frequency_valid(value)) {
+        freqs[(*count)++] = value;
+        app->subghz_freqs_dirty = true;
+    }
+    momentum_settings_show_freq_list(app);
+}
+
+static void momentum_settings_freq_submenu_callback(void* context, uint32_t index) {
+    MomentumSettingsApp* app = context;
+    uint8_t* count;
+    uint32_t* freqs = momentum_settings_freq_list(app, &count);
+
+    if(index == MOMENTUM_MAX_USER_FREQS) {
+        number_input_set_header_text(app->number_input, "Frequency in kHz");
+        number_input_set_result_callback(
+            app->number_input, momentum_settings_freq_added, app, 433920, 281000, 962000);
+        view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewNumberInput);
+        return;
+    }
+
+    /* Selecting an entry removes it; there is nothing else to do to one. */
+    if(index < *count) {
+        memmove(&freqs[index], &freqs[index + 1], (*count - index - 1) * sizeof(uint32_t));
+        (*count)--;
+        app->subghz_freqs_dirty = true;
+    }
+    momentum_settings_show_freq_list(app);
+}
+
+static void momentum_settings_use_defaults_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    app->subghz_use_defaults = momentum_unlock_anim_values[index];
+    app->subghz_freqs_dirty = true;
+}
+
 static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     MomentumSettingsApp* app = malloc(sizeof(MomentumSettingsApp));
     memset(app, 0, sizeof(MomentumSettingsApp));
@@ -1097,6 +1307,7 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
 
     momentum_settings_load_device_name(app);
     app->subghz_extended_range = subghz_extended_range_load();
+    momentum_settings_load_freqs(app);
 
     momentum_settings_scan_asset_packs(app);
 
@@ -1104,6 +1315,8 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     app->variable_item_list = variable_item_list_alloc();
     app->asset_pack_submenu = submenu_alloc();
     app->text_input = text_input_alloc();
+    app->freq_submenu = submenu_alloc();
+    app->number_input = number_input_alloc();
 
     View* list_view = variable_item_list_get_view(app->variable_item_list);
     variable_item_list_set_enter_callback(
@@ -1134,6 +1347,14 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     view_dispatcher_add_view(
         app->view_dispatcher, MomentumSettingsViewTextInput, text_input_view);
 
+    View* freq_view = submenu_get_view(app->freq_submenu);
+    view_set_previous_callback(freq_view, momentum_settings_back_to_list);
+    view_dispatcher_add_view(app->view_dispatcher, MomentumSettingsViewFreqList, freq_view);
+
+    View* number_view = number_input_get_view(app->number_input);
+    view_dispatcher_add_view(
+        app->view_dispatcher, MomentumSettingsViewNumberInput, number_view);
+
     view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
     view_dispatcher_set_custom_event_callback(
         app->view_dispatcher, momentum_settings_custom_event);
@@ -1148,9 +1369,13 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
 static void momentum_settings_app_free(MomentumSettingsApp* app) {
     furi_assert(app);
 
+    view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewNumberInput);
+    view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewFreqList);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewTextInput);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewAssetPacks);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewList);
+    number_input_free(app->number_input);
+    submenu_free(app->freq_submenu);
     text_input_free(app->text_input);
     submenu_free(app->asset_pack_submenu);
     variable_item_list_free(app->variable_item_list);
@@ -1208,6 +1433,10 @@ int32_t momentum_app(void* p) {
         // Apply without a reboot. furi_hal copies the string into its own
         // buffer, and passing NULL restores the eFuse-derived name.
         furi_hal_version_set_name(app->device_name[0] ? app->device_name : NULL);
+    }
+
+    if(app->subghz_freqs_dirty) {
+        momentum_settings_save_freqs(app);
     }
 
     if(app->desktop_dirty) {
