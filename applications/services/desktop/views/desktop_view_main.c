@@ -14,9 +14,14 @@ struct DesktopMainView {
     void* context;
     FuriTimer* poweroff_timer;
     bool dummy_mode;
+    uint32_t back_last_press;
 };
 
 #define DESKTOP_MAIN_VIEW_POWEROFF_TIMEOUT 1300
+/* Two Back presses inside this window open the Passport. Long enough to be
+ * comfortable on the encoder's side key, short enough that two unrelated
+ * presses do not trigger it. */
+#define DESKTOP_MAIN_VIEW_DOUBLE_BACK_MS   400
 
 static void desktop_main_poweroff_timer_callback(void* context) {
     DesktopMainView* main_view = context;
@@ -117,6 +122,16 @@ bool desktop_main_input_callback(InputEvent* event, void* context) {
             furi_timer_start(main_view->poweroff_timer, DESKTOP_MAIN_VIEW_POWEROFF_TIMEOUT);
         } else if(event->type == InputTypeRelease) {
             furi_timer_stop(main_view->poweroff_timer);
+        } else if(event->type == InputTypeShort) {
+            const uint32_t now = furi_get_tick();
+            const uint32_t elapsed = now - main_view->back_last_press;
+            if(main_view->back_last_press &&
+               elapsed <= furi_ms_to_ticks(DESKTOP_MAIN_VIEW_DOUBLE_BACK_MS)) {
+                main_view->back_last_press = 0;
+                main_view->callback(DesktopMainEventOpenPassport, main_view->context);
+            } else {
+                main_view->back_last_press = now;
+            }
         }
     }
 

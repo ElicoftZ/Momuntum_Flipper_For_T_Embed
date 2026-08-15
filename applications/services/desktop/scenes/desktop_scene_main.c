@@ -144,6 +144,12 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
             consumed = true;
             break;
 
+        case DesktopMainEventOpenPassport:
+            /* Launched by registry path, which is how external apps resolve. */
+            loader_start_detached_with_gui_error(desktop->loader, "passport", NULL);
+            consumed = true;
+            break;
+
         case DesktopMainEventOpenPowerOff: {
             loader_start_detached_with_gui_error(desktop->loader, "Power", "off");
             consumed = true;
