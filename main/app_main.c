@@ -2,6 +2,7 @@
 #include <furi_hal.h>
 #include <flipper.h>
 #include <applications.h>
+#include <loader/loader.h>
 #include <momentum/momentum.h>
 #include <toolbox/name_generator.h>
 
@@ -163,6 +164,17 @@ void app_main(void) {
 
     for(size_t i = 0; i < FLIPPER_ON_SYSTEM_START_COUNT; i++) {
         FLIPPER_ON_SYSTEM_START[i]();
+    }
+
+    // If idle sleep took the device down while an app was open, come back to
+    // it. Queued rather than started directly so the desktop is already up
+    // underneath, leaving Back where it would normally go.
+    char resume_app[FURI_HAL_RTC_RESUME_APP_SIZE];
+    if(furi_hal_rtc_take_resume_app(resume_app, sizeof(resume_app))) {
+        ESP_LOGI(TAG, "Resuming '%s' after deep sleep", resume_app);
+        Loader* loader = furi_record_open(RECORD_LOADER);
+        loader_enqueue_launch(loader, resume_app, NULL, 0);
+        furi_record_close(RECORD_LOADER);
     }
 
     ESP_LOGI(TAG, "All services started, entering background...");

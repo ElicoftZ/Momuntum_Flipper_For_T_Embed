@@ -428,6 +428,10 @@ static void loader_start_internal_app(
     const char* args) {
     FURI_LOG_I(TAG, "Starting %s", app->name);
 
+    /* Remembered so deep sleep can come back to this app. app->name is what
+     * loader_find_application_by_name() matches, so it launches again as-is. */
+    furi_hal_rtc_set_resume_app(app->name);
+
     // store args
     furi_assert(loader->app.args == NULL);
     if(args && strlen(args) > 0) {
@@ -831,6 +835,8 @@ static void loader_do_app_closed(Loader* loader) {
     furi_string_free(loader->app.launch_path);
 
     FURI_LOG_I(TAG, "Application stopped. Free heap: %zu", memmgr_get_free_heap());
+
+    furi_hal_rtc_set_resume_app(NULL);
 
     LoaderEvent event;
     event.type = LoaderEventTypeApplicationStopped;

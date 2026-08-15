@@ -111,6 +111,30 @@ void furi_hal_rtc_set_locale_dateformat(FuriHalRtcLocaleDateFormat format);
 FuriHalRtcLocaleUnits furi_hal_rtc_get_locale_units(void);
 void furi_hal_rtc_set_locale_units(FuriHalRtcLocaleUnits format);
 
+/** Maximum length of a stored resume target, including the terminator. */
+#define FURI_HAL_RTC_RESUME_APP_SIZE 64
+
+/** Remember which app to come back to after deep sleep.
+ *
+ * Held in RTC memory, which survives deep sleep; the rest of this HAL's state
+ * is ordinary RAM and does not. Pass NULL to forget the current target.
+ */
+void furi_hal_rtc_set_resume_app(const char* name);
+
+/** Mark the stored target as one that should actually be resumed.
+ *
+ * Idle sleep and a deliberate power off both end in the same deep sleep, so
+ * they are indistinguishable at wake. Only the idle path arms the resume.
+ */
+void furi_hal_rtc_arm_resume(void);
+
+/** Take the resume target, if this boot woke from an armed deep sleep.
+ *
+ * Consumes it: a later call returns false until something is stored and armed
+ * again, so a resume cannot repeat across an ordinary reboot.
+ */
+bool furi_hal_rtc_take_resume_app(char* name, size_t name_size);
+
 #ifdef __cplusplus
 }
 #endif

@@ -139,6 +139,9 @@ static void notification_display_sleep_timer(void* context) {
     }
 
     app->display_idle_dim = false;
+    /* Only idle sleep resumes; a deliberate power off ends in the same deep
+     * sleep and would otherwise be indistinguishable at wake. */
+    furi_hal_rtc_arm_resume();
     furi_hal_power_shutdown();
 }
 

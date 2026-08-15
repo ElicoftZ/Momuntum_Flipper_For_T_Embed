@@ -1,5 +1,8 @@
 #include "furi_hal_rtc.h"
 
+#include <esp_attr.h>
+#include <esp_sleep.h>
+#include <string.h>
 #include <time.h>
 
 typedef struct {
@@ -33,6 +36,55 @@ static FuriHalRtcState furi_hal_rtc = {
     .locale_dateformat = FuriHalRtcLocaleDateFormatDMY,
     .locale_units = FuriHalRtcLocaleUnitsMetric,
 };
+
+/* RTC_NOINIT_ATTR lives in RTC slow memory, which survives deep sleep but holds
+ * whatever was there on a cold boot, so the magic guards against garbage. */
+#define FURI_HAL_RTC_RESUME_MAGIC 0x52534d31UL // "RSM1"
+
+RTC_NOINIT_ATTR static uint32_t furi_hal_rtc_resume_magic;
+RTC_NOINIT_ATTR static uint32_t furi_hal_rtc_resume_armed;
+RTC_NOINIT_ATTR static char furi_hal_rtc_resume_app[FURI_HAL_RTC_RESUME_APP_SIZE];
+
+void furi_hal_rtc_set_resume_app(const char* name) {
+    if(name && name[0]) {
+        strlcpy(furi_hal_rtc_resume_app, name, sizeof(furi_hal_rtc_resume_app));
+        furi_hal_rtc_resume_magic = FURI_HAL_RTC_RESUME_MAGIC;
+    } else {
+        furi_hal_rtc_resume_app[0] = '\0';
+        furi_hal_rtc_resume_magic = 0;
+    }
+    /* Storing a new target invalidates any earlier arming. */
+    furi_hal_rtc_resume_armed = 0;
+}
+
+void furi_hal_rtc_arm_resume(void) {
+    if(furi_hal_rtc_resume_magic == FURI_HAL_RTC_RESUME_MAGIC) {
+        furi_hal_rtc_resume_armed = 1;
+    }
+}
+
+bool furi_hal_rtc_take_resume_app(char* name, size_t name_size) {
+    if(!name || name_size == 0) return false;
+
+    const bool woke_from_deep_sleep =
+        esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED;
+    const bool valid = furi_hal_rtc_resume_magic == FURI_HAL_RTC_RESUME_MAGIC &&
+                       furi_hal_rtc_resume_armed == 1 && furi_hal_rtc_resume_app[0] != '\0';
+
+    /* Consume regardless, so a stale target cannot fire on a later boot. */
+    furi_hal_rtc_resume_armed = 0;
+
+    if(!woke_from_deep_sleep || !valid) {
+        if(!woke_from_deep_sleep) {
+            furi_hal_rtc_resume_magic = 0;
+            furi_hal_rtc_resume_app[0] = '\0';
+        }
+        return false;
+    }
+
+    strlcpy(name, furi_hal_rtc_resume_app, name_size);
+    return true;
+}
 
 static time_t furi_hal_rtc_now(void) {
     return time(NULL) + (time_t)furi_hal_rtc.time_offset;
