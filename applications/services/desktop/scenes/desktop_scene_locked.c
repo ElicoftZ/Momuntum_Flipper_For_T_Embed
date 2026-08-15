@@ -2,6 +2,8 @@
 #include <furi_hal.h>
 #include <gui/scene_manager.h>
 #include <gui/view_stack.h>
+#include <loader/loader.h>
+#include <momentum/momentum.h>
 #include <stdint.h>
 
 #include "../desktop.h"
@@ -56,11 +58,11 @@ void desktop_scene_locked_on_enter(void* context) {
                     desktop->scene_manager, DesktopScenePinTimeout, pin_timeout);
                 switch_to_timeout_scene = true;
             } else {
-                desktop_view_locked_close_doors(desktop->locked_view);
+                desktop_view_locked_close_cover(desktop->locked_view);
             }
         } else {
             desktop_view_locked_lock(desktop->locked_view, false);
-            desktop_view_locked_close_doors(desktop->locked_view);
+            desktop_view_locked_close_cover(desktop->locked_view);
         }
         scene_manager_set_scene_state(
             desktop->scene_manager, DesktopSceneLocked, DesktopSceneLockedStateRepeatEnter);
@@ -79,12 +81,18 @@ bool desktop_scene_locked_on_event(void* context, SceneManagerEvent event) {
 
     if(event.type == SceneManagerEventTypeCustom) {
         switch(event.event) {
+        case DesktopLockedEventOpenPowerOff:
+            if(momentum_settings.lockscreen_poweroff) {
+                loader_start_detached_with_gui_error(desktop->loader, "Power", "off");
+            }
+            consumed = true;
+            break;
         case DesktopLockedEventUnlocked:
         case DesktopGlobalApiUnlock:
             desktop_unlock(desktop);
             consumed = true;
             break;
-        case DesktopLockedEventDoorsClosed:
+        case DesktopLockedEventCoversClosed:
             notification_message(desktop->notification, &sequence_display_backlight_off);
             consumed = true;
             break;

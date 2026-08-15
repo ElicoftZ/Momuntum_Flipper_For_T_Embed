@@ -200,6 +200,7 @@ extern const Icon I_Release_arrow_18x15;
 extern const Icon I_check_big_20x17;
 extern const Icon I_Pin_arrow_up_7x9;
 extern const Icon I_Pin_attention_dpad_29x29;
+extern const Icon I_Lockscreen;
 extern const Icon I_Pin_back_arrow_10x8;
 extern const Icon I_Pin_cell_13x13;
 extern const Icon I_Pin_pointer_5x3;

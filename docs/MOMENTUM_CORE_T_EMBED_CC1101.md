@@ -73,6 +73,37 @@ The `PS4` style shows the dolphin level, read through the public `dolphin_stats(
 
 Because the port renders a 128x64 logical framebuffer and aspect-fit scales it to the 320x170 LCD, the styles keep Momentum's pixel-exact layout rather than being re-laid out for the wider panel.
 
+## Lockscreen
+
+The locked screen is Momentum's: a cover that slides down over the display carrying a clock, date and unlock prompt, replacing the port's previous closing-doors screen. All eight settings under **Momentum > Interface > Lockscreen** are live:
+
+- **Allow Poweroff** — hold Back on the lockscreen to power off.
+- **Show Time**, **Show Seconds**, **Show Date** — clock uses big numbers, and honours the locale's 12/24-hour and date-order settings plus the `midnight_format_00` preference.
+- **Show Statusbar** — keeps the status bar drawn while locked.
+- **Unlock Prompt** — the speech bubble telling you how to unlock.
+- **Transparent (see animation)** — skips the cover graphic so the desktop animation stays visible behind the clock.
+- **Skip Sliding Animation** — locks and unlocks instantly.
+
+Unlocking without a PIN is Back three times. **With a PIN set, rotate up to open PIN entry**; the prompt draws an up arrow to match. This is Momentum's behaviour and differs from the port's previous screen, where any key opened PIN entry.
+
+## Icons
+
+This port ships `components/assets/assets_icons.c` pre-generated and has no asset build step, so icons taken from upstream are encoded by `tools/png2icon.py`:
+
+```bat
+python tools\png2icon.py Lockscreen ..\Momentum-Firmware\assets\icons\Interface\Lockscreen.png
+```
+
+It emits the three C lines to append to `assets_icons.c`; add a matching `extern const Icon I_<name>;` to `assets_icons.h`.
+
+Icons are written uncompressed — a `0x00` header byte followed by XBM rows — which is the path `compress_icon_decode()` takes when the header says the data is not compressed. That avoids a heatshrink dependency at the cost of some flash, which this 16 MB board has to spare.
+
+The encoder only accepts 1-bit greyscale, non-interlaced PNG, which is what Flipper icons are; anything else is rejected rather than silently mis-encoded. Verify it against the icons already in the tree with:
+
+```bat
+python tools\png2icon.py --self-test
+```
+
 ## Adding a Momentum setting
 
 Every persisted setting is described once, in the `momentum_settings_entries` table in `lib/momentum/settings_core.c`. Defaults, range clamping, change detection, loading and saving all iterate that table, so adding a setting is two edits:
