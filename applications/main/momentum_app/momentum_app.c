@@ -3,13 +3,16 @@
 #include <desktop/desktop.h>
 #include <gui/gui.h>
 #include <gui/modules/submenu.h>
+#include <gui/modules/text_input.h>
 #include <gui/modules/variable_item_list.h>
+#include <flipper_format/flipper_format.h>
 #include <gui/view_dispatcher.h>
 #include <momentum/momentum.h>
 #include <power/power_service/power.h>
 #include <storage/storage.h>
 #include <toolbox/value_index.h>
 #include <toolbox/name_generator.h>
+#include <toolbox/version.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +26,7 @@
 typedef enum {
     MomentumSettingsViewList,
     MomentumSettingsViewAssetPacks,
+    MomentumSettingsViewTextInput,
 } MomentumSettingsView;
 
 typedef enum {
@@ -46,6 +50,7 @@ typedef struct {
     ViewDispatcher* view_dispatcher;
     VariableItemList* variable_item_list;
     Submenu* asset_pack_submenu;
+    TextInput* text_input;
     VariableItem* asset_pack_item;
     char** asset_pack_names;
     uint8_t asset_pack_count;
@@ -55,6 +60,8 @@ typedef struct {
     bool sd_ready;
     bool dirty;
     bool desktop_dirty;
+    bool name_dirty;
+    char device_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH];
 } MomentumSettingsApp;
 
 static const uint32_t momentum_anim_speed_values[] = {
@@ -293,6 +300,12 @@ static void momentum_settings_asset_pack_selected(void* context, uint32_t index)
     view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewList);
 }
 
+static void momentum_settings_device_name_done(void* context) {
+    MomentumSettingsApp* app = context;
+    app->name_dirty = true;
+    momentum_settings_show_page(app, MomentumSettingsPageMisc, 1);
+}
+
 static void momentum_settings_list_enter(void* context, uint32_t index) {
     MomentumSettingsApp* app = context;
     furi_assert(app);
@@ -330,9 +343,22 @@ static void momentum_settings_list_enter(void* context, uint32_t index) {
             app->asset_pack_submenu, momentum_settings_asset_pack_index(app));
         view_dispatcher_switch_to_view(
             app->view_dispatcher, MomentumSettingsViewAssetPacks);
-    } else if(app->current_page == MomentumSettingsPageMisc && index == 0U) {
-        view_dispatcher_send_custom_event(
-            app->view_dispatcher, MomentumSettingsPageScreen);
+    } else if(app->current_page == MomentumSettingsPageMisc) {
+        if(index == 0U) {
+            view_dispatcher_send_custom_event(
+                app->view_dispatcher, MomentumSettingsPageScreen);
+        } else if(index == 1U) {
+            text_input_set_header_text(app->text_input, "Device Name (empty = default)");
+            text_input_set_result_callback(
+                app->text_input,
+                momentum_settings_device_name_done,
+                app,
+                app->device_name,
+                sizeof(app->device_name),
+                true);
+            view_dispatcher_switch_to_view(
+                app->view_dispatcher, MomentumSettingsViewTextInput);
+        }
     }
 }
 
@@ -858,6 +884,9 @@ static void momentum_settings_show_page(
     } else if(page == MomentumSettingsPageMisc) {
         variable_item_list_set_header(app->variable_item_list, "Misc");
         variable_item_list_add(app->variable_item_list, "Screen", 1, NULL, app);
+        item = variable_item_list_add(app->variable_item_list, "Device Name", 1, NULL, app);
+        variable_item_set_current_value_text(
+            item, app->device_name[0] ? app->device_name : "Default");
     } else if(page == MomentumSettingsPageScreen) {
         variable_item_list_set_header(app->variable_item_list, "Screen");
 
@@ -938,11 +967,17 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     desktop_api_get_settings(app->desktop, &app->desktop_settings);
     app->sd_ready = storage_sd_status(app->storage) == FSE_OK;
 
+    const char* custom_name = version_get_custom_name(NULL);
+    if(custom_name) {
+        strncpy(app->device_name, custom_name, sizeof(app->device_name) - 1);
+    }
+
     momentum_settings_scan_asset_packs(app);
 
     app->view_dispatcher = view_dispatcher_alloc();
     app->variable_item_list = variable_item_list_alloc();
     app->asset_pack_submenu = submenu_alloc();
+    app->text_input = text_input_alloc();
 
     View* list_view = variable_item_list_get_view(app->variable_item_list);
     variable_item_list_set_enter_callback(
@@ -968,6 +1003,11 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     view_dispatcher_add_view(
         app->view_dispatcher, MomentumSettingsViewAssetPacks, asset_pack_view);
 
+    View* text_input_view = text_input_get_view(app->text_input);
+    view_set_previous_callback(text_input_view, momentum_settings_back_to_list);
+    view_dispatcher_add_view(
+        app->view_dispatcher, MomentumSettingsViewTextInput, text_input_view);
+
     view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
     view_dispatcher_set_custom_event_callback(
         app->view_dispatcher, momentum_settings_custom_event);
@@ -982,8 +1022,10 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
 static void momentum_settings_app_free(MomentumSettingsApp* app) {
     furi_assert(app);
 
+    view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewTextInput);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewAssetPacks);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewList);
+    text_input_free(app->text_input);
     submenu_free(app->asset_pack_submenu);
     variable_item_list_free(app->variable_item_list);
     view_dispatcher_free(app->view_dispatcher);
@@ -1021,6 +1063,23 @@ int32_t momentum_app(void* p) {
             asset_packs_free();
             asset_packs_init();
         }
+    }
+
+    if(app->name_dirty) {
+        if(app->device_name[0] == '\0') {
+            storage_simply_remove(app->storage, NAMESPOOF_PATH);
+        } else {
+            FlipperFormat* file = flipper_format_file_alloc(app->storage);
+            do {
+                if(!flipper_format_file_open_always(file, NAMESPOOF_PATH)) break;
+                if(!flipper_format_write_header_cstr(file, NAMESPOOF_HEADER, NAMESPOOF_VERSION))
+                    break;
+                if(!flipper_format_write_string_cstr(file, "Name", app->device_name)) break;
+            } while(0);
+            flipper_format_free(file);
+        }
+        // Applies the new name, or restores the real one when cleared.
+        namespoof_init();
     }
 
     if(app->desktop_dirty) {

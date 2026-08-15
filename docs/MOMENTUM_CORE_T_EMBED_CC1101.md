@@ -86,6 +86,16 @@ The locked screen is Momentum's: a cover that slides down over the display carry
 
 Unlocking without a PIN is Back three times. **With a PIN set, rotate up to open PIN entry**; the prompt draws an up arrow to match. This is Momentum's behaviour and differs from the port's previous screen, where any key opened PIN entry.
 
+## Device name
+
+**Momentum > Misc > Device Name** sets a custom name, shown wherever the device identifies itself. Clearing it restores the real name. The name is stored as:
+
+```text
+/ext/dolphin/name.settings
+```
+
+It is applied at boot, after storage comes up and before the desktop starts, and re-applied immediately when changed. A missing or malformed file leaves the real name in place.
+
 ## Asset packs
 
 A pack lives at `/ext/asset_packs/<pack>` and may replace animations, icons and fonts. Select one under **Momentum > Interface > Graphics > Asset Pack**; changing it frees the old pack and loads the new one without a reboot.
