@@ -148,6 +148,11 @@ static void notification_display_timer(void* context) {
     NotificationApp* app = context;
 
     app->display_idle_dim = true;
+    /* The backlight is no longer at its normal on level, and
+     * notification_apply_notification_display_layer() returns early while this
+     * flag is set. Leaving it true would strand the display at the dim level,
+     * because the next input could not write full brightness back. */
+    lcd_backlight_is_on = false;
     furi_hal_display_set_backlight(NOTIFICATION_IDLE_DIM_BACKLIGHT);
 
     if(app->display_sleep_timer) {
