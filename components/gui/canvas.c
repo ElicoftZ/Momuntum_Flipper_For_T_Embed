@@ -305,6 +305,40 @@ void canvas_draw_icon_animation(
         IconRotation0);
 }
 
+void canvas_draw_icon_animation_ex(
+    Canvas* canvas,
+    int32_t x,
+    int32_t y,
+    int32_t width_scale,
+    int32_t height_scale,
+    IconAnimation* icon_animation) {
+    furi_check(canvas);
+    furi_check(icon_animation);
+    // Ensure scale % is > 0
+    furi_assert(width_scale > 0 && height_scale > 0);
+    // Ensure scale % is <= 100: animated icons > 100% are buggy
+    furi_assert(width_scale <= 100 && height_scale <= 100);
+
+    x += canvas->offset_x;
+    y += canvas->offset_y;
+
+    uint8_t* icon_data = NULL;
+    compress_icon_decode(
+        canvas->compress_icon, icon_animation_get_data(icon_animation), &icon_data);
+
+    const int32_t width = icon_animation_get_width(icon_animation);
+    const int32_t height = icon_animation_get_height(icon_animation);
+
+    canvas_draw_u8g2_bitmap(
+        &canvas->fb,
+        x,
+        y,
+        (width * width_scale) / 100,
+        (height * height_scale) / 100,
+        icon_data,
+        IconRotation0);
+}
+
 static void canvas_draw_u8g2_bitmap_int(
     u8g2_t* u8g2,
     u8g2_uint_t x,

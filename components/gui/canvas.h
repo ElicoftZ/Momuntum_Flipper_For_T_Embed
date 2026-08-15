@@ -270,6 +270,26 @@ void canvas_draw_icon_animation(
     int32_t y,
     IconAnimation* icon_animation);
 
+/** Draw animation at position defined by x,y, scaled down.
+ *
+ * Scales are percentages and must be in 1..100; values above 100 render
+ * incorrectly for animated icons.
+ *
+ * @param      canvas          Canvas instance
+ * @param      x               x coordinate
+ * @param      y               y coordinate
+ * @param      width_scale     width percentage, 1..100
+ * @param      height_scale    height percentage, 1..100
+ * @param      icon_animation  IconAnimation instance
+ */
+void canvas_draw_icon_animation_ex(
+    Canvas* canvas,
+    int32_t x,
+    int32_t y,
+    int32_t width_scale,
+    int32_t height_scale,
+    IconAnimation* icon_animation);
+
 /** Draw icon at position defined by x,y.
  *
  * @param      canvas  Canvas instance

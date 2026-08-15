@@ -65,6 +65,24 @@ void elements_scrollbar_pos(
     size_t pos,
     size_t total);
 
+/** Draw horizontal scrollbar on canvas at (x, y).
+ * @note    height 3px, extends upward from y
+ *
+ * @param   canvas  Canvas instance
+ * @param   x       x coordinate
+ * @param   y       y coordinate of the bar's bottom edge
+ * @param   width   bar width
+ * @param   pos     current element of total elements
+ * @param   total   total elements
+ */
+void elements_scrollbar_horizontal(
+    Canvas* canvas,
+    int32_t x,
+    int32_t y,
+    size_t width,
+    size_t pos,
+    size_t total);
+
 /** Draw scrollbar on canvas.
  * @note    width 3px, height equal to canvas height
  *
@@ -251,6 +269,30 @@ void elements_scrollable_text_line(
     FuriString* string,
     size_t scroll,
     bool ellipsis);
+
+/** Draw a scrollable text line, optionally centered on x.
+ *
+ * When the text overflows and marquee scrolling is off, centering is dropped
+ * and the line is anchored to the left of the given width.
+ *
+ * @param   canvas    Canvas instance
+ * @param   x         x coordinate, the centre when centered is true
+ * @param   y         y coordinate
+ * @param   width     available width
+ * @param   string    text to draw
+ * @param   scroll    scroll counter
+ * @param   ellipsis  append "..." when truncated
+ * @param   centered  centre the line on x
+ */
+void elements_scrollable_text_line_centered(
+    Canvas* canvas,
+    int32_t x,
+    int32_t y,
+    size_t width,
+    FuriString* string,
+    size_t scroll,
+    bool ellipsis,
+    bool centered);
 
 void elements_scrollable_text_line_str(
     Canvas* canvas,

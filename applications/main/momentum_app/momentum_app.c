@@ -133,6 +133,18 @@ static const char* const momentum_unlock_anim_text[] = {
     "ON",
 };
 
+static const char* const momentum_menu_style_text[MenuStyleCount] = {
+    "List",
+    "Wii",
+    "DSi",
+    "PS4",
+    "Vertical",
+    "C64",
+    "Compact",
+    "MNTM",
+    "CoverFlow",
+};
+
 static const char* const momentum_browser_path_text[] = {
     "OFF",
     "Current",
@@ -476,6 +488,16 @@ static void momentum_settings_show_internal_tab_changed(VariableItem* item) {
     app->dirty = true;
 }
 
+static void momentum_settings_menu_style_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_menu_style_text[index]);
+    app->settings.menu_style = (MenuStyle)index;
+    // Apply live so the main menu already uses the new style on Back.
+    momentum_settings.menu_style = app->settings.menu_style;
+    app->dirty = true;
+}
+
 static void momentum_settings_browser_path_changed(VariableItem* item) {
     MomentumSettingsApp* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -587,6 +609,18 @@ static void momentum_settings_show_page(
         variable_item_list_add(app->variable_item_list, "Statusbar", 1, NULL, app);
         variable_item_list_add(app->variable_item_list, "File Browser", 1, NULL, app);
         variable_item_list_add(app->variable_item_list, "General", 1, NULL, app);
+
+        // Kept last so the navigation rows above keep the indices that
+        // momentum_settings_list_enter maps to sub-pages.
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Menu Style",
+            COUNT_OF(momentum_menu_style_text),
+            momentum_settings_menu_style_changed,
+            app);
+        value_index = (uint8_t)app->settings.menu_style;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_menu_style_text[value_index]);
     } else if(page == MomentumSettingsPageGraphics) {
         variable_item_list_set_header(app->variable_item_list, "Graphics");
 

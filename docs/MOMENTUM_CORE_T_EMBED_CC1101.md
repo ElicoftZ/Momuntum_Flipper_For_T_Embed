@@ -55,6 +55,24 @@ For `asset_pack: Momentum`, the animation manifest must be at:
 
 Each named animation keeps the standard `meta.txt` and `frame_N.bm` layout below that `Anims` directory. Pack icons and fonts are deliberately not enabled in this milestone.
 
+## Main menu styles
+
+All nine Momentum styles are available under **Momentum > Interface > Menu Style**: `List`, `Wii`, `DSi`, `PS4`, `Vertical`, `C64`, `Compact`, `MNTM`, and `CoverFlow`. The change applies as soon as you leave the app; no reboot is required.
+
+Navigation on the T-Embed's rotary encoder:
+
+- Rotate for up/down.
+- Hold the encoder and rotate for left/right.
+- Click the encoder for OK, side button for Back.
+
+That matters because the styles differ in which axis they use. `List`, `MNTM`, `C64` and `Compact` move on up/down. `DSi`, `PS4`, `Vertical` and `CoverFlow` are horizontal and move on left/right, so they need the held-encoder gesture. `Wii` is a grid and uses both.
+
+`Vertical` rotates the canvas and honours the left-handed setting (`FuriHalRtcFlagHandOrient`), which swaps its left and right.
+
+The `PS4` style shows the dolphin level, read through the public `dolphin_stats()` API rather than upstream's reach into `dolphin->state->data.icounter`. The `MNTM` style shows the device name, clock, battery percentage, charge state and 5 V OTG state.
+
+Because the port renders a 128x64 logical framebuffer and aspect-fit scales it to the 320x170 LCD, the styles keep Momentum's pixel-exact layout rather than being re-laid out for the wider panel.
+
 ## Adding a Momentum setting
 
 Every persisted setting is described once, in the `momentum_settings_entries` table in `lib/momentum/settings_core.c`. Defaults, range clamping, change detection, loading and saving all iterate that table, so adding a setting is two edits:
