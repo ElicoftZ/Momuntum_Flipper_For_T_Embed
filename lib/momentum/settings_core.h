@@ -18,6 +18,10 @@ extern "C" {
 #define MOMENTUM_CYCLE_ANIMS_MAX     86400
 #define MOMENTUM_CYCLE_ANIMS_DEFAULT 0
 
+#define MOMENTUM_BUTTHURT_TIMER_MIN     0U
+#define MOMENTUM_BUTTHURT_TIMER_MAX     172800U
+#define MOMENTUM_BUTTHURT_TIMER_DEFAULT 21600U
+
 typedef enum {
     MenuStyleList = 0,
     MenuStyleWii,
@@ -45,6 +49,10 @@ typedef struct {
     int32_t cycle_anims;
     bool unlock_anims;
     MenuStyle menu_style;
+    bool lock_on_boot;
+    bool allow_locked_rpc_usb;
+    bool allow_locked_rpc_ble;
+    uint32_t butthurt_timer;
     bool lockscreen_poweroff;
     bool lockscreen_time;
     bool lockscreen_seconds;
@@ -97,7 +105,7 @@ typedef struct {
 /* Tripwire: adding a field to MomentumSettings without adding its table row
  * would leave it unsaved and invisible to change detection. Bump this only
  * together with the corresponding momentum_settings_entries row. */
-#define MOMENTUM_SETTINGS_ENTRY_COUNT 25
+#define MOMENTUM_SETTINGS_ENTRY_COUNT 29
 
 extern const MomentumSettingsEntry momentum_settings_entries[];
 extern const size_t momentum_settings_entry_count;

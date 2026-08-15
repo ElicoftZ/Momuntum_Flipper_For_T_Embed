@@ -179,6 +179,14 @@ static const char* const momentum_battery_icon_text[] = {
     "Bar %",
 };
 
+static const uint32_t momentum_butthurt_timer_values[] = {
+    0, 1800, 3600, 7200, 14400, 21600, 28800, 43200, 86400, 172800,
+};
+
+static const char* const momentum_butthurt_timer_text[] = {
+    "OFF", "30 M", "1 H", "2 H", "4 H", "6 H", "8 H", "12 H", "24 H", "48 H",
+};
+
 static const uint32_t momentum_clock_values[] = {
     0,
     1,
@@ -524,6 +532,40 @@ static void momentum_settings_menu_style_changed(VariableItem* item) {
     app->dirty = true;
 }
 
+static void momentum_settings_lock_on_boot_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    app->settings.lock_on_boot = momentum_unlock_anim_values[index];
+    app->dirty = true;
+}
+
+static void momentum_settings_locked_rpc_usb_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    app->settings.allow_locked_rpc_usb = momentum_unlock_anim_values[index];
+    app->dirty = true;
+}
+
+static void momentum_settings_locked_rpc_ble_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    app->settings.allow_locked_rpc_ble = momentum_unlock_anim_values[index];
+    app->dirty = true;
+}
+
+static void momentum_settings_butthurt_timer_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_butthurt_timer_text[index]);
+    app->settings.butthurt_timer = momentum_butthurt_timer_values[index];
+    // Applied live so the dolphin timer picks it up when this app exits.
+    momentum_settings.butthurt_timer = app->settings.butthurt_timer;
+    app->dirty = true;
+}
+
 static void momentum_settings_browser_path_changed(VariableItem* item) {
     MomentumSettingsApp* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -682,6 +724,36 @@ static void momentum_settings_show_page(
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, momentum_cycle_anim_text[value_index]);
         momentum_settings_lock_if_storage_unavailable(app, item);
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Lock On Boot",
+            COUNT_OF(momentum_unlock_anim_values),
+            momentum_settings_lock_on_boot_changed,
+            app);
+        value_index = app->settings.lock_on_boot ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Locked USB RPC",
+            COUNT_OF(momentum_unlock_anim_values),
+            momentum_settings_locked_rpc_usb_changed,
+            app);
+        value_index = app->settings.allow_locked_rpc_usb ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Locked BLE RPC",
+            COUNT_OF(momentum_unlock_anim_values),
+            momentum_settings_locked_rpc_ble_changed,
+            app);
+        value_index = app->settings.allow_locked_rpc_ble ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
 
         item = variable_item_list_add(
             app->variable_item_list,
@@ -887,6 +959,19 @@ static void momentum_settings_show_page(
         item = variable_item_list_add(app->variable_item_list, "Device Name", 1, NULL, app);
         variable_item_set_current_value_text(
             item, app->device_name[0] ? app->device_name : "Default");
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Dolphin Sad Timer",
+            COUNT_OF(momentum_butthurt_timer_values),
+            momentum_settings_butthurt_timer_changed,
+            app);
+        value_index = (uint8_t)value_index_uint32(
+            app->settings.butthurt_timer,
+            momentum_butthurt_timer_values,
+            COUNT_OF(momentum_butthurt_timer_values));
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_butthurt_timer_text[value_index]);
     } else if(page == MomentumSettingsPageScreen) {
         variable_item_list_set_header(app->variable_item_list, "Screen");
 

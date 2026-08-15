@@ -8,6 +8,8 @@
 #include <flipper.pb.h>
 
 #include <furi.h>
+#include <furi_hal.h>
+#include <momentum/momentum.h>
 
 #include <toolbox/cli/cli_command.h>
 #include <cli/cli_main_commands.h>
@@ -383,6 +385,11 @@ static void
 }
 
 RpcSession* rpc_session_open(Rpc* rpc, RpcOwner owner) {
+    if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagLock)) {
+        if(owner == RpcOwnerUsb && !momentum_settings.allow_locked_rpc_usb) return NULL;
+        if(owner == RpcOwnerBle && !momentum_settings.allow_locked_rpc_ble) return NULL;
+    }
+
     furi_check(rpc);
 
     RpcSession* session = malloc(sizeof(RpcSession));

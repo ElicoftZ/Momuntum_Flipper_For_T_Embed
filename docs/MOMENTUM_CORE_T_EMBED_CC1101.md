@@ -86,6 +86,17 @@ The locked screen is Momentum's: a cover that slides down over the display carry
 
 Unlocking without a PIN is Back three times. **With a PIN set, rotate up to open PIN entry**; the prompt draws an up arrow to match. This is Momentum's behaviour and differs from the port's previous screen, where any key opened PIN entry.
 
+## Lock and RPC
+
+**Momentum > Interface > Lockscreen** also carries:
+
+- **Lock On Boot** — lock at startup when a PIN is set. On by default, which is both upstream's default and what this port did unconditionally before. With no PIN set it has no effect.
+- **Locked USB RPC** / **Locked BLE RPC** — allow qFlipper and BLE serial to open an RPC session while the device is locked. Both off by default, so a locked device refuses RPC on either transport.
+
+**Momentum > Misc > Dolphin Sad Timer** sets how long the dolphin waits before getting sadder on its own, from `30 M` to `48 H`, defaulting to `6 H`. `OFF` stops the timer entirely rather than arming it with a zero period.
+
+Two Momentum settings are persisted and sanitized but not yet wired: `favorite_timeout`, which needs upstream's archive favourite-timeout helper plus hooks in the NFC and LFRFID emulate scenes, and `bad_pins_format`, which formats storage after ten failed PIN attempts.
+
 ## Device name
 
 **Momentum > Misc > Device Name** sets a custom name, shown wherever the device identifies itself. Clearing it restores the real name. The name is stored as:

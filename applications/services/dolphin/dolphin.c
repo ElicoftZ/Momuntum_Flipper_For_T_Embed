@@ -13,17 +13,29 @@
 #define HOURS_IN_TICKS(x)      (MINUTES_IN_TICKS(x) * 60UL)
 #define DATE_IN_TICKS(h, m, s) (HOURS_IN_TICKS(h) + MINUTES_IN_TICKS(m) + SECONDS_IN_TICKS(s))
 
+#include <momentum/momentum.h>
+
 #define FLUSH_TIMEOUT_TICKS (SECONDS_IN_TICKS(30UL))
 
 #ifndef DOLPHIN_DEBUG
-#define BUTTHURT_INCREASE_PERIOD_TICKS   (HOURS_IN_TICKS(48UL))
 #define CLEAR_LIMITS_PERIOD_TICKS        (HOURS_IN_TICKS(24UL))
 #define CLEAR_LIMITS_UPDATE_PERIOD_TICKS (HOURS_IN_TICKS(1UL))
 #else
-#define BUTTHURT_INCREASE_PERIOD_TICKS   (SECONDS_IN_TICKS(30UL))
 #define CLEAR_LIMITS_PERIOD_TICKS        (MINUTES_IN_TICKS(1))
 #define CLEAR_LIMITS_UPDATE_PERIOD_TICKS (SECONDS_IN_TICKS(5UL))
 #endif
+
+/* butthurt_timer of 0 means "OFF": the dolphin never gets sadder on its own.
+ * Starting a periodic timer with a zero period would instead fire it
+ * continuously, so stop it in that case. */
+static void dolphin_butthurt_timer_restart(Dolphin* dolphin) {
+    const uint32_t seconds = momentum_settings.butthurt_timer;
+    if(seconds > 0) {
+        furi_event_loop_timer_start(dolphin->butthurt_timer, SECONDS_IN_TICKS(seconds));
+    } else {
+        furi_event_loop_timer_stop(dolphin->butthurt_timer);
+    }
+}
 
 #define CLEAR_LIMITS_UPDATE_THRESHOLD_TICKS (MINUTES_IN_TICKS(5UL))
 
@@ -226,7 +238,7 @@ static void dolphin_process_event(FuriEventLoopObject* object, void* context) {
 
         DolphinPubsubEvent pubsub_event = DolphinPubsubEventUpdate;
         furi_pubsub_publish(dolphin->pubsub, &pubsub_event);
-        furi_event_loop_timer_start(dolphin->butthurt_timer, BUTTHURT_INCREASE_PERIOD_TICKS);
+        dolphin_butthurt_timer_restart(dolphin);
         furi_event_loop_timer_start(dolphin->flush_timer, FLUSH_TIMEOUT_TICKS);
 
     } else if(event.type == DolphinEventTypeStats) {
@@ -248,7 +260,7 @@ static void dolphin_process_event(FuriEventLoopObject* object, void* context) {
 
     } else if(event.type == DolphinEventTypeReloadState) {
         dolphin_state_load(dolphin->state);
-        furi_event_loop_timer_start(dolphin->butthurt_timer, BUTTHURT_INCREASE_PERIOD_TICKS);
+        dolphin_butthurt_timer_restart(dolphin);
 
     } else if(event.type == DolphinEventTypeSettingsGet) {
         event.settings->happy_mode = dolphin->state->data.flags & DolphinFlagHappyMode;
@@ -316,7 +328,7 @@ int32_t dolphin_srv(void* p) {
         dolphin_process_event,
         dolphin);
 
-    furi_event_loop_timer_start(dolphin->butthurt_timer, BUTTHURT_INCREASE_PERIOD_TICKS);
+    dolphin_butthurt_timer_restart(dolphin);
     furi_event_loop_timer_start(dolphin->clear_limits_timer, CLEAR_LIMITS_PERIOD_TICKS);
 
     furi_event_loop_tick_set(

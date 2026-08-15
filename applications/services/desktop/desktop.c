@@ -689,9 +689,15 @@ int32_t desktop_srv(void* p) {
 
     scene_manager_next_scene(desktop->scene_manager, DesktopSceneMain);
 
-    if(desktop_pin_code_is_set()) {
+    // desktop_lock() turns the USB CLI off when a PIN is set, so re-enable it
+    // afterwards if RPC is allowed while locked.
+    bool enable_cli_vcp = true;
+    if(desktop_pin_code_is_set() &&
+       (momentum_settings.lock_on_boot || furi_hal_rtc_is_flag_set(FuriHalRtcFlagLock))) {
+        enable_cli_vcp = momentum_settings.allow_locked_rpc_usb;
         desktop_lock(desktop);
-    } else {
+    }
+    if(enable_cli_vcp) {
         CliVcp* cli_vcp = furi_record_open(RECORD_CLI_VCP);
         cli_vcp_enable(cli_vcp);
         furi_record_close(RECORD_CLI_VCP);
