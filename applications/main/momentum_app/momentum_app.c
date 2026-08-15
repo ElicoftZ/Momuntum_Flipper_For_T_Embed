@@ -1,6 +1,9 @@
 #include <furi.h>
 #include <furi_hal.h>
 #include <desktop/desktop.h>
+#include <dolphin/dolphin.h>
+#include <dolphin/dolphin_i.h>
+#include <dolphin/helpers/dolphin_state.h>
 #include <gui/gui.h>
 #include <gui/modules/submenu.h>
 #include <gui/modules/number_input.h>
@@ -25,6 +28,8 @@
 #define MOMENTUM_MAX_SELECTABLE_PACKS 254U
 #define MOMENTUM_DIRECTORY_NAME_SIZE  256U
 #define MOMENTUM_MAX_USER_FREQS       24U
+#define MOMENTUM_DOLPHIN_XP_MAX       9999U
+#define MOMENTUM_DOLPHIN_BUTTHURT_MAX 14
 #define MOMENTUM_SUBGHZ_USER_SETTINGS EXT_PATH("subghz/assets/setting_user")
 /* Mirrors the private constants in lib/subghz/subghz_setting.c, which are not
  * exported by its header. They must stay in step with it. */
@@ -51,6 +56,7 @@ typedef enum {
     MomentumSettingsPageMisc,
     MomentumSettingsPageScreen,
     MomentumSettingsPageFrequencies,
+    MomentumSettingsPageDolphin,
     MomentumSettingsPageCount,
 } MomentumSettingsPage;
 
@@ -59,6 +65,7 @@ typedef struct {
     Storage* storage;
     Desktop* desktop;
     Power* power;
+    Dolphin* dolphin;
     ViewDispatcher* view_dispatcher;
     VariableItemList* variable_item_list;
     Submenu* asset_pack_submenu;
@@ -79,6 +86,10 @@ typedef struct {
     bool subghz_use_defaults;
     bool subghz_freqs_dirty;
     bool subghz_editing_hopper;
+    bool dolphin_dirty;
+    bool number_input_for_xp;
+    uint32_t dolphin_xp;
+    int32_t dolphin_butthurt;
     uint8_t subghz_static_count;
     uint8_t subghz_hopper_count;
     uint32_t subghz_static_freqs[MOMENTUM_MAX_USER_FREQS];
@@ -220,6 +231,8 @@ static void momentum_settings_show_page(
     uint8_t selected_item);
 static void momentum_settings_show_freq_list(MomentumSettingsApp* app);
 static void momentum_settings_use_defaults_changed(VariableItem* item);
+static void momentum_settings_butthurt_changed(VariableItem* item);
+static void momentum_settings_number_done(void* context, int32_t number);
 
 static bool momentum_settings_add_asset_pack(MomentumSettingsApp* app, const char* name) {
     furi_assert(app);
@@ -378,6 +391,17 @@ static void momentum_settings_list_enter(void* context, uint32_t index) {
     } else if(app->current_page == MomentumSettingsPageProtocols && index == 2U) {
         view_dispatcher_send_custom_event(
             app->view_dispatcher, MomentumSettingsPageFrequencies);
+    } else if(app->current_page == MomentumSettingsPageDolphin && index == 1U) {
+        app->number_input_for_xp = true;
+        number_input_set_header_text(app->number_input, "Dolphin XP");
+        number_input_set_result_callback(
+            app->number_input,
+            momentum_settings_number_done,
+            app,
+            (int32_t)app->dolphin_xp,
+            0,
+            (int32_t)MOMENTUM_DOLPHIN_XP_MAX);
+        view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewNumberInput);
     } else if(app->current_page == MomentumSettingsPageFrequencies && index > 0U) {
         app->subghz_editing_hopper = (index == 2U);
         momentum_settings_show_freq_list(app);
@@ -385,6 +409,9 @@ static void momentum_settings_list_enter(void* context, uint32_t index) {
         if(index == 0U) {
             view_dispatcher_send_custom_event(
                 app->view_dispatcher, MomentumSettingsPageScreen);
+        } else if(index == 3U) {
+            view_dispatcher_send_custom_event(
+                app->view_dispatcher, MomentumSettingsPageDolphin);
         } else if(index == 1U) {
             text_input_set_header_text(app->text_input, "Device Name (empty = default)");
             text_input_set_result_callback(
@@ -1005,6 +1032,28 @@ static void momentum_settings_show_page(
         variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
 
         variable_item_list_add(app->variable_item_list, "Frequencies", 1, NULL, app);
+    } else if(page == MomentumSettingsPageDolphin) {
+        variable_item_list_set_header(app->variable_item_list, "Dolphin");
+
+        char label[16];
+        item = variable_item_list_add(app->variable_item_list, "Level", 1, NULL, app);
+        snprintf(label, sizeof(label), "%u", (unsigned)dolphin_get_level(app->dolphin_xp));
+        variable_item_set_current_value_text(item, label);
+
+        item = variable_item_list_add(app->variable_item_list, "XP", 1, NULL, app);
+        snprintf(label, sizeof(label), "%lu", (unsigned long)app->dolphin_xp);
+        variable_item_set_current_value_text(item, label);
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Mood",
+            MOMENTUM_DOLPHIN_BUTTHURT_MAX + 1,
+            momentum_settings_butthurt_changed,
+            app);
+        value_index = (uint8_t)CLAMP(app->dolphin_butthurt, MOMENTUM_DOLPHIN_BUTTHURT_MAX, 0);
+        variable_item_set_current_value_index(item, value_index);
+        snprintf(label, sizeof(label), "%u", (unsigned)value_index);
+        variable_item_set_current_value_text(item, label);
     } else if(page == MomentumSettingsPageFrequencies) {
         variable_item_list_set_header(app->variable_item_list, "Frequencies");
 
@@ -1039,6 +1088,9 @@ static void momentum_settings_show_page(
             COUNT_OF(momentum_butthurt_timer_values));
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, momentum_butthurt_timer_text[value_index]);
+
+        /* Kept last so the rows above keep the indices the enter handler maps. */
+        variable_item_list_add(app->variable_item_list, "Dolphin", 1, NULL, app);
     } else if(page == MomentumSettingsPageScreen) {
         variable_item_list_set_header(app->variable_item_list, "Screen");
 
@@ -1105,6 +1157,8 @@ static bool momentum_settings_back_event(void* context) {
         momentum_settings_show_page(app, MomentumSettingsPageRoot, 2);
     } else if(app->current_page == MomentumSettingsPageFrequencies) {
         momentum_settings_show_page(app, MomentumSettingsPageProtocols, 2);
+    } else if(app->current_page == MomentumSettingsPageDolphin) {
+        momentum_settings_show_page(app, MomentumSettingsPageMisc, 3);
     } else if(app->current_page == MomentumSettingsPageScreen) {
         momentum_settings_show_page(app, MomentumSettingsPageMisc, 0);
     }
@@ -1254,8 +1308,16 @@ static void momentum_settings_show_freq_list(MomentumSettingsApp* app) {
     view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewFreqList);
 }
 
-static void momentum_settings_freq_added(void* context, int32_t number) {
+static void momentum_settings_number_done(void* context, int32_t number) {
     MomentumSettingsApp* app = context;
+
+    if(app->number_input_for_xp) {
+        app->dolphin_xp = (uint32_t)number;
+        app->dolphin_dirty = true;
+        momentum_settings_show_page(app, MomentumSettingsPageDolphin, 1);
+        return;
+    }
+
     uint8_t* count;
     uint32_t* freqs = momentum_settings_freq_list(app, &count);
 
@@ -1273,9 +1335,10 @@ static void momentum_settings_freq_submenu_callback(void* context, uint32_t inde
     uint32_t* freqs = momentum_settings_freq_list(app, &count);
 
     if(index == MOMENTUM_MAX_USER_FREQS) {
+        app->number_input_for_xp = false;
         number_input_set_header_text(app->number_input, "Frequency in kHz");
         number_input_set_result_callback(
-            app->number_input, momentum_settings_freq_added, app, 433920, 281000, 962000);
+            app->number_input, momentum_settings_number_done, app, 433920, 281000, 962000);
         view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewNumberInput);
         return;
     }
@@ -1287,6 +1350,16 @@ static void momentum_settings_freq_submenu_callback(void* context, uint32_t inde
         app->subghz_freqs_dirty = true;
     }
     momentum_settings_show_freq_list(app);
+}
+
+static void momentum_settings_butthurt_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    char label[8];
+    snprintf(label, sizeof(label), "%u", (unsigned)index);
+    variable_item_set_current_value_text(item, label);
+    app->dolphin_butthurt = (int32_t)index;
+    app->dolphin_dirty = true;
 }
 
 static void momentum_settings_use_defaults_changed(VariableItem* item) {
@@ -1305,6 +1378,10 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     app->storage = furi_record_open(RECORD_STORAGE);
     app->desktop = furi_record_open(RECORD_DESKTOP);
     app->power = furi_record_open(RECORD_POWER);
+    app->dolphin = furi_record_open(RECORD_DOLPHIN);
+    DolphinStats stats = dolphin_stats(app->dolphin);
+    app->dolphin_xp = stats.icounter;
+    app->dolphin_butthurt = (int32_t)stats.butthurt;
     desktop_api_get_settings(app->desktop, &app->desktop_settings);
     app->sd_ready = storage_sd_status(app->storage) == FSE_OK;
 
@@ -1389,6 +1466,7 @@ static void momentum_settings_app_free(MomentumSettingsApp* app) {
     }
     free(app->asset_pack_names);
 
+    furi_record_close(RECORD_DOLPHIN);
     furi_record_close(RECORD_POWER);
     furi_record_close(RECORD_DESKTOP);
     furi_record_close(RECORD_STORAGE);
@@ -1440,6 +1518,14 @@ int32_t momentum_app(void* p) {
 
     if(app->subghz_freqs_dirty) {
         momentum_settings_save_freqs(app);
+    }
+
+    if(app->dolphin_dirty) {
+        /* Written straight into the dolphin's state: there is no public setter
+         * for XP or mood, and this is what upstream does too. */
+        app->dolphin->state->data.icounter = app->dolphin_xp;
+        app->dolphin->state->data.butthurt = app->dolphin_butthurt;
+        dolphin_state_save(app->dolphin->state);
     }
 
     if(app->desktop_dirty) {
