@@ -965,6 +965,16 @@ static void momentum_settings_show_page(
         value_index = app->settings.file_naming_prefix_after ? 1U : 0U;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, value_index ? "After" : "Before");
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Extended Range",
+            COUNT_OF(momentum_unlock_anim_values),
+            momentum_settings_subghz_extended_changed,
+            app);
+        value_index = app->subghz_extended_range ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
     } else if(page == MomentumSettingsPageMisc) {
         variable_item_list_set_header(app->variable_item_list, "Misc");
         variable_item_list_add(app->variable_item_list, "Screen", 1, NULL, app);
@@ -994,16 +1004,6 @@ static void momentum_settings_show_page(
             momentum_settings_dark_mode_changed,
             app);
         value_index = app->settings.dark_mode ? 1U : 0U;
-        variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
-
-        item = variable_item_list_add(
-            app->variable_item_list,
-            "Extended Range",
-            COUNT_OF(momentum_unlock_anim_values),
-            momentum_settings_subghz_extended_changed,
-            app);
-        value_index = app->subghz_extended_range ? 1U : 0U;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
 

@@ -892,6 +892,15 @@ int32_t loader_srv(void* p) {
        strlen(FLIPPER_AUTORUN_APP_NAME)) {
         FURI_LOG_I(TAG, "Starting autorun app: %s", FLIPPER_AUTORUN_APP_NAME);
         loader_do_start_by_name(loader, FLIPPER_AUTORUN_APP_NAME, NULL, NULL);
+    } else if(furi_hal_rtc_get_boot_mode() == FuriHalRtcBootModeNormal) {
+        /* Reopen whatever idle sleep interrupted. Started here rather than
+         * enqueued: the deferred queue is only drained when an app closes, so
+         * at boot with nothing running it would never fire. */
+        char resume_app[FURI_HAL_RTC_RESUME_APP_SIZE];
+        if(furi_hal_rtc_take_resume_app(resume_app, sizeof(resume_app))) {
+            FURI_LOG_I(TAG, "Resuming after deep sleep: %s", resume_app);
+            loader_do_start_by_name(loader, resume_app, NULL, NULL);
+        }
     }
 
     LoaderMessage message;
