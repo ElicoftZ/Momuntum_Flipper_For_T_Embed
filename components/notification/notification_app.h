@@ -99,6 +99,9 @@ struct NotificationApp {
     FuriMessageQueue* queue;
     FuriPubSub* event_record;
     FuriTimer* display_timer;
+    /* Second idle stage: the display dims first, then this fires and the
+     * device enters deep sleep. */
+    FuriTimer* display_sleep_timer;
     FuriTimer* night_shift_timer;
     FuriTimer* night_shift_demo_timer;
     FuriTimer* led_off_timer;
@@ -112,6 +115,8 @@ struct NotificationApp {
      * effect) and a cheap idle-timer re-arm that leaves a running animation
      * untouched. */
     bool led_idle_off;
+    /* True while the backlight is held at the dim idle level. */
+    bool display_idle_dim;
 
     NotificationSettings settings;
     float current_night_shift;

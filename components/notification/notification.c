@@ -6,7 +6,14 @@
 #include <furi.h>
 #include <furi_hal_display.h>
 #include <furi_hal_light.h>
+#include <furi_hal_power.h>
 #include <furi_hal_rtc.h>
+
+/* Idle behaviour is two-stage: the backlight drops to a dim-but-readable level
+ * first, and only if nothing happens after that does the device sleep. */
+#define NOTIFICATION_IDLE_DIM_DELAY_MS   30000UL
+#define NOTIFICATION_IDLE_SLEEP_DELAY_MS 120000UL
+#define NOTIFICATION_IDLE_DIM_BACKLIGHT  8
 #include <furi_hal_speaker.h>
 #include <esp_random.h>
 #include <input.h>
@@ -55,11 +62,6 @@ static uint8_t notification_settings_get_display_brightness(NotificationApp* app
     return notification_clamp_u8(value * app->settings.display_brightness);
 }
 
-static uint32_t notification_settings_display_off_delay_ticks(NotificationApp* app) {
-    return (float)(app->settings.display_off_delay_ms) /
-           (1000.0f / furi_kernel_get_tick_frequency());
-}
-
 static void notification_apply_internal_display_layer(NotificationApp* app, uint8_t layer_value) {
     furi_assert(app);
 
@@ -102,15 +104,57 @@ static void notification_reset_notification_layer(
                 app->settings.display_brightness * 255.0f * app->current_night_shift));
     }
 
+    /* Activity: back to full brightness and restart the idle sequence.
+     * Setting the display-off delay to OFF disables dimming and sleep too. */
+    if(app->display_sleep_timer && furi_timer_is_running(app->display_sleep_timer)) {
+        furi_timer_stop(app->display_sleep_timer);
+    }
+    app->display_idle_dim = false;
+
     if(app->settings.display_off_delay_ms > 0) {
-        furi_timer_start(app->display_timer, notification_settings_display_off_delay_ticks(app));
+        furi_timer_start(app->display_timer, furi_ms_to_ticks(NOTIFICATION_IDLE_DIM_DELAY_MS));
     }
 }
 
+static void notification_idle_timers_stop(NotificationApp* app) {
+    if(furi_timer_is_running(app->display_timer)) {
+        furi_timer_stop(app->display_timer);
+    }
+    if(app->display_sleep_timer && furi_timer_is_running(app->display_sleep_timer)) {
+        furi_timer_stop(app->display_sleep_timer);
+    }
+    app->display_idle_dim = false;
+}
+
+/* Stage two: nothing since the display dimmed, so power down. */
+static void notification_display_sleep_timer(void* context) {
+    furi_assert(context);
+    NotificationApp* app = context;
+
+    /* Apps that must keep running hold insomnia; do not sleep under them. */
+    if(!furi_hal_power_sleep_available()) {
+        furi_timer_start(
+            app->display_sleep_timer, furi_ms_to_ticks(NOTIFICATION_IDLE_SLEEP_DELAY_MS));
+        return;
+    }
+
+    app->display_idle_dim = false;
+    furi_hal_power_shutdown();
+}
+
+/* Stage one: dim rather than blanking, so the screen is still readable. */
 static void notification_display_timer(void* context) {
     furi_assert(context);
     NotificationApp* app = context;
-    notification_message(app, &sequence_display_backlight_off);
+
+    app->display_idle_dim = true;
+    furi_hal_display_set_backlight(NOTIFICATION_IDLE_DIM_BACKLIGHT);
+
+    if(app->display_sleep_timer) {
+        furi_timer_start(
+            app->display_sleep_timer,
+            furi_ms_to_ticks(NOTIFICATION_IDLE_SLEEP_DELAY_MS - NOTIFICATION_IDLE_DIM_DELAY_MS));
+    }
 }
 
 static void night_shift_demo_timer_callback(void* context) {
@@ -178,9 +222,7 @@ static void notification_process_notification_message(
                 notification_reset_notification_display_layer(app);
                 lcd_backlight_is_on = false;
 
-                if(furi_timer_is_running(app->display_timer)) {
-                    furi_timer_stop(app->display_timer);
-                }
+                notification_idle_timers_stop(app);
             }
             break;
         case NotificationMessageTypeLedDisplayBacklightForceOn:
@@ -726,6 +768,9 @@ static NotificationApp* notification_app_alloc(void) {
 
     app->queue = furi_message_queue_alloc(8, sizeof(NotificationAppMessage));
     app->display_timer = furi_timer_alloc(notification_display_timer, FuriTimerTypeOnce, app);
+    app->display_sleep_timer =
+        furi_timer_alloc(notification_display_sleep_timer, FuriTimerTypeOnce, app);
+    app->display_idle_dim = false;
     app->night_shift_timer = furi_timer_alloc(night_shift_timer_callback, FuriTimerTypePeriodic, app);
     app->night_shift_demo_timer = furi_timer_alloc(night_shift_demo_timer_callback, FuriTimerTypeOnce, app);
     app->led_off_timer = furi_timer_alloc(notification_led_off_timer_cb, FuriTimerTypeOnce, app);
