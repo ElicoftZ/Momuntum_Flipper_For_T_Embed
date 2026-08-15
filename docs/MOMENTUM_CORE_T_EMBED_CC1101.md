@@ -65,7 +65,11 @@ Navigation on the T-Embed's rotary encoder:
 - Hold the encoder and rotate for left/right.
 - Click the encoder for OK, side button for Back.
 
-That matters because the styles differ in which axis they use. `List`, `MNTM`, `C64` and `Compact` move on up/down. `DSi`, `PS4`, `Vertical` and `CoverFlow` are horizontal and move on left/right, so they need the held-encoder gesture. `Wii` is a grid and uses both.
+**Rotation moves the selection in every style.** Upstream leaves the horizontal styles (`DSi`, `PS4`, `Vertical`, `CoverFlow`) on left/right only, which is fine with a d-pad but on a rotary encoder means plain rotation does nothing and the menu cannot be navigated out of. Here they step by one on up/down as well, and keep left/right.
+
+`Wii` is a grid: up/down moves within a column, left/right between columns. `C64` and `Compact` use left/right to switch columns.
+
+The default is `List`, the stock menu. Upstream Momentum defaults to `DSi`, so a `.momentum_settings.txt` carried over from Momentum will select DSi rather than the default here.
 
 `Vertical` rotates the canvas and honours the left-handed setting (`FuriHalRtcFlagHandOrient`), which swaps its left and right.
 

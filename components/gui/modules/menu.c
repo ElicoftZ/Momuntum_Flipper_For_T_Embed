@@ -788,16 +788,6 @@ static void menu_process_up(Menu* menu) {
             size_t count = MenuItemArray_size(model->items);
 
             switch(momentum_settings.menu_style) {
-            case MenuStyleList:
-            case MenuStyleMNTM:
-            case MenuStyleC64:
-            case MenuStyleCompact:
-                if(position > 0) {
-                    position--;
-                } else {
-                    position = count - 1;
-                }
-                break;
             case MenuStyleWii:
                 if(position % 2 || (position == count - 1 && count % 2)) {
                     position--;
@@ -807,6 +797,15 @@ static void menu_process_up(Menu* menu) {
                 break;
 
             default:
+                // Every other style, including the horizontal ones, steps by
+                // one. Upstream leaves those to left/right only, which on a
+                // rotary encoder means plain rotation does nothing at all and
+                // the menu cannot be navigated out of.
+                if(position > 0) {
+                    position--;
+                } else {
+                    position = count - 1;
+                }
                 break;
             }
         },
@@ -824,16 +823,6 @@ static void menu_process_down(Menu* menu) {
             size_t count = MenuItemArray_size(model->items);
 
             switch(momentum_settings.menu_style) {
-            case MenuStyleList:
-            case MenuStyleMNTM:
-            case MenuStyleC64:
-            case MenuStyleCompact:
-                if(position < count - 1) {
-                    position++;
-                } else {
-                    position = 0;
-                }
-                break;
             case MenuStyleWii:
                 if(position % 2 || (position == count - 1 && count % 2)) {
                     position--;
@@ -843,6 +832,12 @@ static void menu_process_down(Menu* menu) {
                 break;
 
             default:
+                // See menu_process_up: rotation has to work in every style.
+                if(position < count - 1) {
+                    position++;
+                } else {
+                    position = 0;
+                }
                 break;
             }
         },
