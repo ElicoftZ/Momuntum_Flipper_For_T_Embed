@@ -26,6 +26,7 @@ const MomentumSettingsEntry momentum_settings_entries[] = {
     ENTRY_BOOL(unlock_anims, false),
     ENTRY_ENUM(menu_style, MenuStyleCount, MenuStyleList),
     ENTRY_BOOL(lock_on_boot, true),
+    ENTRY_BOOL(bad_pins_format, false),
     ENTRY_BOOL(allow_locked_rpc_usb, false),
     ENTRY_BOOL(allow_locked_rpc_ble, false),
     ENTRY_UINT(
