@@ -6,6 +6,8 @@
 #include "../desktop_i.h"
 #include "../views/desktop_view_lock_menu.h"
 #include "../helpers/qflipper_bridge.h"
+
+#include <notification/notification_messages.h>
 #include "desktop_scene.h"
 
 #include "sdkconfig.h"
@@ -21,6 +23,10 @@ void desktop_scene_lock_menu_callback(DesktopEvent event, void* context) {
     Desktop* desktop = (Desktop*)context;
     view_dispatcher_send_custom_event(desktop->view_dispatcher, event);
 }
+
+/* Session state: Wake mode is a quick toggle, not a persisted setting. It is
+ * held by the notification service's backlight lock, which has no getter. */
+static bool s_wake_mode = false;
 
 static bool desktop_lock_menu_bt_enabled(void) {
     Bt* bt = furi_record_open(RECORD_BT);
@@ -46,7 +52,8 @@ static void desktop_scene_lock_menu_refresh(Desktop* desktop) {
         desktop->lock_menu,
         LOCK_MENU_USB_AVAILABLE,
         qflipper_bridge_is_active(),
-        desktop_lock_menu_bt_enabled());
+        desktop_lock_menu_bt_enabled(),
+        s_wake_mode);
 }
 
 void desktop_scene_lock_menu_on_enter(void* context) {
@@ -84,6 +91,16 @@ bool desktop_scene_lock_menu_on_event(void* context, SceneManagerEvent event) {
 
         case DesktopLockMenuEventBluetoothToggle:
             desktop_lock_menu_set_bt_enabled(!desktop_lock_menu_bt_enabled());
+            desktop_scene_lock_menu_refresh(desktop);
+            consumed = true;
+            break;
+
+        case DesktopLockMenuEventWakeToggle:
+            s_wake_mode = !s_wake_mode;
+            notification_message(
+                desktop->notification,
+                s_wake_mode ? &sequence_display_backlight_enforce_on :
+                              &sequence_display_backlight_enforce_auto);
             desktop_scene_lock_menu_refresh(desktop);
             consumed = true;
             break;

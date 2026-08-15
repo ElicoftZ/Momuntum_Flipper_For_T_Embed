@@ -111,7 +111,8 @@ static void notification_reset_notification_layer(
     }
     app->display_idle_dim = false;
 
-    if(app->settings.display_off_delay_ms > 0) {
+    // display_led_lock is Wake mode: hold the backlight on and never sleep.
+    if(app->settings.display_off_delay_ms > 0 && !app->display_led_lock) {
         furi_timer_start(app->display_timer, furi_ms_to_ticks(NOTIFICATION_IDLE_DIM_DELAY_MS));
     }
 }
@@ -247,6 +248,8 @@ static void notification_process_notification_message(
         case NotificationMessageTypeLedDisplayBacklightEnforceOn:
             if(!app->display_led_lock) {
                 app->display_led_lock = true;
+                // Wake mode: cancel any pending dim and sleep.
+                notification_idle_timers_stop(app);
                 notification_apply_internal_display_layer(
                     app,
                     notification_scale_display_brightness(
@@ -259,6 +262,11 @@ static void notification_process_notification_message(
         case NotificationMessageTypeLedDisplayBacklightEnforceAuto:
             if(app->display_led_lock) {
                 app->display_led_lock = false;
+                // Leaving Wake mode restarts the idle sequence from now.
+                if(app->settings.display_off_delay_ms > 0) {
+                    furi_timer_start(
+                        app->display_timer, furi_ms_to_ticks(NOTIFICATION_IDLE_DIM_DELAY_MS));
+                }
                 notification_apply_internal_display_layer(
                     app,
                     notification_scale_display_brightness(
