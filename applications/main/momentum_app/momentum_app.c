@@ -8,11 +8,11 @@
 #include <flipper_format/flipper_format.h>
 #include <gui/view_dispatcher.h>
 #include <momentum/momentum.h>
+#include <namechanger/namechanger.h>
 #include <power/power_service/power.h>
 #include <storage/storage.h>
 #include <toolbox/value_index.h>
 #include <toolbox/name_generator.h>
-#include <toolbox/version.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1041,6 +1041,27 @@ static bool momentum_settings_back_event(void* context) {
     return true;
 }
 
+/* Reads the name the namechanger service applies at boot. Seeding from the
+ * effective name instead would show the eFuse-derived default as though it
+ * were a custom one. */
+static void momentum_settings_load_device_name(MomentumSettingsApp* app) {
+    FlipperFormat* file = flipper_format_file_alloc(app->storage);
+    FuriString* str = furi_string_alloc();
+
+    do {
+        uint32_t version;
+        if(!flipper_format_file_open_existing(file, NAMECHANGER_PATH)) break;
+        if(!flipper_format_read_header(file, str, &version)) break;
+        if(furi_string_cmp_str(str, NAMECHANGER_HEADER)) break;
+        if(version != NAMECHANGER_VERSION) break;
+        if(!flipper_format_read_string(file, "Name", str)) break;
+        strncpy(app->device_name, furi_string_get_cstr(str), sizeof(app->device_name) - 1);
+    } while(false);
+
+    furi_string_free(str);
+    flipper_format_free(file);
+}
+
 static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     MomentumSettingsApp* app = malloc(sizeof(MomentumSettingsApp));
     memset(app, 0, sizeof(MomentumSettingsApp));
@@ -1052,10 +1073,7 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     desktop_api_get_settings(app->desktop, &app->desktop_settings);
     app->sd_ready = storage_sd_status(app->storage) == FSE_OK;
 
-    const char* custom_name = version_get_custom_name(NULL);
-    if(custom_name) {
-        strncpy(app->device_name, custom_name, sizeof(app->device_name) - 1);
-    }
+    momentum_settings_load_device_name(app);
 
     momentum_settings_scan_asset_packs(app);
 
@@ -1152,19 +1170,21 @@ int32_t momentum_app(void* p) {
 
     if(app->name_dirty) {
         if(app->device_name[0] == '\0') {
-            storage_simply_remove(app->storage, NAMESPOOF_PATH);
+            storage_simply_remove(app->storage, NAMECHANGER_PATH);
         } else {
             FlipperFormat* file = flipper_format_file_alloc(app->storage);
             do {
-                if(!flipper_format_file_open_always(file, NAMESPOOF_PATH)) break;
-                if(!flipper_format_write_header_cstr(file, NAMESPOOF_HEADER, NAMESPOOF_VERSION))
+                if(!flipper_format_file_open_always(file, NAMECHANGER_PATH)) break;
+                if(!flipper_format_write_header_cstr(
+                       file, NAMECHANGER_HEADER, NAMECHANGER_VERSION))
                     break;
                 if(!flipper_format_write_string_cstr(file, "Name", app->device_name)) break;
             } while(0);
             flipper_format_free(file);
         }
-        // Applies the new name, or restores the real one when cleared.
-        namespoof_init();
+        // Apply without a reboot. furi_hal copies the string into its own
+        // buffer, and passing NULL restores the eFuse-derived name.
+        furi_hal_version_set_name(app->device_name[0] ? app->device_name : NULL);
     }
 
     if(app->desktop_dirty) {

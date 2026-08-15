@@ -152,10 +152,9 @@ void app_main(void) {
             // record here waits for that point and loads settings before desktop starts.
             momentum_settings_load();
             name_generator_set_prefix_after(momentum_settings.file_naming_prefix_after);
-            // The custom name and the pack's icons and fonts all come from the
-            // SD card, so they wait for storage too. This still runs before
-            // desktop starts, so nothing has drawn yet.
-            namespoof_init();
+            // Icons and fonts come from the SD card, so this has to wait for
+            // storage too. Runs before desktop starts, so nothing has drawn yet.
+            // The custom device name is handled by the namechanger service.
             asset_packs_init();
         }
 

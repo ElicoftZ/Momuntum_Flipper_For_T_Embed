@@ -105,7 +105,9 @@ Two Momentum settings are persisted and sanitized but not yet wired: `favorite_t
 /ext/dolphin/name.settings
 ```
 
-It is applied at boot, after storage comes up and before the desktop starts, and re-applied immediately when changed. A missing or malformed file leaves the real name in place.
+That is the file this port's existing `namechanger` startup service already reads, in the same format Momentum's namespoof uses, so the editor drives that service rather than adding a second mechanism. A missing or malformed file leaves the real name in place.
+
+Changing the name applies immediately via `furi_hal_version_set_name()`, which copies the string into furi_hal's own buffer. Nothing frees the previous name: on this port it can point at that static buffer rather than the heap, and freeing it aborts.
 
 ## Asset packs
 
