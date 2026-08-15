@@ -51,6 +51,7 @@ typedef enum {
     MomentumSettingsPageMisc,
     MomentumSettingsPageScreen,
     MomentumSettingsPageFrequencies,
+    MomentumSettingsPageCount,
 } MomentumSettingsPage;
 
 typedef struct {
@@ -1070,7 +1071,9 @@ static bool momentum_settings_custom_event(void* context, uint32_t event) {
     MomentumSettingsApp* app = context;
     furi_assert(app);
 
-    if(event < MomentumSettingsPageInterface || event > MomentumSettingsPageScreen) {
+    /* Bounded by the enum's sentinel rather than by whichever page happened to
+     * be last, so adding a page cannot silently drop its navigation event. */
+    if(event < MomentumSettingsPageInterface || event >= MomentumSettingsPageCount) {
         return false;
     }
 
