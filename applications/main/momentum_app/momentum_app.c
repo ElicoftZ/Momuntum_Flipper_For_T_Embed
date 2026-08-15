@@ -11,6 +11,7 @@
 #include <namechanger/namechanger.h>
 #include <power/power_service/power.h>
 #include <storage/storage.h>
+#include <subghz/subghz_extended_range.h>
 #include <toolbox/value_index.h>
 #include <toolbox/name_generator.h>
 
@@ -61,6 +62,7 @@ typedef struct {
     bool dirty;
     bool desktop_dirty;
     bool name_dirty;
+    bool subghz_extended_range;
     char device_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH];
 } MomentumSettingsApp;
 
@@ -566,6 +568,16 @@ static void momentum_settings_butthurt_timer_changed(VariableItem* item) {
     app->dirty = true;
 }
 
+static void momentum_settings_subghz_extended_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    app->subghz_extended_range = momentum_unlock_anim_values[index];
+    /* Written and applied straight away rather than on exit: this changes what
+     * the radio is allowed to transmit, so it should not linger unsaved. */
+    subghz_extended_range_save(app->subghz_extended_range);
+}
+
 static void momentum_settings_browser_path_changed(VariableItem* item) {
     MomentumSettingsApp* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -987,6 +999,16 @@ static void momentum_settings_show_page(
 
         item = variable_item_list_add(
             app->variable_item_list,
+            "Extended Range",
+            COUNT_OF(momentum_unlock_anim_values),
+            momentum_settings_subghz_extended_changed,
+            app);
+        value_index = app->subghz_extended_range ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
+
+        item = variable_item_list_add(
+            app->variable_item_list,
             "Left Handed",
             COUNT_OF(momentum_unlock_anim_values),
             momentum_settings_left_handed_changed,
@@ -1074,6 +1096,7 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     app->sd_ready = storage_sd_status(app->storage) == FSE_OK;
 
     momentum_settings_load_device_name(app);
+    app->subghz_extended_range = subghz_extended_range_load();
 
     momentum_settings_scan_asset_packs(app);
 
