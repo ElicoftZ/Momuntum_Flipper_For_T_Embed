@@ -26,7 +26,9 @@ void desktop_scene_lock_menu_callback(DesktopEvent event, void* context) {
 
 /* Session state: Wake mode is a quick toggle, not a persisted setting. It is
  * held by the notification service's backlight lock, which has no getter. */
-static bool s_wake_mode = false;
+/* TEMPORARY: defaults on to match the notification service, for the duration
+ * of the Momentum port. Revert to false when that is finished. */
+static bool s_wake_mode = true;
 
 static bool desktop_lock_menu_bt_enabled(void) {
     Bt* bt = furi_record_open(RECORD_BT);

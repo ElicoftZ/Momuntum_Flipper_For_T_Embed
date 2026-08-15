@@ -825,7 +825,10 @@ static NotificationApp* notification_app_alloc(void) {
     app->display.value[LayerInternal] = 0x00;
     app->display.value[LayerNotification] = 0x00;
     app->display.index = LayerInternal;
-    app->display_led_lock = false;
+    /* TEMPORARY: Wake mode defaults on for the duration of the Momentum port,
+     * so idle dim and deep sleep never interrupt flashing and testing. Revert
+     * to false once the port is finished; the lock menu toggle still works. */
+    app->display_led_lock = true;
 
     app->event_record = furi_record_open(RECORD_INPUT_EVENTS);
     furi_pubsub_subscribe(app->event_record, input_event_callback, app);
