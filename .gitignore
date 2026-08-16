@@ -31,3 +31,6 @@ releases/*.zip
 
 # Host-side unit test build output (tests/host/run_host_tests.bat)
 build_host/
+
+# Assembled SD card payload (generated from the Momentum checkout)
+sdcard/
