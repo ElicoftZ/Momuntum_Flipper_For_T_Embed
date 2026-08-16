@@ -389,13 +389,17 @@ static bool button_panel_view_input_callback(InputEvent* event, void* context) {
     if(!button_panel->freeze_input &&
        (!(event->type == InputTypePress) && !(event->type == InputTypeRelease))) {
         switch(event->key) {
+        /* Rotation is the only unmodified gesture on this board and it produces
+         * Up/Down, so those get the linear traversal that reaches every button.
+         * Row-only movement left most of a panel unreachable, since stepping
+         * along a row needs Left/Right. */
         case InputKeyUp:
             consumed = true;
-            button_panel_process_up(button_panel);
+            button_panel_process_left(button_panel);
             break;
         case InputKeyDown:
             consumed = true;
-            button_panel_process_down(button_panel);
+            button_panel_process_right(button_panel);
             break;
         case InputKeyLeft:
             /* Swapped with Right: rotary encoder CW (clockwise) feels like
