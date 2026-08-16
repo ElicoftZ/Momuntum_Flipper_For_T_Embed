@@ -7,6 +7,9 @@ typedef enum {
     SubmenuIndexUniversalLEDs,
     SubmenuIndexUniversalFan,
     SubmenuIndexUniversalAirConditioner,
+    SubmenuIndexUniversalBluray,
+    SubmenuIndexUniversalMonitor,
+    SubmenuIndexUniversalDigitalSign,
 } SubmenuIndex;
 
 static void infrared_scene_universal_submenu_callback(void* context, uint32_t index) {
@@ -60,6 +63,27 @@ void infrared_scene_universal_on_enter(void* context) {
         infrared_scene_universal_submenu_callback,
         context);
 
+    submenu_add_item(
+        submenu,
+        "Blu-ray/DVD",
+        SubmenuIndexUniversalBluray,
+        infrared_scene_universal_submenu_callback,
+        context);
+
+    submenu_add_item(
+        submenu,
+        "Monitors",
+        SubmenuIndexUniversalMonitor,
+        infrared_scene_universal_submenu_callback,
+        context);
+
+    submenu_add_item(
+        submenu,
+        "Digital Signs",
+        SubmenuIndexUniversalDigitalSign,
+        infrared_scene_universal_submenu_callback,
+        context);
+
     submenu_set_selected_item(
         submenu, scene_manager_get_scene_state(infrared->scene_manager, InfraredSceneUniversal));
 
@@ -86,6 +110,15 @@ bool infrared_scene_universal_on_event(void* context, SceneManagerEvent event) {
             consumed = true;
         } else if(event.event == SubmenuIndexUniversalFan) {
             scene_manager_next_scene(scene_manager, InfraredSceneUniversalFan);
+            consumed = true;
+        } else if(event.event == SubmenuIndexUniversalBluray) {
+            scene_manager_next_scene(scene_manager, InfraredSceneUniversalBluray);
+            consumed = true;
+        } else if(event.event == SubmenuIndexUniversalMonitor) {
+            scene_manager_next_scene(scene_manager, InfraredSceneUniversalMonitor);
+            consumed = true;
+        } else if(event.event == SubmenuIndexUniversalDigitalSign) {
+            scene_manager_next_scene(scene_manager, InfraredSceneUniversalDigitalSign);
             consumed = true;
         } else if(event.event == SubmenuIndexUniversalAirConditioner) {
             scene_manager_next_scene(scene_manager, InfraredSceneUniversalAC);
