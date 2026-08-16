@@ -32,6 +32,8 @@ const SubGhzProtocol* const subghz_protocol_registry_items[] = {
     &tpms_protocol_schrader_gg4, &tpms_protocol_ford,
     &tpms_protocol_renault,      &tpms_protocol_citroen,
     &tpms_protocol_pmv107j,
+    &subghz_protocol_allstar_firefly,
+    &subghz_protocol_nord_ice,
 };
 
 const SubGhzProtocolRegistry subghz_protocol_registry = {

@@ -63,4 +63,6 @@
 #include "tpms_renault.h"
 #include "tpms_citroen.h"
 #include "tpms_pmv107j.h"
+#include "allstar_firefly.h"
+#include "nord_ice.h"
 
