@@ -48,18 +48,13 @@ paired devices must be re-paired.
 
 ## SD card
 
-Put a **FAT32** card in the board and boot it. On first boot the firmware
-installs the content this port adds -- its own apps, the welcome slideshow, and
-the folders those apps expect (`apps_data/`, `voice_notes/`, `backup/nvs/`) --
-then writes `version.txt` to mark the card as set up.
+Extract [`sdcard.zip`](sdcard.zip) to the root of a **FAT32** card. That gives
+you this port's own apps, the infrared/NFC/SubGHz/RFID databases, dolphin
+animations, asset packs, and the folders the apps expect (`apps_data/`,
+`voice_notes/`, `backup/nvs/`).
 
-`version.txt` is the single source of truth: if it is present, the card is left
-alone, so a card you have customised is never overwritten. Delete it to force a
-reinstall.
-
-For a **complete** card (infrared/NFC/SubGHz/RFID databases, dolphin
-animations, asset packs), extract [`sdcard.zip`](sdcard.zip) to the root of the
-card. The firmware only ships the delta this port adds, not a whole card image.
+The firmware does not write the card for you. It is a plain Flipper layout, so
+if you already have a card set up, copy across only what you want.
 
 ## Building
 

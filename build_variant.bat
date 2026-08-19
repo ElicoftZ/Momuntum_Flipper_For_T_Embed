@@ -5,9 +5,9 @@ rem Build the T-Embed CC1101 release image.
 rem
 rem   build_variant.bat [COMx]
 rem
-rem Produces momentum_t_embed_RELEASE.bin: a single merged image carrying the
-rem bootloader, partition table, firmware, and the SD payload that the firmware
-rem installs to a fresh card on first boot. Pass a COM port to flash it too.
+rem Produces momentum_t_embed_RELEASE.bin: bootloader, partition table and
+rem firmware merged into one image. The SD card is set up by hand from
+rem sdcard.zip. Pass a COM port to flash it too.
 rem ---------------------------------------------------------------------------
 
 cd /d "%~dp0"
@@ -47,33 +47,29 @@ idf.py -B "%BUILD_DIR%" ^
     -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.variant_release" ^
     build || exit /b 1
 
-rem Prove the image really got the release table before packing anything into
-rem it. Getting this wrong is silent: the build goes green, and only the boot
-rem log shows the installer finding no partition to read.
+rem Catch a stale sdkconfig pinning an older table. This layout is firmware
+rem only, so an `assets` partition means the pre-manual-SD table is still in
+rem force -- which would also mean an 8 MB factory instead of 4 MB.
 python "%IDF_ROOT%\components\partition_table\gen_esp32part.py" ^
     "%BUILD_DIR%\partition_table\partition-table.bin" > "%BUILD_DIR%\partition_table_dump.txt"
 findstr /b /c:"assets," "%BUILD_DIR%\partition_table_dump.txt" >nul
-if errorlevel 1 (
+if not errorlevel 1 (
     echo.
-    echo ERROR: no 'assets' partition - wrong table in use.
-    echo        Check sdkconfig.variant_release and %BUILD_DIR%\sdkconfig.
+    echo ERROR: stale partition table - it still has an 'assets' partition.
+    echo        Delete %BUILD_DIR%\sdkconfig and rebuild.
     type "%BUILD_DIR%\partition_table_dump.txt"
     exit /b 1
 )
-
-rem Pack the SD payload the firmware installs on first boot.
-python "%~dp0tools\pack_assets.py" --out "%BUILD_DIR%\assets.tar" || exit /b 1
 
 python -m esptool --chip esp32s3 merge_bin -o "%BUILD_DIR%\%OUTNAME%" ^
     --flash_mode dio --flash_freq 80m --flash_size 16MB ^
     0x0 "%BUILD_DIR%\bootloader\bootloader.bin" ^
     0x8000 "%BUILD_DIR%\partition_table\partition-table.bin" ^
-    0x20000 "%BUILD_DIR%\furi_esp32.bin" ^
-    0x820000 "%BUILD_DIR%\assets.tar" || exit /b 1
+    0x20000 "%BUILD_DIR%\furi_esp32.bin" || exit /b 1
 
 echo.
 echo Built: %BUILD_DIR%\%OUTNAME%
-echo   assets.tar is merged at 0x820000; first boot installs it to a fresh SD card.
+echo   Firmware only. Extract sdcard.zip to the SD card by hand.
 
 if not defined PORT goto :done
 echo.

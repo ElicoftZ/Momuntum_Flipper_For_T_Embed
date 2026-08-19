@@ -1,13 +1,12 @@
-# Release table for the 16 MB T-Embed CC1101 — single firmware.
+# Release table for the 16 MB T-Embed CC1101 - single firmware, no dual boot.
 #
-# There is no second app slot: the app takes 8 MB, and `assets` takes
-# 2 MB to ship what THIS PORT ADDS to an otherwise ordinary Flipper SD card --
-# its own .fap apps, the welcome slideshow, and the folders those apps expect.
-# Not a whole card image: a user flashing this already has a card layout, so
-# only the delta needs to travel in the firmware.
+# Firmware only. The SD card is set up by hand from sdcard.zip, so nothing is
+# carried in flash for it: no `assets` partition, and the merged image is just
+# bootloader + table + app. That keeps the download and the flash small.
 #
-# Payload today is ~320 KB (apps 312 KB + firstboot 8 KB), so 2 MB leaves room
-# for asset packs (1.3 MB) later without another table change.
+# factory is 4 MB against a ~3.0 MB image (about 25% headroom). It was 8 MB
+# while the SD payload shipped in flash; without that there is no reason to
+# reserve space the app will not use, and everything freed goes to spiffs.
 #
 # otadata is kept even though nothing writes an OTA slot: the bootloader-level
 # escape hatch (CONFIG_BOOTLOADER_FACTORY_RESET) erases it to force factory,
@@ -17,7 +16,6 @@
 nvs,        data, nvs,       0x9000,    0x6000,
 phy_init,   data, phy,       0xf000,    0x1000,
 otadata,    data, ota,       0x10000,   0x2000,
-factory,    app,  factory,   0x20000,   0x800000,
-assets,     data, spiffs,    0x820000,  0x200000,
-coredump,   data, coredump,  0xa20000,  0x20000,
-spiffs,     data, spiffs,    0xa40000,  0x5c0000,
+factory,    app,  factory,   0x20000,   0x400000,
+coredump,   data, coredump,  0x420000,  0x20000,
+spiffs,     data, spiffs,    0x440000,  0xbc0000,
