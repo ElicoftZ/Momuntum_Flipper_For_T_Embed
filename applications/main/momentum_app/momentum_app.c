@@ -97,7 +97,6 @@ typedef enum {
     MomentumMainmenuRowAdd,
     MomentumMainmenuRowMove,
     MomentumMainmenuRowRemove,
-    MomentumMainmenuRowHideDualBoot,
 } MomentumMainmenuRow;
 
 typedef struct {
@@ -543,16 +542,6 @@ static void momentum_settings_cycle_anims_changed(VariableItem* item) {
     uint8_t index = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, momentum_cycle_anim_text[index]);
     app->settings.cycle_anims = momentum_cycle_anim_values[index];
-    app->dirty = true;
-}
-
-static void momentum_settings_hide_dualboot_changed(VariableItem* item) {
-    MomentumSettingsApp* app = variable_item_get_context(item);
-    const uint8_t index = variable_item_get_current_value_index(item);
-    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
-    /* Stored inverted from the label: the row reads "Dual Boot: Show/Hide",
-     * the setting is hide_dualboot. */
-    app->settings.hide_dualboot = (index != 0);
     app->dirty = true;
 }
 
@@ -1233,19 +1222,6 @@ static void momentum_settings_show_page(
             app);
 
         variable_item_list_add(app->variable_item_list, "Add Item", 1, NULL, app);
-
-        /* Placed on the Mainmenu page because that is what it changes: the
-         * Dual Boot entry reboots into another firmware, which is not
-         * something to leave one OK press away on a shared device. */
-        item = variable_item_list_add(
-            app->variable_item_list,
-            "Hide Dual Boot",
-            COUNT_OF(momentum_unlock_anim_text),
-            momentum_settings_hide_dualboot_changed,
-            app);
-        value_index = app->settings.hide_dualboot ? 1U : 0U;
-        variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
 
         item = variable_item_list_add(
             app->variable_item_list,

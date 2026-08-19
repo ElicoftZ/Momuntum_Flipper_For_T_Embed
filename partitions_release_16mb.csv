@@ -1,7 +1,6 @@
-# Release table for the 16 MB T-Embed CC1101 — single firmware, no dual boot.
+# Release table for the 16 MB T-Embed CC1101 — single firmware.
 #
-# ota_0 is gone: Dual Boot is disabled in public builds, so a 5 MB slot for a
-# second firmware is dead space. The app takes 8 MB of it, and `assets` takes
+# There is no second app slot: the app takes 8 MB, and `assets` takes
 # 2 MB to ship what THIS PORT ADDS to an otherwise ordinary Flipper SD card --
 # its own .fap apps, the welcome slideshow, and the folders those apps expect.
 # Not a whole card image: a user flashing this already has a card layout, so
@@ -13,10 +12,6 @@
 # otadata is kept even though nothing writes an OTA slot: the bootloader-level
 # escape hatch (CONFIG_BOOTLOADER_FACTORY_RESET) erases it to force factory,
 # and an absent/erased otadata boots factory anyway. 8 KB is not worth the risk.
-#
-# For a dual-boot build, point CONFIG_PARTITION_TABLE_CUSTOM_FILENAME back at
-# partitions_singleapp_16mb.csv — that one MUST stay byte-identical to
-# Bruce-Firmware/custom_16Mb_dualboot.csv.
 #
 # Name,     Type, SubType,  Offset,    Size,     Flags
 nvs,        data, nvs,       0x9000,    0x6000,

@@ -188,19 +188,22 @@ The tests cover defaults, sanitizing, asset pack name safety, animation speed an
 Run from the repository root:
 
 ```bat
-build_merged_t_embed_cc1101.bat
+build_variant.bat
 ```
 
 The result is:
 
 ```text
-build_t_embed\momentum_t_embed_cc1101_merged.bin
+build_t_embed_release\momentum_t_embed_RELEASE.bin
 ```
+
+This carries the bootloader, partition table, firmware, and the SD payload the
+firmware installs to a fresh card on first boot.
 
 To build and immediately flash a connected board, pass its serial port:
 
 ```bat
-build_merged_t_embed_cc1101.bat COM14
+build_variant.bat COM14
 ```
 
 The script is fixed to ESP32-S3, 16 MB flash, and `lilygo_t_embed_cc1101`; it does not offer or build another board. CMake also rejects any other `FLIPPER_BOARD` while this target-specific port is active.

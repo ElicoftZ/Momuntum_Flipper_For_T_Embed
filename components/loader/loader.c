@@ -392,18 +392,6 @@ static bool loader_do_is_locked(Loader* loader) {
     return loader->app.thread != NULL;
 }
 
-/** True for the Dual Boot app by menu name or by .fap path, since it can be
- * reached either way. */
-static bool loader_name_is_dualboot(const char* name) {
-    if(!name) return false;
-    if(strcmp(name, "Dual Boot") == 0) return true;
-    if(strcmp(name, "dualboot") == 0) return true;
-    /* Path form: match the basename so any apps dir is covered. */
-    const char* base = strrchr(name, '/');
-    base = base ? base + 1 : name;
-    return strcmp(base, "dualboot.fap") == 0;
-}
-
 static LoaderMessageLoaderStatusResult loader_do_start_by_name(
     Loader* loader,
     const char* name,
@@ -423,21 +411,6 @@ static LoaderMessageLoaderStatusResult loader_do_start_by_name(
                 furi_string_set(error_message, "Loader is locked");
             }
             FURI_LOG_E(TAG, "Loader is locked");
-            break;
-        }
-
-        /* Hiding Dual Boot has to mean unreachable, not merely absent from
-         * the menu: it is still on the card as a .fap and still launchable by
-         * name or path from the file browser, a favourite, an RPC call or a
-         * saved menu. One OK press reboots the board into another firmware,
-         * so for a public build the menu filter alone is not enough. This is
-         * the single choke point every launch goes through. */
-        if(momentum_settings.hide_dualboot && loader_name_is_dualboot(name)) {
-            status.value = LoaderStatusErrorUnknownApp;
-            if(error_message) {
-                furi_string_set(error_message, "Dual Boot is disabled in settings");
-            }
-            FURI_LOG_W(TAG, "blocked hidden app: %s", name);
             break;
         }
 

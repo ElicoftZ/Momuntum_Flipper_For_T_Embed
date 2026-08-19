@@ -83,18 +83,8 @@ _board = os.environ.get("FLIPPER_BOARD", "")
 _boards_without_nfc = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
 _boards_without_ir = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
 
-# Public release builds leave Dual Boot out of the image entirely. Hiding it in
-# settings is right for a personal build, but a released firmware should not
-# carry an app that reboots the board into other firmware at all -- and the
-# release partition table has no ota_0 for it to target anyway.
-_release_build = os.environ.get("MOMENTUM_RELEASE_BUILD", "") not in ("", "0")
-
 if _board == "lilygo_t_embed_cc1101":
     APPS.append("momentum_app")
-    if not _release_build:
-        # Dual boot needs the ota_0 slot from the T-Embed's partition table; the
-        # app also checks for it at runtime and says so if it is missing.
-        APPS.append("dualboot")
 
 # Wolf3D shares Doom's requirements (PSRAM, ST7789 320xN, I2S speaker).
 # Doom läuft ebenfalls nur auf T-Embed (PSRAM + 16 MB Flash) — wird aber als

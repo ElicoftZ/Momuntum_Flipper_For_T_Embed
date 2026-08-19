@@ -207,13 +207,6 @@ void loader_menu_free_fap_icon(const Icon* icon) {
 
 /* Index of the pinned app in FLIPPER_EXTERNAL_APPS, or the count if this build
  * does not include it. */
-/* Dual Boot is hideable from Momentum settings: it reboots the board into
- * another firmware, which is not something everyone wants one OK press away
- * on a device they hand to someone else. */
-static bool loader_menu_entry_hidden(const char* name) {
-    return momentum_settings.hide_dualboot && name && strcmp(name, "Dual Boot") == 0;
-}
-
 static size_t loader_menu_pinned_index(void) {
     for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
         if(!strcmp(FLIPPER_EXTERNAL_APPS[i].path, MAINMENU_PINNED_APPID)) return i;
@@ -272,7 +265,6 @@ static void loader_menu_find_add_app(
     for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
         if(i == pinned) continue;
         /* A saved custom menu must not resurrect a hidden entry. */
-        if(loader_menu_entry_hidden(FLIPPER_EXTERNAL_APPS[i].name)) continue;
         if(furi_string_equal(line, FLIPPER_EXTERNAL_APPS[i].name)) {
             loader_menu_add_app_entry(
                 app,
@@ -293,7 +285,6 @@ static void loader_menu_build_default(LoaderMenuApp* app, size_t pinned) {
     }
     for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
         if(i == pinned) continue;
-        if(loader_menu_entry_hidden(FLIPPER_EXTERNAL_APPS[i].name)) continue;
         loader_menu_add_app_entry(
             app,
             FLIPPER_EXTERNAL_APPS[i].name,

@@ -16,7 +16,6 @@
 //   Mesh: Off/Master/Client    cycle the mesh role
 //   Mesh Clients   open the discovery/pairing scene          [Master only]
 //   Wake           hold the backlight on, suppress deep sleep
-//   Dual Boot      hand off to the firmware in ota_0        [dual-boot only]
 
 typedef struct {
     const char* label;
@@ -30,10 +29,10 @@ static uint8_t s_item_count = 0;
 #define LOCK_MENU_VISIBLE 3
 static uint8_t s_top = 0; // index of the first visible item
 
-/* Transient message drawn over the menu and cleared by any key. Used when Dual
- * Boot is pressed with nothing installed in ota_0, which otherwise fails
- * silently. A Popup would need its own scene and DialogEx needs Left/Right,
- * which this board cannot produce -- but this view already owns its drawing. */
+/* Transient message drawn over the menu and cleared by any key, for actions
+ * that would otherwise fail silently. A Popup would need its own scene and
+ * DialogEx needs Left/Right, which this board cannot produce -- but this view
+ * already owns its drawing. */
 #define LOCK_MENU_MESSAGE_LEN 40
 static char s_message[LOCK_MENU_MESSAGE_LEN];
 static char s_hint[LOCK_MENU_MESSAGE_LEN];
@@ -52,8 +51,7 @@ static void lock_menu_build_items(
     bool usb_available,
     bool qflipper_on,
     bool bt_on,
-    bool wake_on,
-    bool dualboot_available) {
+    bool wake_on) {
     s_item_count = 0;
 
     if(usb_available) {
@@ -73,14 +71,6 @@ static void lock_menu_build_items(
     /* Wake mode holds the backlight on and stops the idle dim and deep sleep. */
     s_items[s_item_count++] = (LockMenuItem){
         wake_on ? "Wake: ON" : "Wake: OFF", DesktopLockMenuEventWakeToggle};
-
-    /* Quick hand-off to whatever firmware currently occupies ota_0 -- named
-     * generically because the Dual Boot app can swap that occupant. Only
-     * offered when the slot exists, so a single-app build never shows a row
-     * that cannot work. */
-    if(dualboot_available) {
-        s_items[s_item_count++] = (LockMenuItem){"Dual Boot", DesktopLockMenuEventDualBoot};
-    }
 }
 
 void desktop_lock_menu_set_callback(
@@ -119,9 +109,8 @@ void desktop_lock_menu_set_states(
     bool usb_available,
     bool qflipper_on,
     bool bt_on,
-    bool wake_on,
-    bool dualboot_available) {
-    lock_menu_build_items(usb_available, qflipper_on, bt_on, wake_on, dualboot_available);
+    bool wake_on) {
+    lock_menu_build_items(usb_available, qflipper_on, bt_on, wake_on);
     /* Index nicht resetten — Caller (refresh nach Toggle) erwartet, dass die
      * Selektion stehen bleibt; bei out-of-range clampen wir, damit der Wechsel
      * vom Master- in den Off-Modus (verliert "Mesh Clients") nicht ins Leere
