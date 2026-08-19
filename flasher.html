@@ -143,7 +143,7 @@ const LOCAL_FW = 'firmware/momentum_t_embed_RELEASE.bin';
 const $ = id => document.getElementById(id);
 const logEl = $('log'), bar = $('bar'), pct = $('pct'), phase = $('phase');
 
-let firmwareUrl = null, port = null, transport = null;
+let firmwareUrl = null, firmwareSize = 0, port = null, transport = null;
 
 function log(s){
   const atEnd = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
@@ -180,6 +180,7 @@ async function loadRelease(){
       return;
     }
     firmwareUrl = LOCAL_FW;
+    firmwareSize = bin.size;
 
     body.innerHTML =
       '<div class="row"><span class="badge">' + rel.tag_name + '</span>' +
@@ -198,13 +199,6 @@ async function loadRelease(){
           '<span class="err">Firmware is not hosted on this site yet.</span> ' +
           '<a href="' + bin.browser_download_url + '">Download it</a> and flash manually.</div>';
         return;
-      }
-      const hosted = +h.headers.get('content-length');
-      if(hosted && bin.size && hosted !== bin.size){
-        $('relBody').innerHTML += '<div class="note" style="margin-top:8px">' +
-          '<span class="err">The hosted image does not match the latest release</span> (' +
-          (hosted/1048576).toFixed(2) + ' MB vs ' + (bin.size/1048576).toFixed(2) +
-          ' MB) and may be out of date.</div>';
       }
     }catch(e){ /* non-fatal: fall through and let the flash surface any error */ }
 
@@ -256,10 +250,12 @@ function binaryToStr(u8){
   return s;
 }
 
-async function download(url, onPct){
+async function download(url, expected, onPct){
   const r = await fetch(url);
   if(!r.ok) throw new Error('download failed: HTTP ' + r.status);
-  const total = +r.headers.get('content-length') || 0;
+  /* Pages serves this gzipped, so content-length is the COMPRESSED size and
+     is useless for progress. Prefer the size the release reports. */
+  const total = expected || +r.headers.get('content-length') || 0;
   const reader = r.body.getReader();
   const chunks = [];
   let got = 0;
@@ -268,7 +264,7 @@ async function download(url, onPct){
     if(done) break;
     chunks.push(value);
     got += value.length;
-    if(total) onPct(Math.round(got / total * 100));
+    if(total) onPct(Math.min(100, Math.round(got / total * 100)));
   }
   const out = new Uint8Array(got);
   let o = 0;
@@ -282,11 +278,21 @@ $('btnFlash').onclick = async () => {
   try{
     phase.textContent = 'Downloading firmware...';
     logLine('[..] downloading ' + firmwareUrl.split('/').pop());
-    const image = await download(firmwareUrl, p => {
+    const image = await download(firmwareUrl, firmwareSize, p => {
       setPct(p);
       phase.textContent = 'Downloading firmware... ' + p + '%';
     });
     logLine('[ok] downloaded ' + (image.length/1048576).toFixed(2) + ' MB');
+
+    /* Refuse to write a short or truncated image to somebody's board. */
+    if(firmwareSize && image.length !== firmwareSize){
+      throw new Error('image is ' + image.length + ' bytes, expected ' + firmwareSize +
+                      ' - download incomplete, nothing was written');
+    }
+    if(image[0] !== 0xE9){
+      throw new Error('not an ESP32 image (first byte 0x' + image[0].toString(16) +
+                      ', expected 0xe9) - nothing was written');
+    }
 
     setPct(0);
     phase.textContent = 'Connecting to bootloader...';
