@@ -32,8 +32,13 @@ releases/*.zip
 # Host-side unit test build output (tests/host/run_host_tests.bat)
 build_host/
 
-# Assembled SD card payload (generated from the Momentum checkout)
-sdcard/
+# Assembled SD card payload (generated from the Momentum checkout).
+# firstboot.bin is the exception: main/CMakeLists.txt embeds it into the
+# firmware, so a fresh clone cannot build without it.
+sdcard/*
+!sdcard/dolphin/
+sdcard/dolphin/*
+!sdcard/dolphin/firstboot.bin
 
 # Release-variant build output
 build_t_embed_release/
