@@ -51,6 +51,17 @@
   .hide{display:none}
   #success{border-color:var(--ok)}
   code{font:12.5px var(--mono);background:var(--panel-2);padding:1px 5px;border-radius:4px}
+  .feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+  .feat h4{margin:0 0 7px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .feat ul{margin:0;padding-left:17px}
+  .feat li{margin:0 0 5px;font-size:13.5px;color:var(--tx-dim)}
+  .feat li b{color:var(--tx);font-weight:600}
+  details>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+  details>summary::-webkit-details-marker{display:none}
+  /* CSS-drawn caret: a glyph here rendered as tofu in some system fonts. */
+  details>summary::before{content:'';width:0;height:0;border-left:6px solid var(--tx-dim);
+    border-top:5px solid transparent;border-bottom:5px solid transparent;transition:transform .15s}
+  details[open]>summary::before{transform:rotate(90deg)}
 </style>
 </head>
 <body>
@@ -115,6 +126,73 @@
     </div>
   </div>
 
+
+  <div class="card">
+    <details open>
+      <summary><h2 style="margin:0">What this port adds</h2></summary>
+      <p class="note" style="margin:10px 0 18px">
+        On top of the <a href="https://github.com/Sor3nt/Flipper-Zero-ESP32-Port" target="_blank"
+        rel="noopener">Flipper Zero ESP32 port</a>, which already provides NFC, Sub-GHz, Infrared,
+        125&nbsp;kHz RFID, Bad USB, WiFi, NRF24, BLE Spam, Archive and Clock. Everything below is new here.
+      </p>
+
+      <div class="feat">
+        <div>
+          <h4>Momentum</h4>
+          <ul>
+            <li><b>Momentum settings app</b> &mdash; 12 pages, 29 settings, one source of truth</li>
+            <li><b>Asset packs</b> &mdash; swap the whole icon and font set from the card</li>
+            <li><b>9 main-menu styles</b>, plus a menu editor to add, remove and reorder entries</li>
+            <li><b>Lockscreen customisation</b> &mdash; time, date, seconds, statusbar, prompt, transparency</li>
+            <li><b>Lock on boot</b> and locked USB / BLE RPC toggles</li>
+            <li><b>Dolphin XP and mood editor</b>, sad timer, unlocked animations</li>
+            <li><b>Passport</b> on a double Back press</li>
+            <li><b>Statusbar and file-browser</b> options, dark mode</li>
+            <li><b>Device name editor</b></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4>Built for this board</h4>
+          <ul>
+            <li><b>Rotation-only navigation</b> &mdash; every menu, the number keyboard and the infrared
+                button panels reworked for a wheel and three buttons, no D-pad</li>
+            <li><b>Bluetooth clock sync</b> &mdash; the board has no battery-backed RTC, so it reads the
+                time from a bonded phone</li>
+            <li><b>Backup and restore</b> of settings and Bluetooth bonds</li>
+            <li><b>Idle dim and deep sleep</b>, returning to the app you were in</li>
+            <li><b>Wake mode</b> in the lock menu</li>
+            <li><b>Automatic SD setup</b> &mdash; a fresh card is populated on first boot</li>
+            <li><b>Welcome slideshow</b> built into the firmware</li>
+          </ul>
+        </div>
+
+        <div>
+          <h4>New apps</h4>
+          <ul>
+            <li><b>Power Profiler</b> with a live battery page</li>
+            <li><b>Backup Settings</b></li>
+            <li><b>Audio suite</b> on the onboard mic &mdash; level meter, logger, sonar, waterfall,
+                tone generator, ultrasonic, voice notes</li>
+            <li><b>Tools</b> &mdash; analog clock, Caesar cipher, counter, multi-counter, pomodoro,
+                text viewer, VIN decoder, Ford radio code, trackerflipx</li>
+            <li><b>Tetris</b></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4>Protocol additions</h4>
+          <ul>
+            <li><b>Sub-GHz</b> &mdash; Allstar Firefly and Nord Ice, plus extended range and an
+                editable frequency list</li>
+            <li><b>NFC</b> &mdash; SZPPK, SK and SEVPPK transit parsers</li>
+            <li><b>Infrared</b> &mdash; Blu-ray, monitor and digital-sign universal remotes</li>
+            <li><b>BLE Spam</b> &mdash; name flood and Lovespouse payloads</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </div>
   <div class="card">
     <h2>Serial output</h2>
     <pre id="log">Waiting&hellip;</pre>
