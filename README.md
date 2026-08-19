@@ -20,7 +20,7 @@ slot and no dual boot.
 ## Flash it
 
 ```bat
-build_variant.bat COM4
+build_variant.bat [Place COM here where T embed is]
 ```
 
 That produces `build_t_embed_release\momentum_t_embed_RELEASE.bin` and writes
