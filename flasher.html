@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Momentum T-Embed Web Flasher</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel-2:#1c2333; --line:#30363d;
+    --tx:#e6edf3; --tx-dim:#8b949e; --accent:#f4a72c; --accent-dim:#8a5e12;
+    --ok:#3fb950; --err:#f85149;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:820px;margin:0 auto;padding:32px 20px 64px}
+  header{text-align:center;margin-bottom:28px}
+  h1{margin:0 0 6px;font-size:26px;letter-spacing:-.02em}
+  h2{font-size:16px;margin:0 0 12px}
+  .sub{color:var(--tx-dim);font-size:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .grow{flex:1;min-width:0}
+  button{font:600 14px/1 inherit;padding:11px 18px;border-radius:8px;border:1px solid transparent;
+         background:var(--accent);color:#1b1200;cursor:pointer}
+  button:hover:not(:disabled){filter:brightness(1.08)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.ghost{background:transparent;border-color:var(--line);color:var(--tx)}
+  .step{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
+  .step:first-of-type{border-top:0}
+  .dot{flex:none;width:24px;height:24px;border-radius:50%;background:var(--panel-2);
+       border:1px solid var(--line);display:grid;place-items:center;font-size:12px;color:var(--tx-dim)}
+  .step.active .dot{background:var(--accent);color:#1b1200;border-color:var(--accent)}
+  .step.done .dot{background:var(--ok);color:#04260c;border-color:var(--ok)}
+  .step h3{margin:2px 0 2px;font-size:15px}
+  .step p{margin:0;color:var(--tx-dim);font-size:13.5px}
+  .bar{height:10px;background:var(--panel-2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent-dim),var(--accent));
+         transition:width .18s ease}
+  .pct{font:600 13px var(--mono);color:var(--tx-dim);min-width:44px;text-align:right}
+  pre#log{margin:0;padding:12px;background:#0a0d12;border:1px solid var(--line);border-radius:8px;
+          font:12px/1.5 var(--mono);color:#c9d1d9;height:220px;overflow:auto;
+          white-space:pre-wrap;word-break:break-word}
+  .note{font-size:13px;color:var(--tx-dim)}
+  .err{color:var(--err)}
+  .ok{color:var(--ok)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:99px;background:var(--panel-2);
+         border:1px solid var(--line);font:600 12px var(--mono);color:var(--tx-dim)}
+  a{color:var(--accent)}
+  .hide{display:none}
+  #success{border-color:var(--ok)}
+  code{font:12.5px var(--mono);background:var(--panel-2);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Momentum Web Flasher</h1>
+    <div class="sub">LilyGo T-Embed CC1101 &middot; flashes the latest release straight from GitHub</div>
+  </header>
+
+  <div class="card">
+    <h2>Latest release</h2>
+    <div id="relBody" class="note">Checking GitHub&hellip;</div>
+  </div>
+
+  <div class="card">
+    <div class="step" id="s1">
+      <div class="dot">1</div>
+      <div class="grow">
+        <h3>Connect your T-Embed</h3>
+        <p>Plug it in over USB-C, then pick the serial port in the browser prompt.</p>
+        <div class="row" style="margin-top:10px">
+          <button id="btnConnect" disabled>Connect to T-Embed</button>
+          <span id="connState" class="note"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step" id="s2">
+      <div class="dot">2</div>
+      <div class="grow">
+        <h3>Flash</h3>
+        <p>Downloads the release image and writes it to the board. Takes a few minutes &mdash; do not unplug it.</p>
+        <div class="row" style="margin-top:10px">
+          <button id="btnFlash" disabled>Flash firmware</button>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div class="bar grow"><i id="bar"></i></div>
+          <div class="pct" id="pct">0%</div>
+        </div>
+        <div class="note" id="phase" style="margin-top:6px">Idle</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card hide" id="success">
+    <h2 class="ok">&#10003; Successfully flashed</h2>
+    <p class="note" style="margin-top:0">The board has rebooted into Momentum. One more step for a working setup:</p>
+    <div class="step" style="border-top:1px solid var(--line)">
+      <div class="dot">3</div>
+      <div class="grow">
+        <h3>Set up the SD card</h3>
+        <p>
+          Put a <b>FAT32</b> card in the board and it installs this port's own apps on first boot.
+          For the full content &mdash; infrared, NFC, SubGHz and RFID databases, dolphin animations
+          and asset packs &mdash; download <code>sdcard.zip</code> and extract it to the root of the card.
+        </p>
+        <div class="row" style="margin-top:10px">
+          <a id="btnSd" href="#"><button>Download sdcard.zip</button></a>
+          <span class="note" id="sdNote"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Serial output</h2>
+    <pre id="log">Waiting&hellip;</pre>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="btnClear">Clear</button>
+      <span class="note">Live esptool output while flashing.</span>
+    </div>
+  </div>
+
+  <p class="note" style="text-align:center">
+    Needs Chrome, Edge or Opera (Web Serial). Firefox and Safari cannot flash.
+    Flashing clears saved settings and Bluetooth bonds.
+  </p>
+</div>
+
+<script type="module">
+import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+
+const REPO = 'ElicoftZ/Momuntum_Flipper_For_T_Embed';
+
+const $ = id => document.getElementById(id);
+const logEl = $('log'), bar = $('bar'), pct = $('pct'), phase = $('phase');
+
+let firmwareUrl = null, port = null, transport = null;
+
+function log(s){
+  const atEnd = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
+  logEl.textContent += s;
+  if(atEnd) logEl.scrollTop = logEl.scrollHeight;
+}
+const logLine = s => log(s + '\n');
+function setPct(p){ bar.style.width = p + '%'; pct.textContent = p + '%'; }
+function stepState(id, cls){
+  const e = $(id);
+  e.classList.remove('active','done');
+  if(cls) e.classList.add(cls);
+}
+
+/* ------------------------------------------------------------- release ---*/
+async function loadRelease(){
+  const body = $('relBody');
+  try{
+    const r = await fetch('https://api.github.com/repos/' + REPO + '/releases/latest',
+                          {headers:{Accept:'application/vnd.github+json'}});
+    if(r.status === 404){
+      body.innerHTML = '<span class="err">No published release yet.</span><br>' +
+        '<span class="note">A draft release stays invisible to this page until it is published on GitHub.</span>';
+      return;
+    }
+    if(!r.ok) throw new Error('GitHub API ' + r.status);
+    const rel = await r.json();
+
+    const bin = rel.assets.find(a => /\.bin$/i.test(a.name));
+    const sd  = rel.assets.find(a => /^sdcard.*\.zip$/i.test(a.name));
+
+    if(!bin){
+      body.innerHTML = '<span class="err">Release ' + rel.tag_name + ' has no .bin asset attached.</span>';
+      return;
+    }
+    firmwareUrl = bin.browser_download_url;
+
+    body.innerHTML =
+      '<div class="row"><span class="badge">' + rel.tag_name + '</span>' +
+      '<span class="grow">' + (rel.name || '') + '</span></div>' +
+      '<div class="note" style="margin-top:8px">' + bin.name + ' &middot; ' +
+      (bin.size/1048576).toFixed(2) + ' MB &middot; published ' +
+      new Date(rel.published_at).toLocaleDateString() + ' &middot; ' +
+      '<a href="' + rel.html_url + '" target="_blank" rel="noopener">release notes</a></div>';
+
+    if(sd){
+      $('btnSd').href = sd.browser_download_url;
+      $('sdNote').textContent = (sd.size/1048576).toFixed(2) + ' MB';
+    }else{
+      /* Not attached to this release: fall back to the copy tracked in the
+         repository, so the card step works either way. */
+      $('btnSd').href = 'https://github.com/' + REPO + '/raw/main/sdcard.zip';
+      $('sdNote').textContent = 'from the repository';
+    }
+
+    if(!navigator.serial){
+      $('connState').innerHTML = '<span class="err">This browser has no Web Serial support.</span>';
+    }else{
+      $('btnConnect').disabled = false;
+      stepState('s1','active');
+    }
+  }catch(e){
+    body.innerHTML = '<span class="err">Could not reach GitHub: ' + e.message + '</span>';
+  }
+}
+
+/* ------------------------------------------------------------- connect ---*/
+$('btnConnect').onclick = async () => {
+  try{
+    port = await navigator.serial.requestPort({filters:[{usbVendorId:0x303A}]});
+    transport = new Transport(port, true);
+    $('connState').innerHTML = '<span class="ok">Port selected.</span>';
+    $('btnConnect').disabled = true;
+    $('btnFlash').disabled = false;
+    stepState('s1','done');
+    stepState('s2','active');
+    logLine('[ok] serial port selected');
+  }catch(e){
+    $('connState').innerHTML = e.name === 'NotFoundError'
+      ? '<span class="note">No port chosen.</span>'
+      : '<span class="err">' + e.message + '</span>';
+  }
+};
+
+/* --------------------------------------------------------------- flash ---*/
+/* esptool-js takes a latin1 binary string, not a typed array. */
+function binaryToStr(u8){
+  let s = '';
+  const CH = 0x8000;
+  for(let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+  return s;
+}
+
+async function download(url, onPct){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('download failed: HTTP ' + r.status);
+  const total = +r.headers.get('content-length') || 0;
+  const reader = r.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for(;;){
+    const {done, value} = await reader.read();
+    if(done) break;
+    chunks.push(value);
+    got += value.length;
+    if(total) onPct(Math.round(got / total * 100));
+  }
+  const out = new Uint8Array(got);
+  let o = 0;
+  for(const c of chunks){ out.set(c, o); o += c.length; }
+  return out;
+}
+
+$('btnFlash').onclick = async () => {
+  $('btnFlash').disabled = true;
+  logEl.textContent = '';
+  try{
+    phase.textContent = 'Downloading firmware...';
+    logLine('[..] downloading ' + firmwareUrl.split('/').pop());
+    const image = await download(firmwareUrl, p => {
+      setPct(p);
+      phase.textContent = 'Downloading firmware... ' + p + '%';
+    });
+    logLine('[ok] downloaded ' + (image.length/1048576).toFixed(2) + ' MB');
+
+    setPct(0);
+    phase.textContent = 'Connecting to bootloader...';
+    const esploader = new ESPLoader({
+      transport, baudrate:460800, romBaudrate:115200,
+      terminal:{ clean(){ logEl.textContent = ''; }, writeLine(d){ logLine(d); }, write(d){ log(d); } },
+    });
+    const chip = await esploader.main();
+    logLine('[ok] detected ' + chip);
+    await esploader.flashId();
+
+    phase.textContent = 'Writing flash...';
+    await esploader.writeFlash({
+      fileArray:[{data: binaryToStr(image), address: 0x0}],
+      flashSize:'16MB', flashMode:'dio', flashFreq:'80m',
+      eraseAll:false, compress:true,
+      reportProgress:(i, written, total) => {
+        const p = Math.round(written / total * 100);
+        setPct(p);
+        phase.textContent = 'Writing flash... ' + p + '%';
+      },
+    });
+
+    setPct(100);
+    phase.textContent = 'Resetting...';
+    await transport.setDTR(false);
+    await transport.setRTS(true);
+    await new Promise(r => setTimeout(r, 120));
+    await transport.setRTS(false);
+
+    logLine('[ok] flash complete, device reset');
+    phase.innerHTML = '<span class="ok">Successfully flashed.</span>';
+    stepState('s2','done');
+    $('success').classList.remove('hide');
+    $('success').scrollIntoView({behavior:'smooth', block:'nearest'});
+  }catch(e){
+    logLine('[!!] ' + e.message);
+    phase.innerHTML = '<span class="err">Failed: ' + e.message + '</span>';
+    $('btnFlash').disabled = false;
+  }
+};
+
+$('btnClear').onclick = () => { logEl.textContent = ''; };
+
+loadRelease();
+</script>
+</body>
+</html>
