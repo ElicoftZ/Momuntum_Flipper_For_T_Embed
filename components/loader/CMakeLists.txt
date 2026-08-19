@@ -5,5 +5,5 @@ idf_component_register(
         "loader_applications.c"
         "apps/about_app.c"
     INCLUDE_DIRS "."
-    REQUIRES furi gui toolbox assets storage archive dialogs flipper_application
+    REQUIRES furi furi_hal gui toolbox assets storage archive dialogs flipper_application
 )

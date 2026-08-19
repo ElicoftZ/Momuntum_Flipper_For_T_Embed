@@ -1,8 +1,8 @@
 #include "findmy_state.h"
+#include <furi.h>
 #include <furi_hal.h>
 #include <bt/bt_service/bt.h>
 #include <storage/storage.h>
-#include <toolbox/run_parallel.h>
 
 #define TAG "FindMyStartup"
 
@@ -26,12 +26,30 @@ static int32_t findmy_startup_apply(void* context) {
     return 0;
 }
 
+static void findmy_startup_thread_state_callback(
+    FuriThread* thread,
+    FuriThreadState state,
+    void* context) {
+    UNUSED(context);
+
+    if(state == FuriThreadStateStopped) {
+        furi_thread_free(thread);
+    }
+}
+
+static void findmy_startup_apply_async(void) {
+    FuriThread* thread =
+        furi_thread_alloc_ex("FindMyStartup", 2048, findmy_startup_apply, NULL);
+    furi_thread_set_state_callback(thread, findmy_startup_thread_state_callback);
+    furi_thread_start(thread);
+}
+
 static void findmy_startup_mount_callback(const void* message, void* context) {
     UNUSED(context);
     const StorageEvent* event = message;
 
     if(event->type == StorageEventTypeCardMount) {
-        run_parallel(findmy_startup_apply, NULL, 2048);
+        findmy_startup_apply_async();
     }
 }
 

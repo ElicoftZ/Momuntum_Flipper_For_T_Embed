@@ -1,7 +1,12 @@
 #include <furi.h>
 #include <furi_hal.h>
+#include <applications.h>
+#include <assets_icons.h>
 #include <desktop/desktop.h>
+#include <desktop/views/desktop_view_slideshow.h>
+#include <dialogs/dialogs.h>
 #include <dolphin/dolphin.h>
+#include <flipper_application/flipper_application.h>
 #include <dolphin/dolphin_i.h>
 #include <dolphin/helpers/dolphin_state.h>
 #include <gui/gui.h>
@@ -11,11 +16,15 @@
 #include <gui/modules/variable_item_list.h>
 #include <flipper_format/flipper_format.h>
 #include <gui/view_dispatcher.h>
+/* Resolves to components/loader, which is the loader that this build compiles;
+ * applications/services/loader is a second, uncompiled copy. */
+#include <loader/loader_menu.h>
 #include <momentum/momentum.h>
 #include <namechanger/namechanger.h>
 #include <power/power_service/power.h>
 #include <storage/storage.h>
 #include <subghz/subghz_extended_range.h>
+#include <toolbox/stream/file_stream.h>
 #include <toolbox/value_index.h>
 #include <toolbox/name_generator.h>
 
@@ -28,8 +37,17 @@
 #define MOMENTUM_MAX_SELECTABLE_PACKS 254U
 #define MOMENTUM_DIRECTORY_NAME_SIZE  256U
 #define MOMENTUM_MAX_USER_FREQS       24U
+#define MOMENTUM_MAX_MAINMENU_ITEMS   64U
 #define MOMENTUM_DOLPHIN_XP_MAX       9999U
 #define MOMENTUM_DOLPHIN_BUTTHURT_MAX 14
+/* Embedded in the firmware image (main/CMakeLists.txt EMBED_FILES), so the
+ * intro works on a card that has never seen this firmware. A copy on the SD
+ * card still wins when present, which keeps the slideshow replaceable
+ * without a rebuild. */
+extern const uint8_t firstboot_bin_start[] asm("_binary_firstboot_bin_start");
+extern const uint8_t firstboot_bin_end[] asm("_binary_firstboot_bin_end");
+
+#define MOMENTUM_INTRO_PATH           EXT_PATH("dolphin/firstboot.bin")
 #define MOMENTUM_SUBGHZ_USER_SETTINGS EXT_PATH("subghz/assets/setting_user")
 /* Mirrors the private constants in lib/subghz/subghz_setting.c, which are not
  * exported by its header. They must stay in step with it. */
@@ -42,12 +60,14 @@ typedef enum {
     MomentumSettingsViewTextInput,
     MomentumSettingsViewFreqList,
     MomentumSettingsViewNumberInput,
+    MomentumSettingsViewMainmenu,
 } MomentumSettingsView;
 
 typedef enum {
     MomentumSettingsPageRoot,
     MomentumSettingsPageInterface,
     MomentumSettingsPageGraphics,
+    MomentumSettingsPageMainmenu,
     MomentumSettingsPageLockscreen,
     MomentumSettingsPageStatusbar,
     MomentumSettingsPageFileBrowser,
@@ -60,16 +80,38 @@ typedef enum {
     MomentumSettingsPageCount,
 } MomentumSettingsPage;
 
+/* The Mainmenu page borrows one Submenu for three screens, the way the
+ * frequency list does, rather than allocating a view per screen. */
+typedef enum {
+    MomentumMainmenuScreenAddSource,
+    MomentumMainmenuScreenAddBuiltin,
+    MomentumMainmenuScreenResetConfirm,
+} MomentumMainmenuScreen;
+
+/* Rows of the Mainmenu page, which the enter handler and the post-edit refresh
+ * both index into. */
+typedef enum {
+    MomentumMainmenuRowMenuStyle,
+    MomentumMainmenuRowReset,
+    MomentumMainmenuRowItem,
+    MomentumMainmenuRowAdd,
+    MomentumMainmenuRowMove,
+    MomentumMainmenuRowRemove,
+    MomentumMainmenuRowHideDualBoot,
+} MomentumMainmenuRow;
+
 typedef struct {
     Gui* gui;
     Storage* storage;
     Desktop* desktop;
     Power* power;
     Dolphin* dolphin;
+    DialogsApp* dialogs;
     ViewDispatcher* view_dispatcher;
     VariableItemList* variable_item_list;
     Submenu* asset_pack_submenu;
     Submenu* freq_submenu;
+    Submenu* mainmenu_submenu;
     TextInput* text_input;
     NumberInput* number_input;
     VariableItem* asset_pack_item;
@@ -95,6 +137,19 @@ typedef struct {
     uint32_t subghz_static_freqs[MOMENTUM_MAX_USER_FREQS];
     uint32_t subghz_hopper_freqs[MOMENTUM_MAX_USER_FREQS];
     char device_name[FURI_HAL_VERSION_ARRAY_NAME_LENGTH];
+    /* labels are what the page shows, lines are what gets written back. They
+     * differ only for file entries, where the label is the FAP manifest name
+     * and the line is the path. */
+    char* mainmenu_labels[MOMENTUM_MAX_MAINMENU_ITEMS];
+    char* mainmenu_lines[MOMENTUM_MAX_MAINMENU_ITEMS];
+    uint8_t mainmenu_count;
+    uint8_t mainmenu_index;
+    bool mainmenu_dirty;
+    bool reboot_for_intro;
+    MomentumMainmenuScreen mainmenu_screen;
+    /* variable_item_set_item_label() keeps the pointer it is given rather than
+     * copying, so the "Item n/m" text has to outlive the call. */
+    char mainmenu_item_label[24];
 } MomentumSettingsApp;
 
 static const uint32_t momentum_anim_speed_values[] = {
@@ -233,6 +288,10 @@ static void momentum_settings_show_freq_list(MomentumSettingsApp* app);
 static void momentum_settings_use_defaults_changed(VariableItem* item);
 static void momentum_settings_butthurt_changed(VariableItem* item);
 static void momentum_settings_number_done(void* context, int32_t number);
+static void momentum_settings_mainmenu_show_reset(MomentumSettingsApp* app);
+static void momentum_settings_mainmenu_show_add_source(MomentumSettingsApp* app);
+static void momentum_settings_mainmenu_remove(MomentumSettingsApp* app, uint8_t index);
+static void momentum_settings_mainmenu_refresh(MomentumSettingsApp* app);
 
 static bool momentum_settings_add_asset_pack(MomentumSettingsApp* app, const char* name) {
     furi_assert(app);
@@ -372,16 +431,29 @@ static void momentum_settings_list_enter(void* context, uint32_t index) {
                 app->view_dispatcher, MomentumSettingsPageGraphics);
         } else if(index == 1U) {
             view_dispatcher_send_custom_event(
-                app->view_dispatcher, MomentumSettingsPageLockscreen);
+                app->view_dispatcher, MomentumSettingsPageMainmenu);
         } else if(index == 2U) {
             view_dispatcher_send_custom_event(
-                app->view_dispatcher, MomentumSettingsPageStatusbar);
+                app->view_dispatcher, MomentumSettingsPageLockscreen);
         } else if(index == 3U) {
             view_dispatcher_send_custom_event(
-                app->view_dispatcher, MomentumSettingsPageFileBrowser);
+                app->view_dispatcher, MomentumSettingsPageStatusbar);
         } else if(index == 4U) {
             view_dispatcher_send_custom_event(
+                app->view_dispatcher, MomentumSettingsPageFileBrowser);
+        } else if(index == 5U) {
+            view_dispatcher_send_custom_event(
                 app->view_dispatcher, MomentumSettingsPageGeneral);
+        }
+    } else if(app->current_page == MomentumSettingsPageMainmenu) {
+        if(index == MomentumMainmenuRowReset) {
+            momentum_settings_mainmenu_show_reset(app);
+        } else if(index == MomentumMainmenuRowAdd) {
+            momentum_settings_mainmenu_show_add_source(app);
+        } else if(index == MomentumMainmenuRowRemove && app->mainmenu_count) {
+            momentum_settings_mainmenu_remove(app, app->mainmenu_index);
+            app->mainmenu_dirty = true;
+            momentum_settings_mainmenu_refresh(app);
         }
     } else if(app->current_page == MomentumSettingsPageGraphics && index == 0U) {
         submenu_set_selected_item(
@@ -412,6 +484,37 @@ static void momentum_settings_list_enter(void* context, uint32_t index) {
         } else if(index == 3U) {
             view_dispatcher_send_custom_event(
                 app->view_dispatcher, MomentumSettingsPageDolphin);
+        } else if(index == 4U) {
+            /* The desktop only looks for the slideshow while it is starting up,
+             * so the intro needs a reboot to play. Stopping the dispatcher
+             * rather than rebooting here lets the normal exit path save
+             * everything else the user changed first. */
+            bool staged = false;
+
+            /* A slideshow the user dropped on the card wins over the built-in
+               one, so this stays customisable. */
+            if(storage_file_exists(app->storage, MOMENTUM_INTRO_PATH)) {
+                storage_common_remove(app->storage, SLIDESHOW_FS_PATH);
+                staged = storage_common_copy(
+                             app->storage, MOMENTUM_INTRO_PATH, SLIDESHOW_FS_PATH) == FSE_OK;
+            }
+
+            if(!staged) {
+                const size_t len = (size_t)(firstboot_bin_end - firstboot_bin_start);
+                File* out = storage_file_alloc(app->storage);
+                if(storage_file_open(out, SLIDESHOW_FS_PATH, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
+                    staged = storage_file_write(out, firstboot_bin_start, (uint16_t)len) == len;
+                }
+                storage_file_close(out);
+                storage_file_free(out);
+            }
+
+            if(staged) {
+                app->reboot_for_intro = true;
+                view_dispatcher_stop(app->view_dispatcher);
+            } else {
+                FURI_LOG_E(TAG, "could not stage the Momentum intro");
+            }
         } else if(index == 1U) {
             text_input_set_header_text(app->text_input, "Device Name (empty = default)");
             text_input_set_result_callback(
@@ -440,6 +543,16 @@ static void momentum_settings_cycle_anims_changed(VariableItem* item) {
     uint8_t index = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, momentum_cycle_anim_text[index]);
     app->settings.cycle_anims = momentum_cycle_anim_values[index];
+    app->dirty = true;
+}
+
+static void momentum_settings_hide_dualboot_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    /* Stored inverted from the label: the row reads "Dual Boot: Show/Hide",
+     * the setting is hide_dualboot. */
+    app->settings.hide_dualboot = (index != 0);
     app->dirty = true;
 }
 
@@ -692,6 +805,358 @@ static void momentum_settings_popup_overlay_changed(VariableItem* item) {
     app->dirty = true;
 }
 
+/* ---- Main menu layout ---------------------------------------------------- */
+
+static bool
+    momentum_settings_mainmenu_push(MomentumSettingsApp* app, const char* label, const char* line) {
+    if(app->mainmenu_count >= MOMENTUM_MAX_MAINMENU_ITEMS) return false;
+
+    char* label_copy = strdup(label);
+    char* line_copy = strdup(line);
+    if(!label_copy || !line_copy) {
+        free(label_copy);
+        free(line_copy);
+        return false;
+    }
+
+    app->mainmenu_labels[app->mainmenu_count] = label_copy;
+    app->mainmenu_lines[app->mainmenu_count] = line_copy;
+    app->mainmenu_count++;
+    return true;
+}
+
+/* The pinned app is always in the menu and is not part of the editable list,
+ * so it is skipped wherever the built-in apps are enumerated. */
+static bool momentum_settings_mainmenu_is_pinned(size_t index) {
+    return !strcmp(FLIPPER_EXTERNAL_APPS[index].path, MAINMENU_PINNED_APPID);
+}
+
+static void momentum_settings_mainmenu_load_defaults(MomentumSettingsApp* app) {
+    for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
+        momentum_settings_mainmenu_push(app, FLIPPER_APPS[i].name, FLIPPER_APPS[i].name);
+    }
+    for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+        if(momentum_settings_mainmenu_is_pinned(i)) continue;
+        momentum_settings_mainmenu_push(
+            app, FLIPPER_EXTERNAL_APPS[i].name, FLIPPER_EXTERNAL_APPS[i].name);
+    }
+}
+
+/* Mirrors the parse in components/loader/loader_menu.c, so what this page shows
+ * is what the menu will build. */
+static void momentum_settings_mainmenu_add_line(MomentumSettingsApp* app, FuriString* line) {
+    if(furi_string_start_with(line, "/")) {
+        FuriString* label = furi_string_alloc();
+        const Icon* icon;
+        if(loader_menu_load_fap_meta(app->storage, line, label, &icon)) {
+            loader_menu_free_fap_icon(icon);
+        } else {
+            furi_string_set(label, line);
+        }
+        momentum_settings_mainmenu_push(
+            app, furi_string_get_cstr(label), furi_string_get_cstr(line));
+        furi_string_free(label);
+        return;
+    }
+
+    for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
+        if(furi_string_equal(line, FLIPPER_APPS[i].name)) {
+            momentum_settings_mainmenu_push(app, FLIPPER_APPS[i].name, FLIPPER_APPS[i].name);
+            return;
+        }
+    }
+
+    for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+        if(momentum_settings_mainmenu_is_pinned(i)) continue;
+        if(furi_string_equal(line, FLIPPER_EXTERNAL_APPS[i].name)) {
+            momentum_settings_mainmenu_push(
+                app, FLIPPER_EXTERNAL_APPS[i].name, FLIPPER_EXTERNAL_APPS[i].name);
+            return;
+        }
+    }
+}
+
+static void momentum_settings_mainmenu_clear(MomentumSettingsApp* app) {
+    for(uint8_t i = 0; i < app->mainmenu_count; i++) {
+        free(app->mainmenu_labels[i]);
+        free(app->mainmenu_lines[i]);
+    }
+    app->mainmenu_count = 0;
+}
+
+static void momentum_settings_mainmenu_load(MomentumSettingsApp* app) {
+    Stream* stream = file_stream_alloc(app->storage);
+    FuriString* line = furi_string_alloc();
+    unsigned long version;
+
+    if(file_stream_open(stream, MAINMENU_APPS_PATH, FSAM_READ, FSOM_OPEN_EXISTING) &&
+       stream_read_line(stream, line) &&
+       sscanf(furi_string_get_cstr(line), MAINMENU_APPS_HEADER_FMT, &version) == 1 &&
+       version == MAINMENU_APPS_VERSION) {
+        while(stream_read_line(stream, line)) {
+            furi_string_trim(line);
+            if(furi_string_size(line)) momentum_settings_mainmenu_add_line(app, line);
+        }
+    } else {
+        momentum_settings_mainmenu_load_defaults(app);
+    }
+
+    furi_string_free(line);
+    file_stream_close(stream);
+    stream_free(stream);
+}
+
+static void momentum_settings_mainmenu_save(MomentumSettingsApp* app) {
+    Stream* stream = file_stream_alloc(app->storage);
+
+    if(file_stream_open(stream, MAINMENU_APPS_PATH, FSAM_READ_WRITE, FSOM_CREATE_ALWAYS)) {
+        stream_write_format(stream, MAINMENU_APPS_HEADER_FMT "\n", MAINMENU_APPS_VERSION);
+        for(uint8_t i = 0; i < app->mainmenu_count; i++) {
+            stream_write_format(stream, "%s\n", app->mainmenu_lines[i]);
+        }
+    } else {
+        FURI_LOG_E(TAG, "Main menu layout could not be saved");
+    }
+
+    file_stream_close(stream);
+    stream_free(stream);
+}
+
+static void momentum_settings_mainmenu_remove(MomentumSettingsApp* app, uint8_t index) {
+    if(index >= app->mainmenu_count) return;
+
+    free(app->mainmenu_labels[index]);
+    free(app->mainmenu_lines[index]);
+
+    const size_t tail = (app->mainmenu_count - index - 1U) * sizeof(char*);
+    memmove(&app->mainmenu_labels[index], &app->mainmenu_labels[index + 1U], tail);
+    memmove(&app->mainmenu_lines[index], &app->mainmenu_lines[index + 1U], tail);
+    app->mainmenu_count--;
+}
+
+static void momentum_settings_mainmenu_swap(MomentumSettingsApp* app, uint8_t a, uint8_t b) {
+    char* label = app->mainmenu_labels[a];
+    char* line = app->mainmenu_lines[a];
+    app->mainmenu_labels[a] = app->mainmenu_labels[b];
+    app->mainmenu_lines[a] = app->mainmenu_lines[b];
+    app->mainmenu_labels[b] = label;
+    app->mainmenu_lines[b] = line;
+}
+
+/* Rewrites the rows that depend on the list after it changes, so add, remove
+ * and move do not each have to rebuild the page. */
+static void momentum_settings_mainmenu_refresh(MomentumSettingsApp* app) {
+    VariableItem* item = variable_item_list_get(app->variable_item_list, MomentumMainmenuRowItem);
+    if(!item) return;
+
+    if(app->mainmenu_count) {
+        if(app->mainmenu_index >= app->mainmenu_count) {
+            app->mainmenu_index = app->mainmenu_count - 1U;
+        }
+        snprintf(
+            app->mainmenu_item_label,
+            sizeof(app->mainmenu_item_label),
+            "Item %u/%u",
+            (unsigned)(app->mainmenu_index + 1U),
+            (unsigned)app->mainmenu_count);
+        variable_item_set_current_value_text(item, app->mainmenu_labels[app->mainmenu_index]);
+    } else {
+        app->mainmenu_index = 0;
+        snprintf(app->mainmenu_item_label, sizeof(app->mainmenu_item_label), "Item");
+        variable_item_set_current_value_text(item, "None");
+    }
+    variable_item_set_item_label(item, app->mainmenu_item_label);
+    variable_item_set_values_count(item, app->mainmenu_count);
+    variable_item_set_current_value_index(item, app->mainmenu_index);
+
+    VariableItem* move = variable_item_list_get(app->variable_item_list, MomentumMainmenuRowMove);
+    if(move) {
+        variable_item_set_locked(
+            move, app->mainmenu_count < 2U, "Need at least\ntwo items\nto move");
+    }
+}
+
+static void momentum_settings_mainmenu_item_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    app->mainmenu_index = variable_item_get_current_value_index(item);
+    momentum_settings_mainmenu_refresh(app);
+}
+
+static const char* const momentum_mainmenu_move_text[] = {
+    "Up",
+    "Move",
+    "Down",
+};
+
+static void momentum_settings_mainmenu_move_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    const uint8_t direction = variable_item_get_current_value_index(item);
+
+    if(direction == 0U && app->mainmenu_index > 0U) {
+        momentum_settings_mainmenu_swap(app, app->mainmenu_index, app->mainmenu_index - 1U);
+        app->mainmenu_index--;
+        app->mainmenu_dirty = true;
+    } else if(direction == 2U && app->mainmenu_index + 1U < app->mainmenu_count) {
+        momentum_settings_mainmenu_swap(app, app->mainmenu_index, app->mainmenu_index + 1U);
+        app->mainmenu_index++;
+        app->mainmenu_dirty = true;
+    }
+
+    /* Snaps back to the neutral value so the next turn in either direction is
+     * another single step. */
+    variable_item_set_current_value_index(item, 1U);
+    variable_item_set_current_value_text(item, momentum_mainmenu_move_text[1]);
+    momentum_settings_mainmenu_refresh(app);
+}
+
+static void momentum_settings_mainmenu_submenu_callback(void* context, uint32_t index);
+
+/* Built-in apps are offered in one flat list, so the submenu index has to map
+ * back through the same enumeration order the picker was built with. */
+static const char* momentum_settings_mainmenu_builtin_name(uint32_t index) {
+    if(index < FLIPPER_APPS_COUNT) return FLIPPER_APPS[index].name;
+
+    uint32_t remaining = index - FLIPPER_APPS_COUNT;
+    for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+        if(momentum_settings_mainmenu_is_pinned(i)) continue;
+        if(remaining == 0U) return FLIPPER_EXTERNAL_APPS[i].name;
+        remaining--;
+    }
+
+    return NULL;
+}
+
+static void momentum_settings_mainmenu_show_add_source(MomentumSettingsApp* app) {
+    app->mainmenu_screen = MomentumMainmenuScreenAddSource;
+    submenu_reset(app->mainmenu_submenu);
+    submenu_set_header(app->mainmenu_submenu, "Add Menu Item");
+    submenu_add_item(
+        app->mainmenu_submenu, "Built-in App", 0, momentum_settings_mainmenu_submenu_callback, app);
+    submenu_add_item(
+        app->mainmenu_submenu,
+        "App or Script",
+        1,
+        momentum_settings_mainmenu_submenu_callback,
+        app);
+    view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewMainmenu);
+}
+
+static void momentum_settings_mainmenu_show_add_builtin(MomentumSettingsApp* app) {
+    app->mainmenu_screen = MomentumMainmenuScreenAddBuiltin;
+    submenu_reset(app->mainmenu_submenu);
+    submenu_set_header(app->mainmenu_submenu, "Built-in App");
+
+    uint32_t index = 0;
+    for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
+        submenu_add_item(
+            app->mainmenu_submenu,
+            FLIPPER_APPS[i].name,
+            index++,
+            momentum_settings_mainmenu_submenu_callback,
+            app);
+    }
+    for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+        if(momentum_settings_mainmenu_is_pinned(i)) continue;
+        submenu_add_item(
+            app->mainmenu_submenu,
+            FLIPPER_EXTERNAL_APPS[i].name,
+            index++,
+            momentum_settings_mainmenu_submenu_callback,
+            app);
+    }
+
+    view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewMainmenu);
+}
+
+/* A submenu rather than a DialogEx: DialogEx puts its buttons on Left and
+ * Right, which on this board means holding the encoder while turning, with no
+ * on-screen hint that this is what a confirmation needs. */
+static void momentum_settings_mainmenu_show_reset(MomentumSettingsApp* app) {
+    app->mainmenu_screen = MomentumMainmenuScreenResetConfirm;
+    submenu_reset(app->mainmenu_submenu);
+    submenu_set_header(app->mainmenu_submenu, "Reset menu items?");
+    submenu_add_item(
+        app->mainmenu_submenu, "Cancel", 0, momentum_settings_mainmenu_submenu_callback, app);
+    submenu_add_item(
+        app->mainmenu_submenu, "Reset", 1, momentum_settings_mainmenu_submenu_callback, app);
+    view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewMainmenu);
+}
+
+static bool momentum_settings_mainmenu_browser_item(
+    FuriString* path,
+    void* context,
+    uint8_t** icon_ptr,
+    FuriString* item_name) {
+    MomentumSettingsApp* app = context;
+    return flipper_application_load_name_and_icon(path, app->storage, icon_ptr, item_name);
+}
+
+static void momentum_settings_mainmenu_add_file(MomentumSettingsApp* app) {
+    DialogsFileBrowserOptions options = {
+        .extension = ".fap|.js",
+        .base_path = EXT_PATH("apps"),
+        .skip_assets = true,
+        .hide_dot_files = true,
+        .icon = &I_unknown_10px,
+        .hide_ext = true,
+        .item_loader_callback = momentum_settings_mainmenu_browser_item,
+        .item_loader_context = app,
+    };
+
+    FuriString* path = furi_string_alloc_set_str(options.base_path);
+    if(dialog_file_browser_show(app->dialogs, path, path, &options)) {
+        const uint8_t before = app->mainmenu_count;
+        momentum_settings_mainmenu_add_line(app, path);
+        if(app->mainmenu_count > before) {
+            app->mainmenu_index = app->mainmenu_count - 1U;
+            app->mainmenu_dirty = true;
+        }
+    }
+    furi_string_free(path);
+
+    momentum_settings_show_page(app, MomentumSettingsPageMainmenu, MomentumMainmenuRowAdd);
+}
+
+static void momentum_settings_mainmenu_submenu_callback(void* context, uint32_t index) {
+    MomentumSettingsApp* app = context;
+    uint8_t return_row = MomentumMainmenuRowAdd;
+
+    switch(app->mainmenu_screen) {
+    case MomentumMainmenuScreenAddSource:
+        /* Both branches move to another screen of their own. */
+        if(index == 0U) {
+            momentum_settings_mainmenu_show_add_builtin(app);
+        } else {
+            momentum_settings_mainmenu_add_file(app);
+        }
+        return;
+
+    case MomentumMainmenuScreenAddBuiltin: {
+        const char* name = momentum_settings_mainmenu_builtin_name(index);
+        if(name && momentum_settings_mainmenu_push(app, name, name)) {
+            app->mainmenu_index = app->mainmenu_count - 1U;
+            app->mainmenu_dirty = true;
+        }
+        break;
+    }
+
+    case MomentumMainmenuScreenResetConfirm:
+        return_row = MomentumMainmenuRowReset;
+        if(index == 1U) {
+            storage_simply_remove(app->storage, MAINMENU_APPS_PATH);
+            momentum_settings_mainmenu_clear(app);
+            momentum_settings_mainmenu_load_defaults(app);
+            app->mainmenu_index = 0;
+            /* The file is gone and the list is back to the default order, so
+             * there is nothing left for the exit path to write. */
+            app->mainmenu_dirty = false;
+        }
+        break;
+    }
+
+    momentum_settings_show_page(app, MomentumSettingsPageMainmenu, return_row);
+}
+
 static uint32_t momentum_settings_back_to_list(void* context) {
     UNUSED(context);
     return MomentumSettingsViewList;
@@ -740,13 +1205,14 @@ static void momentum_settings_show_page(
     } else if(page == MomentumSettingsPageInterface) {
         variable_item_list_set_header(app->variable_item_list, "Interface");
         variable_item_list_add(app->variable_item_list, "Graphics", 1, NULL, app);
+        variable_item_list_add(app->variable_item_list, "Mainmenu", 1, NULL, app);
         variable_item_list_add(app->variable_item_list, "Lockscreen", 1, NULL, app);
         variable_item_list_add(app->variable_item_list, "Statusbar", 1, NULL, app);
         variable_item_list_add(app->variable_item_list, "File Browser", 1, NULL, app);
         variable_item_list_add(app->variable_item_list, "General", 1, NULL, app);
+    } else if(page == MomentumSettingsPageMainmenu) {
+        variable_item_list_set_header(app->variable_item_list, "Mainmenu");
 
-        // Kept last so the navigation rows above keep the indices that
-        // momentum_settings_list_enter maps to sub-pages.
         item = variable_item_list_add(
             app->variable_item_list,
             "Menu Style",
@@ -756,6 +1222,45 @@ static void momentum_settings_show_page(
         value_index = (uint8_t)app->settings.menu_style;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, momentum_menu_style_text[value_index]);
+
+        variable_item_list_add(app->variable_item_list, "Reset Menu", 1, NULL, app);
+
+        variable_item_list_add(
+            app->variable_item_list,
+            "Item",
+            app->mainmenu_count,
+            momentum_settings_mainmenu_item_changed,
+            app);
+
+        variable_item_list_add(app->variable_item_list, "Add Item", 1, NULL, app);
+
+        /* Placed on the Mainmenu page because that is what it changes: the
+         * Dual Boot entry reboots into another firmware, which is not
+         * something to leave one OK press away on a shared device. */
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Hide Dual Boot",
+            COUNT_OF(momentum_unlock_anim_text),
+            momentum_settings_hide_dualboot_changed,
+            app);
+        value_index = app->settings.hide_dualboot ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Move Item",
+            COUNT_OF(momentum_mainmenu_move_text),
+            momentum_settings_mainmenu_move_changed,
+            app);
+        variable_item_set_current_value_index(item, 1U);
+        variable_item_set_current_value_text(item, momentum_mainmenu_move_text[1]);
+
+        variable_item_list_add(app->variable_item_list, "Remove Item", 1, NULL, app);
+
+        /* Fills in the Item row's label and value and the Move lock from the
+         * list, so those three places are written in one function only. */
+        momentum_settings_mainmenu_refresh(app);
     } else if(page == MomentumSettingsPageGraphics) {
         variable_item_list_set_header(app->variable_item_list, "Graphics");
 
@@ -794,36 +1299,6 @@ static void momentum_settings_show_page(
 
         item = variable_item_list_add(
             app->variable_item_list,
-            "Lock On Boot",
-            COUNT_OF(momentum_unlock_anim_values),
-            momentum_settings_lock_on_boot_changed,
-            app);
-        value_index = app->settings.lock_on_boot ? 1U : 0U;
-        variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
-
-        item = variable_item_list_add(
-            app->variable_item_list,
-            "Locked USB RPC",
-            COUNT_OF(momentum_unlock_anim_values),
-            momentum_settings_locked_rpc_usb_changed,
-            app);
-        value_index = app->settings.allow_locked_rpc_usb ? 1U : 0U;
-        variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
-
-        item = variable_item_list_add(
-            app->variable_item_list,
-            "Locked BLE RPC",
-            COUNT_OF(momentum_unlock_anim_values),
-            momentum_settings_locked_rpc_ble_changed,
-            app);
-        value_index = app->settings.allow_locked_rpc_ble ? 1U : 0U;
-        variable_item_set_current_value_index(item, value_index);
-        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
-
-        item = variable_item_list_add(
-            app->variable_item_list,
             "Unlock Anims",
             COUNT_OF(momentum_unlock_anim_values),
             momentum_settings_unlock_anims_changed,
@@ -835,6 +1310,21 @@ static void momentum_settings_show_page(
     } else if(page == MomentumSettingsPageLockscreen) {
         variable_item_list_set_header(app->variable_item_list, "Lockscreen");
 
+        momentum_settings_add_bool_item(
+            app,
+            "Lock On Boot",
+            app->settings.lock_on_boot,
+            momentum_settings_lock_on_boot_changed);
+        momentum_settings_add_bool_item(
+            app,
+            "Locked USB RPC",
+            app->settings.allow_locked_rpc_usb,
+            momentum_settings_locked_rpc_usb_changed);
+        momentum_settings_add_bool_item(
+            app,
+            "Locked BLE RPC",
+            app->settings.allow_locked_rpc_ble,
+            momentum_settings_locked_rpc_ble_changed);
         momentum_settings_add_bool_item(
             app,
             "Allow Poweroff",
@@ -1091,6 +1581,16 @@ static void momentum_settings_show_page(
 
         /* Kept last so the rows above keep the indices the enter handler maps. */
         variable_item_list_add(app->variable_item_list, "Dolphin", 1, NULL, app);
+
+        /* The slideshow is embedded in the firmware now, so a missing card asset
+         * is no longer a reason to lock this: the old "needs firstboot.bin"
+         * check would block the feature it was written to guard. The SD card is
+         * still required, because staging writes the slideshow to it. */
+        item = variable_item_list_add(
+            app->variable_item_list, "Show Momentum Intro", 1, NULL, app);
+        if(!app->sd_ready) {
+            variable_item_set_locked(item, true, "SD card required");
+        }
     } else if(page == MomentumSettingsPageScreen) {
         variable_item_list_set_header(app->variable_item_list, "Screen");
 
@@ -1143,14 +1643,16 @@ static bool momentum_settings_back_event(void* context) {
         momentum_settings_show_page(app, MomentumSettingsPageRoot, 0);
     } else if(app->current_page == MomentumSettingsPageGraphics) {
         momentum_settings_show_page(app, MomentumSettingsPageInterface, 0);
-    } else if(app->current_page == MomentumSettingsPageLockscreen) {
+    } else if(app->current_page == MomentumSettingsPageMainmenu) {
         momentum_settings_show_page(app, MomentumSettingsPageInterface, 1);
-    } else if(app->current_page == MomentumSettingsPageStatusbar) {
+    } else if(app->current_page == MomentumSettingsPageLockscreen) {
         momentum_settings_show_page(app, MomentumSettingsPageInterface, 2);
-    } else if(app->current_page == MomentumSettingsPageFileBrowser) {
+    } else if(app->current_page == MomentumSettingsPageStatusbar) {
         momentum_settings_show_page(app, MomentumSettingsPageInterface, 3);
-    } else if(app->current_page == MomentumSettingsPageGeneral) {
+    } else if(app->current_page == MomentumSettingsPageFileBrowser) {
         momentum_settings_show_page(app, MomentumSettingsPageInterface, 4);
+    } else if(app->current_page == MomentumSettingsPageGeneral) {
+        momentum_settings_show_page(app, MomentumSettingsPageInterface, 5);
     } else if(app->current_page == MomentumSettingsPageProtocols) {
         momentum_settings_show_page(app, MomentumSettingsPageRoot, 1);
     } else if(app->current_page == MomentumSettingsPageMisc) {
@@ -1379,6 +1881,7 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     app->desktop = furi_record_open(RECORD_DESKTOP);
     app->power = furi_record_open(RECORD_POWER);
     app->dolphin = furi_record_open(RECORD_DOLPHIN);
+    app->dialogs = furi_record_open(RECORD_DIALOGS);
     DolphinStats stats = dolphin_stats(app->dolphin);
     app->dolphin_xp = stats.icounter;
     app->dolphin_butthurt = (int32_t)stats.butthurt;
@@ -1388,6 +1891,7 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     momentum_settings_load_device_name(app);
     app->subghz_extended_range = subghz_extended_range_load();
     momentum_settings_load_freqs(app);
+    momentum_settings_mainmenu_load(app);
 
     momentum_settings_scan_asset_packs(app);
 
@@ -1396,6 +1900,7 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     app->asset_pack_submenu = submenu_alloc();
     app->text_input = text_input_alloc();
     app->freq_submenu = submenu_alloc();
+    app->mainmenu_submenu = submenu_alloc();
     app->number_input = number_input_alloc();
 
     View* list_view = variable_item_list_get_view(app->variable_item_list);
@@ -1431,6 +1936,10 @@ static MomentumSettingsApp* momentum_settings_app_alloc(void) {
     view_set_previous_callback(freq_view, momentum_settings_back_to_list);
     view_dispatcher_add_view(app->view_dispatcher, MomentumSettingsViewFreqList, freq_view);
 
+    View* mainmenu_view = submenu_get_view(app->mainmenu_submenu);
+    view_set_previous_callback(mainmenu_view, momentum_settings_back_to_list);
+    view_dispatcher_add_view(app->view_dispatcher, MomentumSettingsViewMainmenu, mainmenu_view);
+
     View* number_view = number_input_get_view(app->number_input);
     view_dispatcher_add_view(
         app->view_dispatcher, MomentumSettingsViewNumberInput, number_view);
@@ -1450,11 +1959,13 @@ static void momentum_settings_app_free(MomentumSettingsApp* app) {
     furi_assert(app);
 
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewNumberInput);
+    view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewMainmenu);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewFreqList);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewTextInput);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewAssetPacks);
     view_dispatcher_remove_view(app->view_dispatcher, MomentumSettingsViewList);
     number_input_free(app->number_input);
+    submenu_free(app->mainmenu_submenu);
     submenu_free(app->freq_submenu);
     text_input_free(app->text_input);
     submenu_free(app->asset_pack_submenu);
@@ -1465,7 +1976,9 @@ static void momentum_settings_app_free(MomentumSettingsApp* app) {
         free(app->asset_pack_names[i]);
     }
     free(app->asset_pack_names);
+    momentum_settings_mainmenu_clear(app);
 
+    furi_record_close(RECORD_DIALOGS);
     furi_record_close(RECORD_DOLPHIN);
     furi_record_close(RECORD_POWER);
     furi_record_close(RECORD_DESKTOP);
@@ -1520,6 +2033,10 @@ int32_t momentum_app(void* p) {
         momentum_settings_save_freqs(app);
     }
 
+    if(app->mainmenu_dirty) {
+        momentum_settings_mainmenu_save(app);
+    }
+
     if(app->dolphin_dirty) {
         /* Written straight into the dolphin's state: there is no public setter
          * for XP or mood, and this is what upstream does too. */
@@ -1532,6 +2049,12 @@ int32_t momentum_app(void* p) {
         desktop_settings_save(&app->desktop_settings);
         desktop_api_set_settings(app->desktop, &app->desktop_settings);
         power_trigger_ui_update(app->power);
+    }
+
+    /* Everything above has been written, so it is safe to go down here. This
+     * does not return. */
+    if(app->reboot_for_intro) {
+        power_reboot(app->power, PowerBootModeNormal);
     }
 
     momentum_settings_app_free(app);

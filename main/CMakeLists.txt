@@ -40,6 +40,10 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES furi furi_hal input notification gui locale storage loader desktop btshim app_update momentum toolbox
     LDFRAGMENTS "main.lf"
+    # The welcome slideshow ships inside the firmware rather than as an SD
+    # asset: a fresh card should show the intro without the user having to
+    # place a file, and 7 KB is nothing against a 5 MB app partition.
+    EMBED_FILES "${ESP32_DIR}/sdcard/dolphin/firstboot.bin"
 )
 
 if(NOT CMAKE_SCRIPT_MODE_FILE)

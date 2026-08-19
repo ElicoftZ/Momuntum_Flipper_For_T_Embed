@@ -1,0 +1,9 @@
+App(
+    appid="mic_logger",
+    name="Mic Logger",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="mic_logger_app",
+    requires=["gui", "storage"],
+    stack_size=4 * 1024,
+    fap_category="Tools",
+)

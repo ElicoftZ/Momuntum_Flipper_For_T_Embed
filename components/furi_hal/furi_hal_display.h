@@ -63,6 +63,36 @@ uint16_t furi_hal_display_get_fg_color(void);
 void furi_hal_display_set_bg_color(uint16_t color);
 uint16_t furi_hal_display_get_bg_color(void);
 
+/** Maximum gradient stops the UI Background can blend between. */
+#define FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS 4
+
+/** How the gradient stops are mixed down the panel. */
+typedef enum {
+    FuriHalDisplayGradientLinear = 0, /**< even blend between stops */
+    FuriHalDisplayGradientSmooth,     /**< eased blend, lingers near each stop */
+    FuriHalDisplayGradientBands,      /**< hard steps, no blending */
+    FuriHalDisplayGradientMirror,     /**< down to the middle and back */
+    FuriHalDisplayGradientModeCount,
+} FuriHalDisplayGradientMode;
+
+/** Replace the flat UI Background with a vertical gradient.
+ *
+ * Builds a per-row lookup table spanning the whole panel height, so the
+ * centering margins share the ramp and rendering stays one lookup per row.
+ * Passing count < 2 (or a NULL array) turns the gradient off and returns the
+ * display to the flat fg_color.
+ *
+ * @param      stops_rgb888  Array of 0xRRGGBB stops, top to bottom
+ * @param      count         Number of stops, 2..FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS
+ * @param      mode          A FuriHalDisplayGradientMode value
+ * @param      horizontal    true = ramp across the panel, false = down it
+ */
+void furi_hal_display_set_bg_gradient(
+    const uint32_t* stops_rgb888,
+    uint8_t count,
+    uint8_t mode,
+    bool horizontal);
+
 /** Get native panel dimensions (post swap_xy). Intended for full-screen
  * takeover apps (e.g. game emulators) that bypass the 128x64 framebuffer.
  */

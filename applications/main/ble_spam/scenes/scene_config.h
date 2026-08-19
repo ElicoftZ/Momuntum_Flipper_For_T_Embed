@@ -1,6 +1,8 @@
 ADD_SCENE(ble_spam, main, Main)
 ADD_SCENE(ble_spam, spam_menu, SpamMenu)
 ADD_SCENE(ble_spam, pair_spam_custom, PairSpamCustom)
+ADD_SCENE(ble_spam, lovespouse_config, LovespouseConfig)
+ADD_SCENE(ble_spam, lovespouse_custom, LovespouseCustom)
 ADD_SCENE(ble_spam, running, Running)
 ADD_SCENE(ble_spam, walk_scan, WalkScan)
 ADD_SCENE(ble_spam, walk_services, WalkServices)

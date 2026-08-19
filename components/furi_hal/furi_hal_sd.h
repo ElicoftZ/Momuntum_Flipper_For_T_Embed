@@ -65,6 +65,16 @@ bool furi_hal_sd_unmount(void);
 /** Check if SD card is currently mounted */
 bool furi_hal_sd_is_mounted(void);
 
+/** Rewrite the card with a fresh FAT filesystem, destroying its contents.
+ *
+ * Unmounts, runs f_mkfs() and remounts, so the caller comes back to a usable
+ * empty card. On failure the previous filesystem is remounted if it still can
+ * be. Requires an initialized card.
+ *
+ * @return true if the card was formatted and remounted.
+ */
+bool furi_hal_sd_format(void);
+
 /** Soft-unmount FATFS but keep the sdmmc card initialized.
  * Use this before handing the card to USB MSC. Re-mount via furi_hal_sd_mount().
  * @return true on success

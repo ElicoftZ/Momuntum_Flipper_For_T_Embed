@@ -206,6 +206,17 @@ uint8_t variable_item_list_get_selected_item_index(VariableItemList* variable_it
     return idx;
 }
 
+uint8_t variable_item_list_get_item_count(VariableItemList* variable_item_list) {
+    furi_check(variable_item_list);
+    uint8_t count = 0;
+    with_view_model(
+        variable_item_list->view,
+        VariableItemListModel * model,
+        { count = (uint8_t)VariableItemArray_size(model->items); },
+        false);
+    return count;
+}
+
 void variable_item_list_set_header(VariableItemList* variable_item_list, const char* header) {
     furi_check(variable_item_list);
 

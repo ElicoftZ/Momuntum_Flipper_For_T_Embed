@@ -22,6 +22,10 @@
 
 /* Custom event: "UI Background → Custom" was selected, open the picker. */
 #define NOTIFICATION_SETTINGS_EVENT_OPEN_PICKER 1
+/* Rebuilding the list frees the VariableItem whose callback is running, so
+ * the Colors row defers it through the dispatcher instead of calling it
+ * inline -- doing it inline dropped the selection (and touched freed item). */
+#define NOTIFICATION_SETTINGS_EVENT_REBUILD_LIST 2
 
 typedef struct {
     NotificationApp* notification;
@@ -36,6 +40,22 @@ typedef struct {
      * on BOARD_HAS_RGB_LED) and per future feature additions. */
     VariableItem* night_shift_start_item;
     VariableItem* night_shift_end_item;
+    /* Which color the picker is editing: 0 = UI Background, or
+     * 1..FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS for gradient stop n-1. */
+    uint8_t picker_target;
+    /* List row index of "Color 1". The stop rows share one callback and
+     * variable_item has no per-item user data, so the stop is derived from
+     * the selected row. Storing VariableItem* here does NOT work: the items
+     * live in an M-LIB array of values, so every later add can realloc and
+     * leave the saved pointers dangling. */
+    uint8_t ui_bg_first_stop_row;
+    /* Saved before the picker opens, so cancelling puts the stop back. */
+    uint8_t picker_prev_index;
+    uint32_t picker_prev_custom;
+    /* The list row that opened the picker. Restored on the way back: the
+     * OK that confirms Save otherwise lands on the list behind the picker
+     * and moves the highlight off the colour being edited. */
+    uint8_t picker_prev_selected;
 } NotificationAppSettings;
 
 static const NotificationSequence sequence_note_c = {
@@ -82,6 +102,16 @@ const char* const delay_text[DELAY_COUNT] = {
 };
 const uint32_t delay_value[DELAY_COUNT] =
     {0, 2000, 5000, 10000, 15000, 30000, 60000, 90000, 120000, 300000, 600000, 1800000};
+
+/* Deep sleep. Separate table from delay_value: the useful range is much
+ * narrower, and "Always ON" would read as never sleeping rather than never
+ * dimming. */
+#define SLEEP_COUNT 8
+const char* const sleep_text[SLEEP_COUNT] = {
+    "Never", "15s", "30s", "60s", "2min", "3min", "4min", "5min",
+};
+const uint32_t sleep_value[SLEEP_COUNT] =
+    {0, 15000, 30000, 60000, 120000, 180000, 240000, 300000};
 
 
 // --- NIGHT SHIFT ---
@@ -146,6 +176,17 @@ static void volume_changed(VariableItem* item) {
 }
 
 // --- NIGHT SHIFT ---
+
+static void sleep_changed(VariableItem* item) {
+    NotificationAppSettings* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+
+    variable_item_set_current_value_text(item, sleep_text[index]);
+    app->notification->settings.display_sleep_delay_ms = sleep_value[index];
+
+    /* Re-arm against the new delay straight away. */
+    notification_message(app->notification, &sequence_display_backlight_on);
+}
 
 static void night_shift_changed(VariableItem* item) {
     NotificationAppSettings* app = variable_item_get_context(item);
@@ -388,9 +429,54 @@ static void ui_bg_color_changed(VariableItem* item) {
 
 /* Picker result: Save stores + selects the new custom color; Back reverts the
  * live preview and restores the previous selection. Either way return to the list. */
+static void rebuild_settings_list(NotificationAppSettings* app);
+static void ui_bg_stop_item_sync(NotificationSettings* s, VariableItem* item, uint8_t stop);
+
+/* Live preview while picking a gradient stop. The picker's built-in preview
+ * writes fg_color, which the display ignores whenever a gradient is on -- so
+ * the colour appeared not to change at all. Write the in-progress value into
+ * the stop and rebuild the ramp instead, which previews the real thing. */
+static void ui_bg_stop_preview(void* context, uint32_t rgb) {
+    NotificationAppSettings* app = context;
+    if(app->picker_target == 0) return;
+    const uint8_t stop = app->picker_target - 1;
+    if(stop >= FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) return;
+
+    NotificationSettings* s = &app->notification->settings;
+    s->ui_bg_stop_custom[stop] = rgb & 0xFFFFFF;
+    s->ui_bg_stop_index[stop] = UI_COLOR_CUSTOM_INDEX;
+    notification_apply_ui_gradient(app->notification); /* not persisted yet */
+}
+
 static void ui_bg_color_picker_result(void* context, uint32_t rgb, bool confirmed) {
     NotificationAppSettings* app = context;
     NotificationSettings* s = &app->notification->settings;
+
+    /* A gradient stop was being edited rather than the flat UI Background. */
+    if(app->picker_target > 0) {
+        const uint8_t stop = app->picker_target - 1;
+        app->picker_target = 0;
+        if(stop < FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) {
+            if(confirmed) {
+                s->ui_bg_stop_custom[stop] = rgb & 0xFFFFFF;
+                s->ui_bg_stop_index[stop] = UI_COLOR_CUSTOM_INDEX;
+                notification_message_save_settings(app->notification);
+            } else {
+                /* Undo whatever the live preview wrote. */
+                s->ui_bg_stop_index[stop] = app->picker_prev_index;
+                s->ui_bg_stop_custom[stop] = app->picker_prev_custom;
+            }
+        }
+        notification_apply_ui_color(app->notification);
+        /* The row still reads "Custom"; rebuilding re-syncs every row's text
+         * from settings without needing a pointer to this one. */
+        view_dispatcher_send_custom_event(
+            app->view_dispatcher, NOTIFICATION_SETTINGS_EVENT_REBUILD_LIST);
+        view_dispatcher_switch_to_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_LIST);
+        variable_item_list_set_selected_item(
+            app->variable_item_list, app->picker_prev_selected);
+        return;
+    }
 
     if(confirmed) {
         s->ui_custom_color = rgb & 0xFFFFFF;
@@ -405,10 +491,15 @@ static void ui_bg_color_picker_result(void* context, uint32_t rgb, bool confirme
         notification_apply_ui_color(app->notification);
     }
     view_dispatcher_switch_to_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_LIST);
+    variable_item_list_set_selected_item(app->variable_item_list, app->picker_prev_selected);
 }
 
 static bool notification_settings_custom_event(void* context, uint32_t event) {
     NotificationAppSettings* app = context;
+    if(event == NOTIFICATION_SETTINGS_EVENT_REBUILD_LIST) {
+        rebuild_settings_list(app);
+        return true;
+    }
     if(event == NOTIFICATION_SETTINGS_EVENT_OPEN_PICKER) {
         NotificationSettings* s = &app->notification->settings;
         /* Stop the Spectrum hue-cycle timer (if the last selection was Spectrum)
@@ -417,8 +508,21 @@ static bool notification_settings_custom_event(void* context, uint32_t event) {
            furi_timer_is_running(app->notification->ui_spectrum_timer)) {
             furi_timer_stop(app->notification->ui_spectrum_timer);
         }
-        uint32_t init =
-            s->ui_custom_color_set ? (s->ui_custom_color & 0xFFFFFF) : UI_CUSTOM_DEFAULT_RGB;
+        uint32_t init;
+        if(app->picker_target > 0) {
+            const uint8_t stop = app->picker_target - 1;
+            /* Start from the stop's own color so re-editing is not a reset. */
+            init = s->ui_bg_stop_custom[stop] & 0xFFFFFF;
+            app->picker_prev_index = s->ui_bg_stop_index[stop];
+            app->picker_prev_custom = s->ui_bg_stop_custom[stop];
+            notification_color_picker_set_preview_callback(
+                app->color_picker, ui_bg_stop_preview, app);
+        } else {
+            notification_color_picker_set_preview_callback(app->color_picker, NULL, NULL);
+            init = s->ui_custom_color_set ? (s->ui_custom_color & 0xFFFFFF) : UI_CUSTOM_DEFAULT_RGB;
+        }
+        app->picker_prev_selected =
+            variable_item_list_get_selected_item_index(app->variable_item_list);
         notification_color_picker_set_color(app->color_picker, init);
         view_dispatcher_switch_to_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_PICKER);
         return true;
@@ -441,20 +545,147 @@ static uint32_t notification_app_settings_exit(void* context) {
     return VIEW_NONE;
 }
 
+/* --- UI Background gradient rows --- */
+static const char* const ui_bg_count_text[FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS] = {
+    "1", "2", "3", "4",
+};
+static const char* const ui_bg_stop_label[FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS] = {
+    "Color 1", "Color 2", "Color 3", "Color 4",
+};
+static const char* const ui_bg_mix_text[FuriHalDisplayGradientModeCount] = {
+    "Linear", "Smooth", "Bands", "Mirror",
+};
+static const char* const ui_bg_dir_text[2] = {"Vertical", "Horizontal"};
+
+static void build_settings_list(NotificationAppSettings* app);
+
+/* Rebuild the list in place, keeping the cursor where the user left it so
+ * changing the stop count doesn't throw them back to the top. */
+static void rebuild_settings_list(NotificationAppSettings* app) {
+    const uint8_t selected =
+        variable_item_list_get_selected_item_index(app->variable_item_list);
+    variable_item_list_reset(app->variable_item_list);
+    build_settings_list(app);
+    variable_item_list_set_selected_item(app->variable_item_list, selected);
+}
+
 static NotificationAppSettings* alloc_settings(void) {
     NotificationAppSettings* app = malloc(sizeof(NotificationAppSettings));
     app->night_shift_start_item = NULL;
     app->night_shift_end_item = NULL;
     app->color_picker = NULL;
     app->ui_bg_item = NULL;
+    app->picker_target = 0;
+    app->picker_prev_selected = 0;
     app->notification = furi_record_open(RECORD_NOTIFICATION);
 
     app->variable_item_list = variable_item_list_alloc();
     View* view = variable_item_list_get_view(app->variable_item_list);
     view_set_previous_callback(view, notification_app_settings_exit);
 
+    build_settings_list(app);
+
+    app->color_picker = notification_color_picker_alloc();
+    notification_color_picker_set_callback(app->color_picker, ui_bg_color_picker_result, app);
+
+    Gui* gui = furi_record_open(RECORD_GUI);
+    app->view_dispatcher = view_dispatcher_alloc();
+    view_dispatcher_attach_to_gui(app->view_dispatcher, gui, ViewDispatcherTypeFullscreen);
+    view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
+    view_dispatcher_set_custom_event_callback(
+        app->view_dispatcher, notification_settings_custom_event);
+    view_dispatcher_add_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_LIST, view);
+    view_dispatcher_add_view(
+        app->view_dispatcher,
+        NOTIFICATION_SETTINGS_VIEW_PICKER,
+        notification_color_picker_get_view(app->color_picker));
+    view_dispatcher_switch_to_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_LIST);
+    return app;
+}
+
+/* Show a stop's current color: a palette name, or #RRGGBB when custom. */
+static void ui_bg_stop_item_sync(NotificationSettings* s, VariableItem* item, uint8_t stop) {
+    const uint8_t idx = s->ui_bg_stop_index[stop];
+    if(idx >= UI_COLOR_COUNT) {
+        /* Custom: the value cycle's last slot, labelled with the hex value. */
+        static char buf[FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS][10];
+        snprintf(
+            buf[stop], sizeof(buf[stop]), "#%06X",
+            (unsigned)(s->ui_bg_stop_custom[stop] & 0xFFFFFF));
+        variable_item_set_current_value_index(item, UI_COLOR_COUNT);
+        variable_item_set_current_value_text(item, buf[stop]);
+    } else {
+        variable_item_set_current_value_index(item, idx);
+        variable_item_set_current_value_text(item, ui_color_text[idx]);
+    }
+}
+
+static void ui_bg_count_changed(VariableItem* item) {
+    NotificationAppSettings* app = variable_item_get_context(item);
+    const uint8_t count = variable_item_get_current_value_index(item) + 1;
+    variable_item_set_current_value_text(item, ui_bg_count_text[count - 1]);
+    app->notification->settings.ui_bg_color_count = count;
+    notification_apply_ui_color(app->notification);
+    notification_message_save_settings(app->notification);
+    /* Rows appear/disappear with the count, so the list must be rebuilt --
+     * but not from inside this callback, which is running on an item the
+     * rebuild would free. Defer it to the dispatcher. */
+    view_dispatcher_send_custom_event(
+        app->view_dispatcher, NOTIFICATION_SETTINGS_EVENT_REBUILD_LIST);
+}
+
+static void ui_bg_dir_changed(VariableItem* item) {
+    NotificationAppSettings* app = variable_item_get_context(item);
+    const uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, ui_bg_dir_text[idx]);
+    app->notification->settings.ui_bg_horizontal = (idx != 0);
+    notification_apply_ui_color(app->notification);
+    notification_message_save_settings(app->notification);
+}
+
+static void ui_bg_mix_changed(VariableItem* item) {
+    NotificationAppSettings* app = variable_item_get_context(item);
+    const uint8_t mix = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, ui_bg_mix_text[mix]);
+    app->notification->settings.ui_bg_mix = mix;
+    notification_apply_ui_color(app->notification);
+    notification_message_save_settings(app->notification);
+}
+
+static void ui_bg_stop_changed(VariableItem* item) {
+    NotificationAppSettings* app = variable_item_get_context(item);
+    NotificationSettings* s = &app->notification->settings;
+    const uint8_t index = variable_item_get_current_value_index(item);
+
+    /* The row being edited is the selected one. */
+    const uint8_t row = variable_item_list_get_selected_item_index(app->variable_item_list);
+    if(row < app->ui_bg_first_stop_row) return;
+    const uint8_t stop = row - app->ui_bg_first_stop_row;
+    if(stop >= FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) return;
+
+    if(index < UI_COLOR_COUNT) {
+        s->ui_bg_stop_index[stop] = index;
+        variable_item_set_current_value_text(item, ui_color_text[index]);
+        notification_apply_ui_color(app->notification);
+        notification_message_save_settings(app->notification);
+        return;
+    }
+
+    /* Last slot opens the same RGB picker the UI Background row uses. */
+    app->picker_target = stop + 1;
+    variable_item_set_current_value_text(item, "Custom");
+    view_dispatcher_send_custom_event(
+        app->view_dispatcher, NOTIFICATION_SETTINGS_EVENT_OPEN_PICKER);
+}
+
+/* Builds every row of the settings list. Split out of alloc_settings() so
+ * the Colors setting can rebuild the list when the stop count changes --
+ * variable_item_list has no way to hide an individual row. */
+static void build_settings_list(NotificationAppSettings* app) {
     VariableItem* item;
     uint8_t value_index;
+
+    app->ui_bg_first_stop_row = 0;
 
     /* LCD Backlight brightness */
     item = variable_item_list_add(
@@ -545,6 +776,14 @@ static NotificationAppSettings* alloc_settings(void) {
     variable_item_set_current_value_index(item, value_index);
     variable_item_set_current_value_text(item, delay_text[value_index]);
 
+    /* Deep sleep timeout */
+    item = variable_item_list_add(
+        app->variable_item_list, "Sleep Time", SLEEP_COUNT, sleep_changed, app);
+    value_index = value_index_uint32(
+        app->notification->settings.display_sleep_delay_ms, sleep_value, SLEEP_COUNT);
+    variable_item_set_current_value_index(item, value_index);
+    variable_item_set_current_value_text(item, sleep_text[value_index]);
+
     /* --- NIGHT SHIFT --- */
     item = variable_item_list_add(
         app->variable_item_list, "Night Shift", NIGHT_SHIFT_COUNT, night_shift_changed, app);
@@ -594,23 +833,52 @@ static NotificationAppSettings* alloc_settings(void) {
         variable_item_set_current_value_text(item, volume_text[value_index]);
     }
 
-    app->color_picker = notification_color_picker_alloc();
-    notification_color_picker_set_callback(app->color_picker, ui_bg_color_picker_result, app);
+    /* --- UI Background gradient --- */
+    NotificationSettings* gs = &app->notification->settings;
 
-    Gui* gui = furi_record_open(RECORD_GUI);
-    app->view_dispatcher = view_dispatcher_alloc();
-    view_dispatcher_attach_to_gui(app->view_dispatcher, gui, ViewDispatcherTypeFullscreen);
-    view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
-    view_dispatcher_set_custom_event_callback(
-        app->view_dispatcher, notification_settings_custom_event);
-    view_dispatcher_add_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_LIST, view);
-    view_dispatcher_add_view(
-        app->view_dispatcher,
-        NOTIFICATION_SETTINGS_VIEW_PICKER,
-        notification_color_picker_get_view(app->color_picker));
-    view_dispatcher_switch_to_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_LIST);
-    return app;
+    uint8_t stops = gs->ui_bg_color_count;
+    if(stops < 1) stops = 1;
+    if(stops > FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) {
+        stops = FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS;
+    }
+
+    item = variable_item_list_add(
+        app->variable_item_list, "Colors",
+        FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS, ui_bg_count_changed, app);
+    variable_item_set_current_value_index(item, stops - 1);
+    variable_item_set_current_value_text(item, ui_bg_count_text[stops - 1]);
+
+    /* One row per active stop. Only shown when blending -- a single color is
+     * just the existing UI Background row. */
+    if(stops >= 2) {
+        /* variable_item_list_add appends, so the next row index is the
+         * current item count. */
+        app->ui_bg_first_stop_row =
+            variable_item_list_get_item_count(app->variable_item_list);
+        for(uint8_t i = 0; i < stops; i++) {
+            item = variable_item_list_add(
+                app->variable_item_list, ui_bg_stop_label[i],
+                UI_COLOR_COUNT + 1, ui_bg_stop_changed, app);
+            ui_bg_stop_item_sync(gs, item, i);
+        }
+
+        item = variable_item_list_add(
+            app->variable_item_list, "Direction", 2, ui_bg_dir_changed, app);
+        variable_item_set_current_value_index(item, gs->ui_bg_horizontal ? 1 : 0);
+        variable_item_set_current_value_text(
+            item, ui_bg_dir_text[gs->ui_bg_horizontal ? 1 : 0]);
+
+        item = variable_item_list_add(
+            app->variable_item_list, "Mix",
+            FuriHalDisplayGradientModeCount, ui_bg_mix_changed, app);
+        uint8_t mix = gs->ui_bg_mix;
+        if(mix >= FuriHalDisplayGradientModeCount) mix = 0;
+        variable_item_set_current_value_index(item, mix);
+        variable_item_set_current_value_text(item, ui_bg_mix_text[mix]);
+    }
 }
+
+
 
 static void free_settings(NotificationAppSettings* app) {
     view_dispatcher_remove_view(app->view_dispatcher, NOTIFICATION_SETTINGS_VIEW_LIST);

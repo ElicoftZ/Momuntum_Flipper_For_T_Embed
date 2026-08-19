@@ -4,6 +4,7 @@
 #include <gui/gui.h>
 #include <gui/scene_manager.h>
 #include <gui/view_dispatcher.h>
+#include <gui/modules/byte_input.h>
 #include <gui/modules/submenu.h>
 #include <gui/modules/text_input.h>
 
@@ -21,11 +22,19 @@ typedef enum {
     BleSpamAttackSamsungBuds,
     BleSpamAttackSamsungWatch,
     BleSpamAttackXiaomi,
+    BleSpamAttackNameflood,
+    BleSpamAttackLovespouse,
     BleSpamAttackPairSpam,
     BleSpamAttackPairSpamRickroll,
     BleSpamAttackPairSpamCustom,
     BleSpamAttackCount,
 } BleSpamAttackType;
+
+typedef enum {
+    BleSpamLovespouseRandom,
+    BleSpamLovespouseValue,
+    BleSpamLovespouseBruteforce,
+} BleSpamLovespouseSelection;
 
 typedef enum {
     BleSpamCustomEventToggle = 100,
@@ -41,6 +50,7 @@ typedef enum {
     BleSpamViewSubmenu,
     BleSpamViewRunning,
     BleSpamViewTextInput,
+    BleSpamViewByteInput,
     BleSpamViewWalkScan,
     BleSpamViewWalkDetail,
     BleSpamViewAutoWalk,
@@ -57,6 +67,7 @@ typedef struct {
     Submenu* submenu;
     View* view_running;
     TextInput* text_input;
+    ByteInput* byte_input;
 
     // Attack state
     BleSpamAttackType attack_type;
@@ -66,6 +77,9 @@ typedef struct {
     uint16_t current_index;
     char current_device[48];
     char custom_pair_name[32];
+    BleSpamLovespouseSelection lovespouse_selection;
+    uint32_t lovespouse_value;
+    uint8_t lovespouse_custom_value[3];
 
     // BLE Walk state
     View* view_walk_scan;

@@ -44,6 +44,13 @@ float furi_hal_power_get_battery_charge_voltage_limit(void);
 void furi_hal_power_set_battery_charge_voltage_limit(float voltage);
 
 uint32_t furi_hal_power_get_battery_remaining_capacity(void);
+
+/** Average current drawn during the last deep sleep, in microamps.
+ *
+ * Measured with the fuel gauge across a real sleep, not estimated: 0 until
+ * the device has slept at least ~2 minutes on battery since a cold boot.
+ */
+uint32_t furi_hal_power_get_sleep_current_ua(void);
 uint32_t furi_hal_power_get_battery_full_capacity(void);
 uint32_t furi_hal_power_get_battery_design_capacity(void);
 

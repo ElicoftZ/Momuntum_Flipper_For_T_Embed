@@ -4,6 +4,7 @@
 #include <applications.h>
 #include <momentum/momentum.h>
 #include <toolbox/name_generator.h>
+#include <asset_installer.h>
 
 #include <esp_log.h>
 #include <esp_rom_uart.h>
@@ -148,6 +149,11 @@ void app_main(void) {
 
         if(FLIPPER_SERVICES[i].appid &&
            strcmp(FLIPPER_SERVICES[i].appid, RECORD_STORAGE) == 0) {
+            // Release images carry the SD content this port adds in an `assets`
+            // partition. Install it before anything reads the card, so a fresh
+            // card is complete by the time settings and asset packs load.
+            // No-op on personal builds, which have no such partition.
+            asset_installer_run();
             // Storage publishes its record after GUI-backed SD status setup. Opening the
             // record here waits for that point and loads settings before desktop starts.
             momentum_settings_load();

@@ -10,6 +10,7 @@
 #pragma once
 
 #include <furi.h>
+#include <furi_hal_display.h> /* FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS */
 #include "notification.h"
 
 #ifdef __cplusplus
@@ -54,6 +55,11 @@ typedef struct {
 typedef struct {
     float display_brightness;
     uint32_t display_off_delay_ms;
+    /* Idle time before DEEP SLEEP, measured from the same activity as the
+     * dim above (not from the dim itself). 0 = never sleep. Always clamped
+     * to be later than the dim, since sleeping first would make the dim
+     * setting unobservable. */
+    uint32_t display_sleep_delay_ms;
     float speaker_volume;
     bool vibro_on;
     float night_shift;
@@ -93,6 +99,21 @@ typedef struct {
      * Controls whether the "#RRGGBB" entry is offered in the UI Background
      * value cycle (it persists as a selectable preset until replaced). */
     bool ui_custom_color_set;
+
+    /* --- UI Background gradient (Sound & Display -> Colors) ---
+     * Number of gradient stops. 1 = flat UI Background, i.e. gradient off;
+     * 2..FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS blends between the stops below.
+     * The settings list shows exactly this many "Color n" rows. */
+    uint8_t ui_bg_color_count;
+    /* How the stops are mixed down the panel: a FuriHalDisplayGradientMode. */
+    uint8_t ui_bg_mix;
+    /* Per-stop palette index, same encoding as ui_color_index above:
+     * UI_COLOR_CUSTOM_INDEX takes its color from ui_bg_stop_custom[] instead. */
+    uint8_t ui_bg_stop_index[FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS];
+    /* Ramp direction: false = down the screen, true = across it. */
+    bool ui_bg_horizontal;
+    /* Per-stop custom color, packed 0x00RRGGBB. */
+    uint32_t ui_bg_stop_custom[FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS];
 } NotificationSettings;
 
 struct NotificationApp {
@@ -132,6 +153,11 @@ void notification_apply_led_color(NotificationApp* app);
 /** Push settings.ui_color_index to the LCD foreground tint. For the Spectrum
  * index, starts/stops a periodic timer that cycles the hue. */
 void notification_apply_ui_color(NotificationApp* app);
+
+/** Rebuild the UI Background gradient from settings (or disable it when the
+ * stop count is 1). Called by notification_apply_ui_color(), so callers that
+ * already invoke that do not need this directly. */
+void notification_apply_ui_gradient(NotificationApp* app);
 
 /** Night-shift timer control (used by settings app). */
 void night_shift_timer_start(NotificationApp* app);

@@ -66,6 +66,23 @@ static const char* TAG = "FuriHalDisplay";
 static uint16_t fg_color;
 static uint16_t bg_color;
 
+/* Background gradient. The LUT spans the FULL panel height, not just the
+ * scaled canvas, so the centering margins continue the same ramp instead
+ * of showing a flat band at top and bottom. Rebuilt only when the setting
+ * changes, so rendering costs one array read per row. */
+#define GRAD_LUT_SIZE ((LCD_H_RES) > (LCD_V_RES) ? (LCD_H_RES) : (LCD_V_RES))
+/* RGB565 gives red/blue only 32 levels, so a ramp across ~156 rows lands on
+ * the same packed value for several rows in a row and the steps read as hard
+ * lines. Each ramp position therefore stores 4 ordered-dither variants; the
+ * render picks one by pixel coordinate, which scatters each step boundary
+ * across neighbouring pixels and reads as a smooth blend. Costs one extra
+ * index in the inner loop and 2.5 KB of table. */
+#define GRAD_DITHER 4
+static uint16_t grad_lut[GRAD_LUT_SIZE][GRAD_DITHER];
+static bool grad_enabled = false;
+/* false = ramp runs down the panel (indexed by y), true = across it (by x). */
+static bool grad_horizontal = false;
+
 /* SPI configuration from board config */
 #define LCD_SPI_HOST   BOARD_LCD_SPI_HOST
 #define LCD_SPI_FREQ   BOARD_LCD_SPI_FREQ_HZ
@@ -136,20 +153,125 @@ static void display_fill_color(uint16_t color) {
     free(line);
 }
 
-/* Paint a solid-color rectangle using rgb565_buf as scratch. Caller must hold
- * the SPI bus lock. Chunks vertically at STRIPE_HEIGHT to stay within the
- * buffer's capacity (STRIPE_HEIGHT rows × SCALED_WIDTH cols). Used by the
- * commit path to keep the LCD margins in sync with fg_color changes. */
-static void display_paint_rect(
-    size_t x, size_t y, size_t w, size_t h, uint16_t color) {
+/* RGB888 -> RGB565 with the ESP32-S3 SPI byte swap. Mirrors
+ * ui_color_pack_swap() in components/notification/notification.c. */
+static inline uint16_t display_pack_swap(uint8_t r, uint8_t g, uint8_t b) {
+    uint16_t v = ((uint16_t)(r & 0xF8) << 8) | ((uint16_t)(g & 0xFC) << 3) | (b >> 3);
+    return ((v & 0xFF) << 8) | (v >> 8);
+}
+
+/* Background color for one panel row: the gradient when enabled, else the
+ * flat UI Background. */
+/* phase = the pixel coordinate along the axis the ramp does NOT run on. */
+static inline uint16_t display_row_color(size_t panel_y, size_t phase) {
+    if(!grad_enabled || grad_horizontal) return fg_color;
+    if(panel_y >= LCD_V_RES) panel_y = LCD_V_RES - 1;
+    return grad_lut[panel_y][phase & (GRAD_DITHER - 1)];
+}
+
+/* Column colour for the horizontal ramp. */
+static inline uint16_t display_col_color(size_t panel_x, size_t phase) {
+    if(!grad_enabled || !grad_horizontal) return fg_color;
+    if(panel_x >= LCD_H_RES) panel_x = LCD_H_RES - 1;
+    return grad_lut[panel_x][phase & (GRAD_DITHER - 1)];
+}
+
+void furi_hal_display_set_bg_gradient(
+    const uint32_t* stops_rgb888, uint8_t count, uint8_t mode, bool horizontal) {
+    /* Fewer than two stops is not a gradient -- fall back to the flat color. */
+    if(!stops_rgb888 || count < 2) {
+        grad_enabled = false;
+        return;
+    }
+    if(count > FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) {
+        count = FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS;
+    }
+
+    grad_horizontal = horizontal;
+    const size_t extent = horizontal ? LCD_H_RES : LCD_V_RES;
+
+    for(size_t y = 0; y < extent; y++) {
+        /* t = position along the ramp axis, 0..255 fixed point. */
+        uint32_t t = (extent > 1) ? (uint32_t)(y * 255U) / (extent - 1) : 0;
+
+        if(mode == FuriHalDisplayGradientMirror) {
+            /* Ramp down to the middle and back, so top and bottom edges match. */
+            t = (t <= 127) ? (t * 2) : ((255 - t) * 2);
+            if(t > 255) t = 255;
+        }
+
+        uint8_t r, g, b;
+        if(mode == FuriHalDisplayGradientBands) {
+            /* Hard steps: N equal bands, no blending at all. */
+            uint32_t idx = (t * count) / 256;
+            if(idx >= count) idx = count - 1;
+            uint32_t c = stops_rgb888[idx];
+            r = (c >> 16) & 0xFF;
+            g = (c >> 8) & 0xFF;
+            b = c & 0xFF;
+        } else {
+            uint32_t span = count - 1;    /* number of segments */
+            uint32_t pos = t * span;      /* 0 .. 255*span */
+            uint32_t i = pos / 256;
+            if(i >= span) i = span - 1;
+            uint32_t f = pos - (i * 256); /* blend factor in segment, 0..255 */
+            if(f > 255) f = 255;
+
+            if(mode == FuriHalDisplayGradientSmooth) {
+                /* smoothstep f^2*(3-2f): colors linger near each stop. */
+                f = (f * f * (3 * 255 - 2 * f)) / (255 * 255);
+                if(f > 255) f = 255;
+            }
+
+            uint32_t c0 = stops_rgb888[i];
+            uint32_t c1 = stops_rgb888[i + 1];
+            r = (uint8_t)((((c0 >> 16) & 0xFF) * (255 - f) + ((c1 >> 16) & 0xFF) * f) / 255);
+            g = (uint8_t)((((c0 >> 8) & 0xFF) * (255 - f) + ((c1 >> 8) & 0xFF) * f) / 255);
+            b = (uint8_t)(((c0 & 0xFF) * (255 - f) + (c1 & 0xFF) * f) / 255);
+        }
+        /* Ordered dither: nudge each channel by a fraction of one
+         * quantisation step before packing. Red/blue quantise to 8/255,
+         * green to 4/255, so the offsets are scaled per channel. */
+        static const uint8_t bayer[GRAD_DITHER] = {0, 2, 1, 3};
+        for(size_t d = 0; d < GRAD_DITHER; d++) {
+            uint32_t rd = r + bayer[d] * 2; /* 5-bit channel: step 8 -> 0,4,2,6 */
+            uint32_t gd = g + bayer[d];     /* 6-bit channel: step 4 -> 0,2,1,3 */
+            uint32_t bd = b + bayer[d] * 2;
+            if(rd > 255) rd = 255;
+            if(gd > 255) gd = 255;
+            if(bd > 255) bd = 255;
+            grad_lut[y][d] = display_pack_swap((uint8_t)rd, (uint8_t)gd, (uint8_t)bd);
+        }
+    }
+    grad_enabled = true;
+}
+
+/* Paint a rectangle with the background: one gradient row per line when the
+ * gradient is on, otherwise a flat fill. Chunks vertically at STRIPE_HEIGHT to stay
+ * within the buffer capacity. Caller must hold the SPI bus lock. */
+static void display_paint_bg_rect(size_t x, size_t y, size_t w, size_t h) {
     if(w == 0 || h == 0 || w > LCD_H_RES) return;
 
     for(size_t y_off = 0; y_off < h; y_off += STRIPE_HEIGHT) {
         size_t chunk_h = h - y_off;
         if(chunk_h > STRIPE_HEIGHT) chunk_h = STRIPE_HEIGHT;
 
-        const size_t px_count = w * chunk_h;
-        for(size_t i = 0; i < px_count; i++) rgb565_buf[i] = color;
+        for(size_t row = 0; row < chunk_h; row++) {
+            uint16_t* dst = &rgb565_buf[row * w];
+            const size_t panel_y = y + y_off + row;
+            if(grad_enabled && grad_horizontal) {
+                /* Ramp varies across the row; dither phase comes from y. */
+                for(size_t i = 0; i < w; i++) {
+                    dst[i] = display_col_color(x + i, panel_y);
+                }
+            } else if(grad_enabled) {
+                for(size_t i = 0; i < w; i++) {
+                    dst[i] = display_row_color(panel_y, x + i);
+                }
+            } else {
+                for(size_t i = 0; i < w; i++) dst[i] = fg_color;
+            }
+        }
 
         furi_hal_display_prepare_flush();
         esp_lcd_panel_draw_bitmap(
@@ -311,16 +433,16 @@ void furi_hal_display_commit(const uint8_t* data, uint32_t size) {
      * DISPLAY_SIDE_MARGIN inset, plus any extra from aspect-fit centering) span
      * only the height of the scaled image so they don't overdraw the corners. */
     if(MARGIN_Y > 0) {
-        display_paint_rect(0, 0, LCD_H_RES, MARGIN_Y, fg_color);
-        display_paint_rect(
+        display_paint_bg_rect(0, 0, LCD_H_RES, MARGIN_Y);
+        display_paint_bg_rect(
             0, MARGIN_Y + SCALED_HEIGHT,
-            LCD_H_RES, LCD_V_RES - MARGIN_Y - SCALED_HEIGHT, fg_color);
+            LCD_H_RES, LCD_V_RES - MARGIN_Y - SCALED_HEIGHT);
     }
     if(MARGIN_X > 0) {
-        display_paint_rect(0, MARGIN_Y, MARGIN_X, SCALED_HEIGHT, fg_color);
-        display_paint_rect(
+        display_paint_bg_rect(0, MARGIN_Y, MARGIN_X, SCALED_HEIGHT);
+        display_paint_bg_rect(
             MARGIN_X + SCALED_WIDTH, MARGIN_Y,
-            LCD_H_RES - MARGIN_X - SCALED_WIDTH, SCALED_HEIGHT, fg_color);
+            LCD_H_RES - MARGIN_X - SCALED_WIDTH, SCALED_HEIGHT);
     }
 
     for(size_t stripe_y = 0; stripe_y < SCALED_HEIGHT; stripe_y += STRIPE_HEIGHT) {
@@ -336,11 +458,31 @@ void furi_hal_display_commit(const uint8_t* data, uint32_t size) {
             const size_t page = mono_y >> 3;
             const uint8_t bit_mask = 1U << (mono_y & 0x07);
             uint16_t* dst = &rgb565_buf[row * SCALED_WIDTH];
-
-            for(size_t sx = 0; sx < SCALED_WIDTH; sx++) {
-                const uint8_t mono_x = x_scale_lut[sx];
-                const bool pixel_set = (data[page * FB_WIDTH + mono_x] & bit_mask) != 0;
-                dst[sx] = pixel_set ? bg_color : fg_color;
+            /* Vertical ramp is one lookup per row; horizontal needs one per
+             * column, which is the same cost as the x_scale_lut read already
+             * in this loop. */
+            const size_t panel_y = MARGIN_Y + sy;
+            if(grad_enabled && grad_horizontal) {
+                for(size_t sx = 0; sx < SCALED_WIDTH; sx++) {
+                    const uint8_t mono_x = x_scale_lut[sx];
+                    const bool pixel_set = (data[page * FB_WIDTH + mono_x] & bit_mask) != 0;
+                    dst[sx] = pixel_set ? bg_color :
+                                          grad_lut[MARGIN_X + sx][panel_y & (GRAD_DITHER - 1)];
+                }
+            } else if(grad_enabled) {
+                /* Row is fixed, so the dither phase is the x coordinate. */
+                const uint16_t* row_ramp = grad_lut[panel_y];
+                for(size_t sx = 0; sx < SCALED_WIDTH; sx++) {
+                    const uint8_t mono_x = x_scale_lut[sx];
+                    const bool pixel_set = (data[page * FB_WIDTH + mono_x] & bit_mask) != 0;
+                    dst[sx] = pixel_set ? bg_color : row_ramp[sx & (GRAD_DITHER - 1)];
+                }
+            } else {
+                for(size_t sx = 0; sx < SCALED_WIDTH; sx++) {
+                    const uint8_t mono_x = x_scale_lut[sx];
+                    const bool pixel_set = (data[page * FB_WIDTH + mono_x] & bit_mask) != 0;
+                    dst[sx] = pixel_set ? bg_color : fg_color;
+                }
             }
         }
 

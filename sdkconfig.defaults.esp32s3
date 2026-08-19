@@ -7,10 +7,12 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 
-# Single-app partition table for the 16 MB flash. See partitions_singleapp_16mb.csv.
+# Release table: single firmware, 8 MB factory, no ota_0. Dual Boot is disabled
+# in public builds, so the slot it needed goes to the app. Swap both filenames
+# back to partitions_singleapp_16mb.csv to build a dual-boot image.
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_singleapp_16mb.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_16mb.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_release_16mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_release_16mb.csv"
 
 # ESP32-S3 is dual-core Xtensa — keep unicore for Furi compatibility
 CONFIG_FREERTOS_UNICORE=y
@@ -95,3 +97,26 @@ CONFIG_LWIP_MAX_SOCKETS=16
 CONFIG_LWIP_IP_FORWARD=y
 CONFIG_LWIP_IPV4_NAPT=y
 CONFIG_LWIP_L2_TO_L3_COPY=y
+
+# ---- Dual boot: hardware escape hatch back to this firmware ----
+# Hold the side/Back button (IO06) at power-on for 3 s and the *bootloader*
+# erases otadata, which makes the ROM bootloader start `factory` -- this
+# firmware. It runs before any app code, so it still works when the firmware
+# installed in ota_0 hangs, crashes or never reaches its own "back to Flipper"
+# control. Without it, a bad second firmware means recovery over USB.
+#
+# IO06 is the side key: not an ESP32-S3 strapping pin (those are 0/3/45/46), so
+# holding it at reset is safe. IO00 could NOT be used -- it is the download-mode
+# strapping pin, so holding that drops the chip into the serial bootloader.
+# The button is active low, hence PIN_LOW.
+#
+# BOOTLOADER_DATA_FACTORY_RESET is a *string* of partition names to wipe, not a
+# bool, and it defaults to "nvs" -- leaving it alone would erase settings and BT
+# bonds on every escape-hatch press. Forced empty so only otadata is cleared,
+# which is all that is needed to select `factory`.
+CONFIG_BOOTLOADER_FACTORY_RESET=y
+CONFIG_BOOTLOADER_NUM_PIN_FACTORY_RESET=6
+CONFIG_BOOTLOADER_FACTORY_RESET_PIN_LOW=y
+CONFIG_BOOTLOADER_OTA_DATA_ERASE=y
+CONFIG_BOOTLOADER_DATA_FACTORY_RESET=""
+CONFIG_BOOTLOADER_HOLD_TIME_GPIO=3

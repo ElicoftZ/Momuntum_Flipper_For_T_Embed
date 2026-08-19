@@ -692,6 +692,56 @@ bool furi_hal_sd_is_mounted(void) {
     return sd_mounted;
 }
 
+bool furi_hal_sd_format(void) {
+    if(!sd_initialized || sd_card == NULL) {
+        ESP_LOGE(TAG, "Format requested with no card initialized");
+        return false;
+    }
+
+    /* f_mkfs drives the same diskio layer as the mounted volume, so the volume
+     * has to be let go first or it rewrites the FAT under a live FATFS object.
+     * This port registers FatFs directly (ff_diskio_register) rather than going
+     * through the VFS wrapper, which is why esp_vfs_fat_sdcard_format() is not
+     * usable here. */
+    const bool was_mounted = sd_mounted;
+    if(was_mounted) {
+        f_mount(NULL, SD_FATFS_DRIVE, 0);
+        sd_mounted = false;
+    }
+
+    /* FatFs needs a work buffer of at least one sector. */
+    void* work = malloc(FF_MAX_SS);
+    if(work == NULL) {
+        ESP_LOGE(TAG, "Format: cannot allocate %d byte work buffer", (int)FF_MAX_SS);
+        return false;
+    }
+
+    /* Via the project's fatfs.h shim, whose argument order differs from stock
+     * FatFs. FM_FAT|FM_FAT32 lets FatFs pick by capacity (exFAT is not compiled
+     * in); allocation unit 0 = default cluster size for the card. */
+    const FRESULT result = f_mkfs(SD_FATFS_DRIVE, FM_FAT | FM_FAT32, 0, work, FF_MAX_SS);
+    free(work);
+
+    if(result != FR_OK) {
+        ESP_LOGE(TAG, "f_mkfs failed: %d", result);
+        /* Leave the card mounted if it still can be, so a failed format does
+         * not also take the filesystem away. */
+        if(was_mounted && f_mount(&fatfs_object, SD_FATFS_DRIVE, 1) == FR_OK) {
+            sd_mounted = true;
+        }
+        return false;
+    }
+
+    if(f_mount(&fatfs_object, SD_FATFS_DRIVE, 1) != FR_OK) {
+        ESP_LOGE(TAG, "Format succeeded but remount failed");
+        return false;
+    }
+
+    sd_mounted = true;
+    ESP_LOGI(TAG, "SD card formatted and remounted");
+    return true;
+}
+
 bool furi_hal_sd_release_fatfs(void) {
     if(!sd_mounted) return true;
 

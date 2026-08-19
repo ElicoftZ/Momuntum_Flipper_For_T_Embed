@@ -28,7 +28,7 @@
 
 #define NOTIFICATION_SETTINGS_PATH    INT_PATH(".notification.settings")
 #define NOTIFICATION_SETTINGS_MAGIC   0x42
-#define NOTIFICATION_SETTINGS_VERSION 0x0A
+#define NOTIFICATION_SETTINGS_VERSION 0x0C /* 0x0C: added display_sleep_delay_ms */
 
 typedef enum {
     NotificationLayerMessage,
@@ -92,6 +92,25 @@ static void notification_reset_notification_display_layer(NotificationApp* app) 
     furi_hal_display_set_backlight(app->display.value[LayerInternal]);
 }
 
+/* Idle delays are user settings now. The stored value is the delay from the
+ * last activity; the sleep timer is armed when the dim fires, so it needs
+ * the remainder rather than the whole. */
+static uint32_t notification_dim_delay(NotificationApp* app) {
+    uint32_t d = app->settings.display_off_delay_ms;
+    return d ? d : NOTIFICATION_IDLE_DIM_DELAY_MS;
+}
+
+/** @return 0 when sleep is disabled. */
+static uint32_t notification_sleep_remainder(NotificationApp* app) {
+    const uint32_t sleep = app->settings.display_sleep_delay_ms;
+    if(sleep == 0) return 0; /* Never */
+
+    const uint32_t dim = notification_dim_delay(app);
+    /* A sleep delay at or before the dim would blank the screen the instant
+     * it dimmed; give it one dim period of daylight instead. */
+    return (sleep > dim) ? (sleep - dim) : dim;
+}
+
 static void notification_reset_notification_layer(
     NotificationApp* app,
     bool reset_display,
@@ -113,7 +132,7 @@ static void notification_reset_notification_layer(
 
     // display_led_lock is Wake mode: hold the backlight on and never sleep.
     if(app->settings.display_off_delay_ms > 0 && !app->display_led_lock) {
-        furi_timer_start(app->display_timer, furi_ms_to_ticks(NOTIFICATION_IDLE_DIM_DELAY_MS));
+        furi_timer_start(app->display_timer, furi_ms_to_ticks(notification_dim_delay(app)));
     }
 }
 
@@ -135,7 +154,7 @@ static void notification_display_sleep_timer(void* context) {
     /* Apps that must keep running hold insomnia; do not sleep under them. */
     if(!furi_hal_power_sleep_available()) {
         furi_timer_start(
-            app->display_sleep_timer, furi_ms_to_ticks(NOTIFICATION_IDLE_SLEEP_DELAY_MS));
+            app->display_sleep_timer, furi_ms_to_ticks(notification_sleep_remainder(app)));
         return;
     }
 
@@ -159,10 +178,9 @@ static void notification_display_timer(void* context) {
     lcd_backlight_is_on = false;
     furi_hal_display_set_backlight(NOTIFICATION_IDLE_DIM_BACKLIGHT);
 
-    if(app->display_sleep_timer) {
-        furi_timer_start(
-            app->display_sleep_timer,
-            furi_ms_to_ticks(NOTIFICATION_IDLE_SLEEP_DELAY_MS - NOTIFICATION_IDLE_DIM_DELAY_MS));
+    const uint32_t sleep_in = notification_sleep_remainder(app);
+    if(app->display_sleep_timer && sleep_in > 0) {
+        furi_timer_start(app->display_sleep_timer, furi_ms_to_ticks(sleep_in));
     }
 }
 
@@ -265,7 +283,7 @@ static void notification_process_notification_message(
                 // Leaving Wake mode restarts the idle sequence from now.
                 if(app->settings.display_off_delay_ms > 0) {
                     furi_timer_start(
-                        app->display_timer, furi_ms_to_ticks(NOTIFICATION_IDLE_DIM_DELAY_MS));
+                        app->display_timer, furi_ms_to_ticks(notification_dim_delay(app)));
                 }
                 notification_apply_internal_display_layer(
                     app,
@@ -745,10 +763,58 @@ static void notification_ui_spectrum_tick(void* context) {
     ui_spectrum_hue++;
 }
 
+/* Palette entries are stored pre-packed as byte-swapped RGB565, but the
+ * gradient builder interpolates in RGB888 (blending packed 565 would band
+ * badly). Unpack back to 0x00RRGGBB, scaling each channel to full range. */
+static uint32_t ui_color_to_rgb888(uint16_t swapped) {
+    const uint16_t v = (uint16_t)(((swapped & 0xFF) << 8) | (swapped >> 8));
+    const uint32_t r = (((v >> 11) & 0x1F) * 255U) / 31U;
+    const uint32_t g = (((v >> 5) & 0x3F) * 255U) / 63U;
+    const uint32_t b = ((v & 0x1F) * 255U) / 31U;
+    return (r << 16) | (g << 8) | b;
+}
+
+/* Resolve one gradient stop to RGB888, honouring the custom-color slot the
+ * same way ui_color_index does. Spectrum is animated and has no fixed value,
+ * so it falls back to the stop's custom color. */
+static uint32_t ui_gradient_stop_rgb888(const NotificationSettings* s, uint8_t stop) {
+    const uint8_t idx = s->ui_bg_stop_index[stop];
+    if(idx == UI_COLOR_CUSTOM_INDEX || idx >= UI_COLOR_SPECTRUM_INDEX) {
+        return s->ui_bg_stop_custom[stop] & 0xFFFFFF;
+    }
+    return ui_color_to_rgb888(ui_color_value[idx]);
+}
+
+/* Push the gradient (or turn it off) based on the current settings. */
+void notification_apply_ui_gradient(NotificationApp* app) {
+    if(!app) return;
+    const NotificationSettings* s = &app->settings;
+    uint8_t count = s->ui_bg_color_count;
+
+    if(count < 2) {
+        /* One stop = flat background; the HAL falls back to fg_color. */
+        furi_hal_display_set_bg_gradient(NULL, 0, 0, false);
+        return;
+    }
+    if(count > FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) {
+        count = FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS;
+    }
+
+    uint32_t stops[FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS];
+    for(uint8_t i = 0; i < count; i++) {
+        stops[i] = ui_gradient_stop_rgb888(s, i);
+    }
+    furi_hal_display_set_bg_gradient(stops, count, s->ui_bg_mix, s->ui_bg_horizontal);
+}
+
 void notification_apply_ui_color(NotificationApp* app) {
     if(!app) return;
     uint8_t bg_idx = app->settings.ui_color_index;
     uint8_t fg_idx = app->settings.ui_fg_color_index;
+
+    /* The gradient overrides the flat background when enabled, so keep it in
+     * sync with every color change. */
+    notification_apply_ui_gradient(app);
 
     /* Push static colors immediately; defer animated ones to the timer.
      * The custom index pulls its color from settings.ui_custom_color (0x00RRGGBB)
@@ -811,6 +877,17 @@ static NotificationApp* notification_app_alloc(void) {
     app->settings.ui_fg_color_index = 0; /* Default: Black (preserves stock contrast) */
     app->settings.ui_custom_color = UI_CUSTOM_DEFAULT_RGB; /* picker start color */
     app->settings.ui_custom_color_set = false; /* no custom color defined yet */
+    /* Gradient off by default so the stock look is unchanged. The stops still
+     * get sensible starting colors so turning it on shows something useful
+     * rather than four identical blacks. */
+    app->settings.ui_bg_color_count = 1;
+    app->settings.ui_bg_mix = (uint8_t)FuriHalDisplayGradientLinear;
+    app->settings.ui_bg_horizontal = false;
+    app->settings.display_sleep_delay_ms = NOTIFICATION_IDLE_SLEEP_DELAY_MS;
+    for(uint8_t i = 0; i < FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS; i++) {
+        app->settings.ui_bg_stop_index[i] = (uint8_t)(i + 1); /* spread across the palette */
+        app->settings.ui_bg_stop_custom[i] = UI_CUSTOM_DEFAULT_RGB;
+    }
     app->current_night_shift = 1.0f;
 
     /* Try to load persisted settings (NVS-backed via saved_struct).
@@ -825,10 +902,7 @@ static NotificationApp* notification_app_alloc(void) {
     app->display.value[LayerInternal] = 0x00;
     app->display.value[LayerNotification] = 0x00;
     app->display.index = LayerInternal;
-    /* TEMPORARY: Wake mode defaults on for the duration of the Momentum port,
-     * so idle dim and deep sleep never interrupt flashing and testing. Revert
-     * to false once the port is finished; the lock menu toggle still works. */
-    app->display_led_lock = true;
+    app->display_led_lock = false;
 
     app->event_record = furi_record_open(RECORD_INPUT_EVENTS);
     furi_pubsub_subscribe(app->event_record, input_event_callback, app);

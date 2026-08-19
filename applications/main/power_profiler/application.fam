@@ -1,0 +1,13 @@
+App(
+    appid="power_profiler",
+    name="Power Profiler",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="power_profiler_app",
+    requires=[
+        "gui",
+    ],
+    stack_size=2 * 1024,
+    icon="A_Plugins_14",
+    order=92,
+    fap_category="Tools",
+)

@@ -16,7 +16,7 @@ static void main_menu_callback(void* context, uint32_t index) {
 void ble_spam_scene_main_on_enter(void* context) {
     BleSpamApp* app = context;
 
-    submenu_add_item(app->submenu, "Spam", MainMenuIndexBleSpam, main_menu_callback, app);
+    submenu_add_item(app->submenu, "BLE Spam", MainMenuIndexBleSpam, main_menu_callback, app);
     submenu_add_item(app->submenu, "Walk", MainMenuIndexBleWalk, main_menu_callback, app);
     submenu_add_item(
         app->submenu, "Auto Walk", MainMenuIndexBleAutoWalk, main_menu_callback, app);

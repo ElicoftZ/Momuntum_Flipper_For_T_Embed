@@ -11,6 +11,8 @@
 #include <esp_adc/adc_cali_scheme.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_err.h>
+#include <esp_attr.h>
+#include <sys/time.h>
 #include <esp_log.h>
 #include <esp_sleep.h>
 #include <soc/soc_caps.h>
@@ -278,7 +280,76 @@ static float furi_hal_power_get_estimated_battery_voltage(void) {
     return furi_hal_power.last_supply_voltage;
 }
 
+/* ---- Measured deep-sleep drain -------------------------------------
+ *
+ * A sleep-life figure from a datasheet constant would be fiction: it
+ * depends on what this firmware actually leaves powered. The BQ27220 is a
+ * coulomb counter and keeps counting through deep sleep, so the honest way
+ * is to measure -- stash remaining capacity and wall time on the way down,
+ * and work out the average draw on the way back up.
+ *
+ * RTC_NOINIT_ATTR survives deep sleep but is garbage after a cold boot,
+ * hence the magic. System time survives deep sleep too (IDF restores it
+ * from the RTC timer), which the port's own FuriHalRtcState does not.
+ */
+#define POWER_SLEEP_MARK_MAGIC 0x5A1EEDU
+
+RTC_NOINIT_ATTR static uint32_t power_sleep_mark_magic;
+RTC_NOINIT_ATTR static uint32_t power_sleep_mark_mah;
+RTC_NOINIT_ATTR static int64_t power_sleep_mark_us;
+/* Last measured average sleep draw, microamps. 0 = not measured yet. */
+RTC_NOINIT_ATTR static uint32_t power_sleep_measured_ua;
+
+static int64_t power_wall_us(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+}
+
+/** Record where we are before dropping into deep sleep. */
+static void power_sleep_mark(void) {
+    if(!furi_hal_bq27220_is_present()) return;
+    power_sleep_mark_mah = furi_hal_bq27220_get_remaining_capacity_mah();
+    power_sleep_mark_us = power_wall_us();
+    power_sleep_mark_magic = POWER_SLEEP_MARK_MAGIC;
+}
+
+/** Close the loop on the way back up. Called once from init. */
+static void power_sleep_measure(void) {
+    if(power_sleep_mark_magic != POWER_SLEEP_MARK_MAGIC) {
+        /* Cold boot: RTC memory is undefined, so do not trust anything. */
+        power_sleep_mark_magic = 0;
+        power_sleep_measured_ua = 0;
+        return;
+    }
+    power_sleep_mark_magic = 0; /* consume it either way */
+
+    if(!furi_hal_bq27220_is_present()) return;
+
+    const int64_t elapsed_us = power_wall_us() - power_sleep_mark_us;
+    const uint32_t now_mah = furi_hal_bq27220_get_remaining_capacity_mah();
+
+    /* The gauge counts in whole mAh, so a short sleep moves it by nothing at
+     * all: at ~300 uA it takes over three hours to burn 1 mAh. Anything under
+     * 30 min cannot produce a meaningful rate, and a charger attached during
+     * sleep makes capacity go up. Both are useless samples rather than
+     * errors -- keep whatever figure we already had. */
+    if(elapsed_us < 1800LL * 1000000LL) return;
+    if(now_mah >= power_sleep_mark_mah) return;
+
+    const double used_mah = (double)(power_sleep_mark_mah - now_mah);
+    const double hours = (double)elapsed_us / 3600000000.0;
+    const double ua = (used_mah / hours) * 1000.0;
+
+    if(ua > 0.0 && ua < 500000.0) power_sleep_measured_ua = (uint32_t)ua;
+}
+
+uint32_t furi_hal_power_get_sleep_current_ua(void) {
+    return power_sleep_measured_ua;
+}
+
 void furi_hal_power_init(void) {
+    power_sleep_measure();
     furi_hal_power_ensure_initialized();
 
     /* Initialize shared I2C bus for power ICs (BQ27220 + BQ25896) */
@@ -444,6 +515,9 @@ void furi_hal_power_shutdown(void) {
      * why the reboot persisted across re-flashes. Disabling it unconditionally
      * makes power-off deterministic regardless of what ran before. */
     gpio_deep_sleep_hold_dis();
+    /* Last thing before the lights go out. */
+    power_sleep_mark();
+
     esp_deep_sleep_start();
 }
 

@@ -60,7 +60,7 @@ if not exist "%BUILD_DIR%\furi_esp32.bin" (
 )
 
 echo [4/4] Creating one-file 16 MB flash image...
-python -m esptool --chip esp32s3 merge_bin -o "%MERGED_BIN%" --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 "%BUILD_DIR%\bootloader\bootloader.bin" 0x8000 "%BUILD_DIR%\partition_table\partition-table.bin" 0x10000 "%BUILD_DIR%\furi_esp32.bin"
+python -m esptool --chip esp32s3 merge_bin -o "%MERGED_BIN%" --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 "%BUILD_DIR%\bootloader\bootloader.bin" 0x8000 "%BUILD_DIR%\partition_table\partition-table.bin" 0x20000 "%BUILD_DIR%\furi_esp32.bin"
 if errorlevel 1 exit /b %errorlevel%
 
 echo.

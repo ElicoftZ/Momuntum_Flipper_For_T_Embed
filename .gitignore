@@ -34,3 +34,9 @@ build_host/
 
 # Assembled SD card payload (generated from the Momentum checkout)
 sdcard/
+
+# Release-variant build output
+build_t_embed_release/
+
+# Redistributable SD payload, built by tools/pack_assets.py
+sdcard.zip

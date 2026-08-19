@@ -23,6 +23,7 @@
 #include <esp_bt_main.h>
 #include <esp_err.h>
 #include <esp_gap_ble_api.h>
+#include <esp_gattc_api.h>
 #include <esp_gatts_api.h>
 #include <esp_gatt_common_api.h>
 #include <esp_log.h>
@@ -30,6 +31,8 @@
 #include <nvs_flash.h>
 
 #include <furi_ble/gap.h>
+#include <datetime/datetime.h>
+#include <furi_hal_rtc.h>
 
 /* Defined in furi_hal_bt.c — bridges BLE events to the BT service */
 extern void furi_hal_bt_emit_gap_event(GapEvent event);
@@ -455,6 +458,232 @@ static const esp_gatts_attr_db_t bas_gatt_db[BAS_IDX_NB] = {
 static uint16_t bas_handle_table[BAS_IDX_NB];
 static bool bas_service_started = false;
 
+/* ---- Current Time Service (0x1805) ----
+ * The T-Embed has no battery-backed RTC, so the clock restarts at the epoch on
+ * every power-up. This exposes the SIG-standard Current Time characteristic as
+ * writable so any connected device can set the clock -- a phone app, a desktop
+ * script, or a generic GATT tool such as nRF Connect.
+ *
+ * Write is not permission-gated, so any peer that connects can set the clock.
+ * That is deliberate: gating it behind bonding would defeat "sync from any
+ * device", and the worst a hostile peer can do is set the wrong time. */
+static const uint16_t cts_svc_uuid = 0x1805;
+static const uint16_t cts_current_time_uuid = 0x2A2B;
+
+/* Exact Time 256 followed by an adjust reason, per the CTS spec:
+ *   [0..1] year LE, [2] month 1-12, [3] day 1-31, [4] hours, [5] minutes,
+ *   [6] seconds, [7] day of week 1-7, [8] fractions256, [9] adjust reason.
+ * Writers that stop after byte 6 are accepted too, since the trailing fields
+ * are not needed to set the clock. */
+#define CTS_VALUE_SIZE     10
+#define CTS_MIN_WRITE_SIZE 7
+
+static uint8_t cts_current_time[CTS_VALUE_SIZE] = {0};
+
+enum {
+    CTS_IDX_SVC,
+    CTS_IDX_CURRENT_TIME_CHAR,
+    CTS_IDX_CURRENT_TIME_VAL,
+    CTS_IDX_NB,
+};
+
+static const uint8_t cts_char_prop_read_write =
+    ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE |
+    ESP_GATT_CHAR_PROP_BIT_WRITE_NR;
+
+static const esp_gatts_attr_db_t cts_gatt_db[CTS_IDX_NB] = {
+    [CTS_IDX_SVC] = {{ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t*)&primary_service_uuid, ESP_GATT_PERM_READ,
+         sizeof(uint16_t), sizeof(uint16_t), (uint8_t*)&cts_svc_uuid}},
+    [CTS_IDX_CURRENT_TIME_CHAR] = {{ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t*)&char_declaration_uuid, ESP_GATT_PERM_READ,
+         1, 1, (uint8_t*)&cts_char_prop_read_write}},
+    [CTS_IDX_CURRENT_TIME_VAL] = {{ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t*)&cts_current_time_uuid,
+         ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+         CTS_VALUE_SIZE, CTS_VALUE_SIZE, cts_current_time}},
+};
+
+static uint16_t cts_handle_table[CTS_IDX_NB];
+static bool cts_service_started = false;
+
+/** Set the system clock from a Current Time characteristic write.
+ *
+ * @return true if the payload was a valid date and the clock was set.
+ */
+static bool cts_apply_write(const uint8_t* value, uint16_t len) {
+    if(len < CTS_MIN_WRITE_SIZE) {
+        ESP_LOGW(TAG, "cts: write too short: %u bytes", (unsigned)len);
+        return false;
+    }
+
+    DateTime datetime = {
+        .year = (uint16_t)(value[0] | (value[1] << 8)),
+        .month = value[2],
+        .day = value[3],
+        .hour = value[4],
+        .minute = value[5],
+        .second = value[6],
+        /* Recomputed below; a writer is free to send a wrong or zero weekday. */
+        .weekday = 1,
+    };
+
+    if(!datetime_validate_datetime(&datetime)) {
+        ESP_LOGW(TAG, "cts: rejected %04u-%02u-%02u %02u:%02u:%02u",
+            datetime.year, datetime.month, datetime.day,
+            datetime.hour, datetime.minute, datetime.second);
+        return false;
+    }
+
+    /* Round-trip through a timestamp so the weekday matches the date rather
+     * than whatever the writer claimed. */
+    datetime_timestamp_to_datetime(datetime_datetime_to_timestamp(&datetime), &datetime);
+
+    furi_hal_rtc_set_datetime(&datetime);
+    ESP_LOGI(TAG, "cts: clock set to %04u-%02u-%02u %02u:%02u:%02u",
+        datetime.year, datetime.month, datetime.day,
+        datetime.hour, datetime.minute, datetime.second);
+    return true;
+}
+
+/* ---- Current Time client: read the clock off the peer ----
+ * iOS publishes a Current Time Service once a peripheral is bonded, which is
+ * how watches and fitness bands set themselves without the user doing
+ * anything. Once authentication completes we open a GATT *client* connection
+ * over the same link, look for 0x1805/0x2A2B on the phone and read it, feeding
+ * the result through the same parser the writable characteristic uses.
+ *
+ * Android generally does not publish CTS, and neither does a desktop, so every
+ * failure here is logged and dropped rather than retried -- the writable
+ * characteristic remains the path for those. */
+#define BLE_TIME_CLIENT_APP_ID 0x56
+
+static esp_gatt_if_t cts_client_if = ESP_GATT_IF_NONE;
+static uint16_t cts_client_conn_id = 0;
+static uint16_t cts_client_svc_start = 0;
+static uint16_t cts_client_svc_end = 0;
+static bool cts_client_busy = false;
+
+static esp_bt_uuid_t cts_client_svc_uuid = {
+    .len = ESP_UUID_LEN_16,
+    .uuid = {.uuid16 = 0x1805},
+};
+
+static esp_bt_uuid_t cts_client_char_uuid = {
+    .len = ESP_UUID_LEN_16,
+    .uuid = {.uuid16 = 0x2A2B},
+};
+
+static void cts_client_finish(const char* why) {
+    /* Deliberately no esp_ble_gattc_close() here. This client rides the ACL
+     * link the phone opened to talk to our serial service, and closing the
+     * virtual GATT connection takes that link down with it (HCI disconnect,
+     * reason 0x13). That dropped RPC the moment the clock was read, and the
+     * phone reconnected and re-bonded in a ~3 s loop, each round allocating a
+     * fresh RPC session and RX feeder thread until the internal heap ran out
+     * and furi_thread_alloc() returned NULL.
+     *
+     * The peer owns the link lifetime; ESP_GATTC_DISCONNECT_EVT resets us when
+     * it really goes away. */
+    cts_client_busy = false;
+    cts_client_svc_start = 0;
+    cts_client_svc_end = 0;
+    if(why) ESP_LOGI(TAG, "cts client: %s", why);
+}
+
+/** Ask the freshly bonded peer for its clock. */
+static void cts_client_start(esp_bd_addr_t addr, esp_ble_addr_type_t addr_type) {
+    if(cts_client_if == ESP_GATT_IF_NONE) {
+        ESP_LOGW(TAG, "cts client: not registered, skipping");
+        return;
+    }
+    if(cts_client_busy) return;
+
+    cts_client_busy = true;
+    esp_err_t err = esp_ble_gattc_open(cts_client_if, addr, addr_type, true);
+    if(err != ESP_OK) {
+        cts_client_busy = false;
+        ESP_LOGW(TAG, "cts client: open failed: %s", esp_err_to_name(err));
+    }
+}
+
+static void cts_client_gattc_event_handler(
+    esp_gattc_cb_event_t event,
+    esp_gatt_if_t gattc_if,
+    esp_ble_gattc_cb_param_t* param) {
+
+    switch(event) {
+    case ESP_GATTC_REG_EVT:
+        if(param->reg.status == ESP_GATT_OK) {
+            cts_client_if = gattc_if;
+            ESP_LOGI(TAG, "cts client: registered, gattc_if=%d", gattc_if);
+        } else {
+            ESP_LOGE(TAG, "cts client: register failed: %d", param->reg.status);
+        }
+        break;
+
+    case ESP_GATTC_OPEN_EVT:
+        if(param->open.status != ESP_GATT_OK) {
+            ESP_LOGW(TAG, "cts client: open status %d", param->open.status);
+            cts_client_busy = false;
+            break;
+        }
+        cts_client_conn_id = param->open.conn_id;
+        ESP_LOGI(TAG, "cts client: open, searching for 0x1805");
+        esp_ble_gattc_search_service(gattc_if, param->open.conn_id, &cts_client_svc_uuid);
+        break;
+
+    case ESP_GATTC_SEARCH_RES_EVT:
+        cts_client_svc_start = param->search_res.start_handle;
+        cts_client_svc_end = param->search_res.end_handle;
+        ESP_LOGI(TAG, "cts client: found 0x1805 handles %u..%u",
+            cts_client_svc_start, cts_client_svc_end);
+        break;
+
+    case ESP_GATTC_SEARCH_CMPL_EVT: {
+        if(cts_client_svc_start == 0) {
+            cts_client_finish("peer publishes no Current Time Service");
+            break;
+        }
+        uint16_t count = 1;
+        esp_gattc_char_elem_t elem;
+        esp_gatt_status_t status = esp_ble_gattc_get_char_by_uuid(
+            gattc_if, cts_client_conn_id, cts_client_svc_start, cts_client_svc_end,
+            cts_client_char_uuid, &elem, &count);
+        if(status != ESP_GATT_OK || count == 0) {
+            cts_client_finish("peer has no Current Time characteristic");
+            break;
+        }
+        ESP_LOGI(TAG, "cts client: reading handle %u", elem.char_handle);
+        esp_ble_gattc_read_char(
+            gattc_if, cts_client_conn_id, elem.char_handle, ESP_GATT_AUTH_REQ_NONE);
+        break;
+    }
+
+    case ESP_GATTC_READ_CHAR_EVT:
+        if(param->read.status == ESP_GATT_OK) {
+            ESP_LOGI(TAG, "cts client: read %u bytes from peer", param->read.value_len);
+            cts_apply_write(param->read.value, param->read.value_len);
+            cts_client_finish("clock taken from peer");
+        } else {
+            char msg[48];
+            snprintf(msg, sizeof(msg), "read failed, status %d", param->read.status);
+            cts_client_finish(msg);
+        }
+        break;
+
+    case ESP_GATTC_DISCONNECT_EVT:
+    case ESP_GATTC_CLOSE_EVT:
+        cts_client_busy = false;
+        cts_client_svc_start = 0;
+        cts_client_svc_end = 0;
+        break;
+
+    default:
+        break;
+    }
+}
+
 /* ---- GAP event handler ---- */
 
 static void serial_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param) {
@@ -529,6 +758,12 @@ static void serial_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_c
          * The initial notifications sent at connection time are typically lost because
          * the client hasn't subscribed to CCCDs yet. */
         if(param->ble_security.auth_cmpl.success) {
+            /* Bonded now, so the peer will expose its Current Time Service if
+             * it has one. Harmless when it does not. */
+            cts_client_start(
+                param->ble_security.auth_cmpl.bd_addr,
+                param->ble_security.auth_cmpl.addr_type);
+
             BleSerial* s = serial_state.active;
             if(s && s->connected) {
                 /* Re-send Flow Control if callback was set */
@@ -618,6 +853,11 @@ static void serial_gatts_event_handler(
             ESP_LOGI(TAG, "gatts: BAS attr table created, starting service");
             memcpy(bas_handle_table, param->add_attr_tab.handles, sizeof(bas_handle_table));
             esp_ble_gatts_start_service(bas_handle_table[BAS_IDX_SVC]);
+        } else if(param->add_attr_tab.num_handle == CTS_IDX_NB) {
+            /* Current Time service table created */
+            ESP_LOGI(TAG, "gatts: CTS attr table created, starting service");
+            memcpy(cts_handle_table, param->add_attr_tab.handles, sizeof(cts_handle_table));
+            esp_ble_gatts_start_service(cts_handle_table[CTS_IDX_SVC]);
         } else {
             ESP_LOGE(TAG, "gatts: attr table handle count unexpected: %d", param->add_attr_tab.num_handle);
         }
@@ -644,6 +884,13 @@ static void serial_gatts_event_handler(
             if(serial_state.ready_sem) {
                 xSemaphoreGive(serial_state.ready_sem);
             }
+            /* The time service is optional, so it is created only after BLE has
+             * been signalled ready: a failure here must not stall startup. */
+            ESP_LOGI(TAG, "gatts: creating CTS attribute table...");
+            esp_ble_gatts_create_attr_tab(cts_gatt_db, serial->gatts_if, CTS_IDX_NB, 3);
+        } else if(!cts_service_started) {
+            cts_service_started = true;
+            ESP_LOGI(TAG, "gatts: CTS started, clock can be set over BLE");
         }
         break;
 
@@ -671,6 +918,12 @@ static void serial_gatts_event_handler(
         break;
 
     case ESP_GATTS_WRITE_EVT:
+        /* Checked before the serial guard below: setting the clock does not
+         * need an active serial instance. */
+        if(cts_service_started && param->write.handle == cts_handle_table[CTS_IDX_CURRENT_TIME_VAL]) {
+            cts_apply_write(param->write.value, param->write.len);
+            break;
+        }
         if(!serial) break;
         ESP_LOGI(TAG, "gatts: WRITE handle=%d len=%d need_rsp=%d is_prep=%d",
             param->write.handle, param->write.len,
@@ -1022,6 +1275,7 @@ BleSerial* ble_serial_alloc(const BleSerialConfig* config) {
     serial_state.service_started = false;
     dis_service_started = false;
     bas_service_started = false;
+    cts_service_started = false;
     serial_state.rand_addr_pending = false;
     serial_state.rand_addr_enabled = false;
     serial_unlock_global();
@@ -1040,6 +1294,20 @@ BleSerial* ble_serial_alloc(const BleSerialConfig* config) {
     if(err != ESP_OK) {
         ESP_LOGE(TAG, "GATTS callback register failed: %s", esp_err_to_name(err));
         goto error;
+    }
+
+    /* Optional: lets the board read a bonded peer's clock. A failure here
+     * leaves the writable Current Time characteristic working, so it is logged
+     * rather than aborting BLE startup. */
+    cts_client_if = ESP_GATT_IF_NONE;
+    cts_client_busy = false;
+    if(esp_ble_gattc_register_callback(cts_client_gattc_event_handler) == ESP_OK) {
+        esp_err_t cerr = esp_ble_gattc_app_register(BLE_TIME_CLIENT_APP_ID);
+        if(cerr != ESP_OK) {
+            ESP_LOGW(TAG, "cts client: app register failed: %s", esp_err_to_name(cerr));
+        }
+    } else {
+        ESP_LOGW(TAG, "cts client: callback register failed");
     }
 
     ESP_LOGI(TAG, "alloc: applying security config");

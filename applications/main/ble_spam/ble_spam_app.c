@@ -7,7 +7,9 @@
 #include "views/tracker_list_view.h"
 #include "views/tracker_geiger_view.h"
 #include "views/race_detector_view.h"
+#include <gui/modules/byte_input.h>
 #include <gui/modules/text_input.h>
+#include <string.h>
 
 static bool ble_spam_custom_event_callback(void* context, uint32_t event) {
     furi_assert(context);
@@ -90,6 +92,10 @@ static BleSpamApp* ble_spam_app_alloc(void) {
     view_dispatcher_add_view(
         app->view_dispatcher, BleSpamViewTextInput, text_input_get_view(app->text_input));
 
+    app->byte_input = byte_input_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, BleSpamViewByteInput, byte_input_get_view(app->byte_input));
+
     // BLE RACE Detector view (CVE-2025-20700)
     app->view_race_detector = race_detector_view_alloc();
     view_set_context(app->view_race_detector, app->view_dispatcher);
@@ -105,6 +111,9 @@ static BleSpamApp* ble_spam_app_alloc(void) {
     app->current_index = 0;
     app->current_device[0] = '\0';
     app->custom_pair_name[0] = '\0';
+    app->lovespouse_selection = BleSpamLovespouseRandom;
+    app->lovespouse_value = 0;
+    memset(app->lovespouse_custom_value, 0, sizeof(app->lovespouse_custom_value));
 
     return app;
 }
@@ -113,6 +122,7 @@ static void ble_spam_app_free(BleSpamApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, BleSpamViewSubmenu);
     view_dispatcher_remove_view(app->view_dispatcher, BleSpamViewRunning);
     view_dispatcher_remove_view(app->view_dispatcher, BleSpamViewTextInput);
+    view_dispatcher_remove_view(app->view_dispatcher, BleSpamViewByteInput);
     view_dispatcher_remove_view(app->view_dispatcher, BleSpamViewWalkScan);
     view_dispatcher_remove_view(app->view_dispatcher, BleSpamViewWalkDetail);
     view_dispatcher_remove_view(app->view_dispatcher, BleSpamViewAutoWalk);
@@ -129,6 +139,7 @@ static void ble_spam_app_free(BleSpamApp* app) {
     tracker_geiger_view_free(app->view_tracker_geiger);
     race_detector_view_free(app->view_race_detector);
     text_input_free(app->text_input);
+    byte_input_free(app->byte_input);
 
     scene_manager_free(app->scene_manager);
     view_dispatcher_free(app->view_dispatcher);
