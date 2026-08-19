@@ -7,6 +7,61 @@
 
 > WARNING: I do not take responsibility if you damage your board or property. This guide is for educational purposes only — proceed at your own risk.
 
+# Momentum for the LilyGo T-Embed CC1101
+
+This is a fork of [Sor3nt/Flipper-Zero-ESP32-Port](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port)
+that merges the [Momentum Firmware](https://github.com/Next-Flip/Momentum-Firmware)
+feature set into the ESP32 port, targeting the **LilyGo T-Embed CC1101 only**.
+The build rejects any other `FLIPPER_BOARD`.
+
+This is the **release variant**: a single-firmware image with no second app
+slot and no dual boot.
+
+## Flash it
+
+```bat
+build_variant.bat COM4
+```
+
+That produces `build_t_embed_release\momentum_t_embed_RELEASE.bin` and writes
+it at offset `0x0`. The merged image carries the bootloader, partition table,
+firmware, and the SD payload described below.
+
+The flash rewrites NVS, so device settings and Bluetooth bonds are cleared and
+paired devices must be re-paired.
+
+## SD card
+
+Put a **FAT32** card in the board and boot it. On first boot the firmware
+installs the content this port adds -- its own apps, the welcome slideshow, and
+the folders those apps expect (`apps_data/`, `voice_notes/`, `backup/nvs/`) --
+then writes `version.txt` to mark the card as set up.
+
+`version.txt` is the single source of truth: if it is present, the card is left
+alone, so a card you have customised is never overwritten. Delete it to force a
+reinstall.
+
+For a **complete** card (infrared/NFC/SubGHz/RFID databases, dolphin
+animations, asset packs), extract [`sdcard.zip`](sdcard.zip) to the root of the
+card. The firmware only ships the delta this port adds, not a whole card image.
+
+## Building
+
+`sdcard/` is generated content and is not tracked, apart from the slideshow
+asset the firmware embeds. To rebuild the SD payload, extract `sdcard.zip` into
+`sdcard/` first, then run `build_variant.bat`.
+
+Requires ESP-IDF v5.4.1.
+
+## Credits
+
+Upstream ESP32 port by [Sor3nt](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port);
+Momentum features from [Next-Flip/Momentum-Firmware](https://github.com/Next-Flip/Momentum-Firmware);
+some drivers ported from [Bruce](https://github.com/pr3y/Bruce), credited inline
+in the source. Upstream's own README follows.
+
+---
+
 # Flipper Zero ESP32 Port
 
 A port of the [Flipper Zero](https://flipperzero.one/) firmware to ESP32-based development boards. This project brings the Flipper Zero UI, services, and application framework to affordable ESP32 hardware — no Flipper Zero required.
