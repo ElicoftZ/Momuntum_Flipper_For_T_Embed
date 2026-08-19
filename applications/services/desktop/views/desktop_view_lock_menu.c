@@ -5,7 +5,7 @@
 #include "../desktop_i.h"
 #include "desktop_view_lock_menu.h"
 
-// Headroom over the six rows built today; lock_menu_build_items() does not
+// Headroom over the five rows built today; lock_menu_build_items() does not
 // bounds-check, so this must stay ahead of the row count.
 #define LOCK_MENU_MAX_ITEMS 8
 
@@ -242,7 +242,7 @@ DesktopLockMenuView* desktop_lock_menu_alloc(void) {
     view_set_input_callback(lock_menu->view, desktop_lock_menu_input_callback);
 
     // Default until the scene fills in real states on enter.
-    lock_menu_build_items(false, false, false, false, false);
+    lock_menu_build_items(false, false, false, false);
 
     return lock_menu;
 }
