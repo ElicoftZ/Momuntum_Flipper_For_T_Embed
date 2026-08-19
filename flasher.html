@@ -135,6 +135,11 @@ import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.4/bundle.
 
 const REPO = 'ElicoftZ/Momuntum_Flipper_For_T_Embed';
 
+/* GitHub redirects release-asset downloads to a host that sends no CORS
+   headers, so no browser can fetch them -- the API asset endpoint fails the
+   same way. The image is therefore served from this Pages site, same-origin. */
+const LOCAL_FW = 'firmware/momentum_t_embed_RELEASE.bin';
+
 const $ = id => document.getElementById(id);
 const logEl = $('log'), bar = $('bar'), pct = $('pct'), phase = $('phase');
 
@@ -174,7 +179,7 @@ async function loadRelease(){
       body.innerHTML = '<span class="err">Release ' + rel.tag_name + ' has no .bin asset attached.</span>';
       return;
     }
-    firmwareUrl = bin.browser_download_url;
+    firmwareUrl = LOCAL_FW;
 
     body.innerHTML =
       '<div class="row"><span class="badge">' + rel.tag_name + '</span>' +
@@ -183,6 +188,25 @@ async function loadRelease(){
       (bin.size/1048576).toFixed(2) + ' MB &middot; published ' +
       new Date(rel.published_at).toLocaleDateString() + ' &middot; ' +
       '<a href="' + rel.html_url + '" target="_blank" rel="noopener">release notes</a></div>';
+
+    /* The hosted image is a copy, so say so plainly if it has drifted from
+       the published release rather than silently flashing something older. */
+    try{
+      const h = await fetch(LOCAL_FW, {method:'HEAD'});
+      if(!h.ok){
+        $('relBody').innerHTML += '<div class="note" style="margin-top:8px">' +
+          '<span class="err">Firmware is not hosted on this site yet.</span> ' +
+          '<a href="' + bin.browser_download_url + '">Download it</a> and flash manually.</div>';
+        return;
+      }
+      const hosted = +h.headers.get('content-length');
+      if(hosted && bin.size && hosted !== bin.size){
+        $('relBody').innerHTML += '<div class="note" style="margin-top:8px">' +
+          '<span class="err">The hosted image does not match the latest release</span> (' +
+          (hosted/1048576).toFixed(2) + ' MB vs ' + (bin.size/1048576).toFixed(2) +
+          ' MB) and may be out of date.</div>';
+      }
+    }catch(e){ /* non-fatal: fall through and let the flash surface any error */ }
 
     if(sd){
       $('btnSd').href = sd.browser_download_url;
