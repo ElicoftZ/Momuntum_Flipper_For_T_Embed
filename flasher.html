@@ -56,6 +56,10 @@
   .feat ul{margin:0;padding-left:17px}
   .feat li{margin:0 0 5px;font-size:13.5px;color:var(--tx-dim)}
   .feat li b{color:var(--tx);font-weight:600}
+  .beta{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:99px;
+        border:1px solid var(--accent-dim);background:rgba(244,167,44,.12);
+        color:var(--accent);font:700 10px/1.5 var(--mono);letter-spacing:.08em;
+        vertical-align:middle}
   details>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
   details>summary::-webkit-details-marker{display:none}
   /* CSS-drawn caret: a glyph here rendered as tofu in some system fonts. */
@@ -160,7 +164,7 @@
             <li><b>Bluetooth clock sync</b> &mdash; the board has no battery-backed RTC, so it reads the
                 time from a bonded phone</li>
             <li><b>Backup and restore</b> of settings and Bluetooth bonds</li>
-            <li><b>Idle dim and deep sleep</b>, returning to the app you were in</li>
+            <li><b>Idle dim and deep sleep</b>, returning to the app you were in<span class="beta">BETA</span><br><span style="font-size:12.5px">Waking back into the app you left is still being tested &mdash; a deliberate power-off or reboot always lands on the desktop.</span></li>
             <li><b>Wake mode</b> in the lock menu</li>
             <li><b>Automatic SD setup</b> &mdash; a fresh card is populated on first boot</li>
             <li><b>Welcome slideshow</b> built into the firmware</li>
