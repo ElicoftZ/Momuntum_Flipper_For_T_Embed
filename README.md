@@ -19,6 +19,18 @@ slot and no dual boot.
 
 ## Flash it
 
+### From your browser (easiest)
+
+**[Open the web flasher](https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/flasher.html)**
+
+No toolchain, no downloads. It picks up the latest release automatically, walks
+you through connecting the board, shows the serial output while it writes, and
+points you at the SD card content when it finishes.
+
+Needs Chrome, Edge or Opera &mdash; Firefox and Safari have no Web Serial support.
+
+### From a checkout
+
 ```bat
 build_variant.bat [Place COM here where T embed is]
 ```
@@ -26,6 +38,10 @@ build_variant.bat [Place COM here where T embed is]
 That produces `build_t_embed_release\momentum_t_embed_RELEASE.bin` and writes
 it at offset `0x0`. The merged image carries the bootloader, partition table,
 firmware, and the SD payload described below.
+
+You can also flash a prebuilt `momentum_t_embed_RELEASE.bin` from the
+[releases page](https://github.com/ElicoftZ/Momuntum_Flipper_For_T_Embed/releases)
+at offset `0x0` with any esptool.
 
 The flash rewrites NVS, so device settings and Bluetooth bonds are cleared and
 paired devices must be re-paired.
