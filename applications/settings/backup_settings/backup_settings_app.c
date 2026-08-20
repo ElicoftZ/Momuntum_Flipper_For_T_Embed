@@ -24,6 +24,7 @@
 #include <gui/gui.h>
 #include <gui/elements.h>
 #include <storage/storage.h>
+#include <dolphin/dolphin.h>
 
 #include <esp_system.h>
 #include <string.h> // memcmp
@@ -300,6 +301,18 @@ static void backup_run(Backup* app, bool to_sd) {
      * against a path that does not exist yet. */
     storage_simply_mkdir(storage, BACKUP_DIR);
     storage_simply_mkdir(storage, BACKUP_NVS_DIR);
+
+    /* Force the dolphin to persist its XP/level/mood to NVS before we read it.
+     * Earned XP is not written immediately -- dolphin schedules a flush on a
+     * delay timer -- so a backup taken right after leveling up would otherwise
+     * capture stale progress. The state itself already rides out in the NVS
+     * sweep below (key "dolphin_state" in the saved_struct namespace); this only
+     * makes sure the sweep sees the latest value. Backup direction only. */
+    if(to_sd) {
+        Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+        dolphin_flush(dolphin);
+        furi_record_close(RECORD_DOLPHIN);
+    }
 
     for(size_t i = 0; i < BACKUP_FILE_COUNT; i++) {
         char internal[128];
