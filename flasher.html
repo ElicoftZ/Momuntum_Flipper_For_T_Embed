@@ -38,6 +38,11 @@
   .bar{height:10px;background:var(--panel-2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
   .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent-dim),var(--accent));
          transition:width .18s ease}
+  /* Used when the image size is unknown, so a percentage would be a guess. */
+  .bar.indet i{width:100%;transition:none;
+    background:repeating-linear-gradient(90deg,var(--accent-dim) 0 14px,var(--accent) 14px 28px);
+    animation:slide 1s linear infinite}
+  @keyframes slide{from{background-position:0 0}to{background-position:28px 0}}
   .pct{font:600 13px var(--mono);color:var(--tx-dim);min-width:44px;text-align:right}
   pre#log{margin:0;padding:12px;background:#0a0d12;border:1px solid var(--line);border-radius:8px;
           font:12px/1.5 var(--mono);color:#c9d1d9;height:220px;overflow:auto;
@@ -218,13 +223,24 @@ const REPO = 'ElicoftZ/Momuntum_Flipper_For_T_Embed';
 
 /* GitHub redirects release-asset downloads to a host that sends no CORS
    headers, so no browser can fetch them -- the API asset endpoint fails the
-   same way. The image is therefore served from this Pages site, same-origin. */
-const LOCAL_FW = 'firmware/momentum_t_embed_RELEASE.bin';
+   same way. The image is therefore served from this Pages site, same-origin.
+
+   Because the flashed bytes come from here and not from the release, this
+   manifest -- not the release asset -- is the source of truth for the image's
+   size and hash. Trusting the release asset instead made a hosted image of a
+   different size download to a fraction of the expected total and then abort.
+   Regenerate it with tools/update_flasher_manifest.py. */
+const MANIFEST = 'firmware/manifest.json';
+const FALLBACK_FW = 'firmware/momentum_t_embed_RELEASE.bin';
 
 const $ = id => document.getElementById(id);
 const logEl = $('log'), bar = $('bar'), pct = $('pct'), phase = $('phase');
 
-let firmwareUrl = null, firmwareSize = 0, port = null, transport = null;
+/* firmwareSize/firmwareSha stay 0/null when the manifest is absent: the image
+   is then accepted at whatever size it downloads to. No size is hardcoded. */
+let firmwareUrl = FALLBACK_FW, firmwareSize = 0, firmwareSha = null;
+let flashAddress = 0x0, flashSize = '16MB';
+let port = null, transport = null;
 
 function log(s){
   const atEnd = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
@@ -232,22 +248,75 @@ function log(s){
   if(atEnd) logEl.scrollTop = logEl.scrollHeight;
 }
 const logLine = s => log(s + '\n');
-function setPct(p){ bar.style.width = p + '%'; pct.textContent = p + '%'; }
+/* p === null means "size unknown": show motion, not a made-up number. */
+function setPct(p){
+  if(p === null){
+    bar.parentElement.classList.add('indet');
+    pct.textContent = '--';
+    return;
+  }
+  bar.parentElement.classList.remove('indet');
+  bar.style.width = p + '%';
+  pct.textContent = p + '%';
+}
 function stepState(id, cls){
   const e = $(id);
   e.classList.remove('active','done');
   if(cls) e.classList.add(cls);
 }
 
+/* ------------------------------------------------------------ manifest ---*/
+/* Describes the image this site actually hosts. Any size is fine -- whatever
+   the manifest reports is what gets downloaded, checked and written. */
+async function loadManifest(){
+  try{
+    const r = await fetch(MANIFEST, {cache:'no-cache'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const m = await r.json();
+    if(m.path) firmwareUrl = m.path;
+    if(m.size > 0) firmwareSize = m.size;
+    if(m.sha256) firmwareSha = String(m.sha256).toLowerCase();
+    if(m.flashAddress) flashAddress = Number(m.flashAddress);
+    if(m.flashSize) flashSize = m.flashSize;
+    return m;
+  }catch(e){
+    /* No manifest: still flashable, just without a size or hash to check
+       against. Progress runs indeterminate instead of against a wrong total. */
+    logLine('[--] no firmware manifest (' + e.message + '); size and hash will not be verified');
+    return null;
+  }
+}
+
+/* Flashing must not depend on GitHub being reachable -- the bytes are here. */
+function enableConnect(){
+  if(!navigator.serial){
+    $('connState').innerHTML = '<span class="err">This browser has no Web Serial support.</span>';
+    return;
+  }
+  $('btnConnect').disabled = false;
+  stepState('s1','active');
+}
+
 /* ------------------------------------------------------------- release ---*/
-async function loadRelease(){
+/* Informational only. Nothing here decides what gets flashed, so a rate
+   limit, an outage or a missing release never blocks the flash button. */
+async function loadRelease(manifest){
   const body = $('relBody');
+  const hosted = manifest
+    ? manifest.name + ' &middot; ' + (manifest.size/1048576).toFixed(2) + ' MB'
+    : 'the image hosted on this site';
+
+  /* Default the SD card link to the copy in the repository; a release asset
+     replaces it below when there is one. */
+  $('btnSd').href = 'https://github.com/' + REPO + '/raw/main/sdcard.zip';
+  $('sdNote').textContent = 'from the repository';
+
   try{
     const r = await fetch('https://api.github.com/repos/' + REPO + '/releases/latest',
                           {headers:{Accept:'application/vnd.github+json'}});
     if(r.status === 404){
-      body.innerHTML = '<span class="err">No published release yet.</span><br>' +
-        '<span class="note">A draft release stays invisible to this page until it is published on GitHub.</span>';
+      body.innerHTML = '<span class="note">No published release yet. This page will flash ' +
+        hosted + '.</span>';
       return;
     }
     if(!r.ok) throw new Error('GitHub API ' + r.status);
@@ -256,51 +325,29 @@ async function loadRelease(){
     const bin = rel.assets.find(a => /\.bin$/i.test(a.name));
     const sd  = rel.assets.find(a => /^sdcard.*\.zip$/i.test(a.name));
 
-    if(!bin){
-      body.innerHTML = '<span class="err">Release ' + rel.tag_name + ' has no .bin asset attached.</span>';
-      return;
-    }
-    firmwareUrl = LOCAL_FW;
-    firmwareSize = bin.size;
-
     body.innerHTML =
       '<div class="row"><span class="badge">' + rel.tag_name + '</span>' +
       '<span class="grow">' + (rel.name || '') + '</span></div>' +
-      '<div class="note" style="margin-top:8px">' + bin.name + ' &middot; ' +
-      (bin.size/1048576).toFixed(2) + ' MB &middot; published ' +
-      new Date(rel.published_at).toLocaleDateString() + ' &middot; ' +
-      '<a href="' + rel.html_url + '" target="_blank" rel="noopener">release notes</a></div>';
+      '<div class="note" style="margin-top:8px">Flashing ' + hosted +
+      ' &middot; published ' + new Date(rel.published_at).toLocaleDateString() +
+      ' &middot; <a href="' + rel.html_url + '" target="_blank" rel="noopener">release notes</a></div>';
 
-    /* The hosted image is a copy, so say so plainly if it has drifted from
-       the published release rather than silently flashing something older. */
-    try{
-      const h = await fetch(LOCAL_FW, {method:'HEAD'});
-      if(!h.ok){
-        $('relBody').innerHTML += '<div class="note" style="margin-top:8px">' +
-          '<span class="err">Firmware is not hosted on this site yet.</span> ' +
-          '<a href="' + bin.browser_download_url + '">Download it</a> and flash manually.</div>';
-        return;
-      }
-    }catch(e){ /* non-fatal: fall through and let the flash surface any error */ }
+    /* The hosted image is a separate copy of the release asset. Say so when
+       the two differ -- but only as a note: the hosted bytes are the ones
+       that get written, and they are checked against the manifest. */
+    if(bin && manifest && bin.size !== manifest.size){
+      body.innerHTML += '<div class="note" style="margin-top:8px">The ' + rel.tag_name +
+        ' asset on GitHub is ' + (bin.size/1048576).toFixed(2) + ' MB; the image hosted here is ' +
+        (manifest.size/1048576).toFixed(2) + ' MB. This page flashes the hosted image.</div>';
+    }
 
     if(sd){
       $('btnSd').href = sd.browser_download_url;
       $('sdNote').textContent = (sd.size/1048576).toFixed(2) + ' MB';
-    }else{
-      /* Not attached to this release: fall back to the copy tracked in the
-         repository, so the card step works either way. */
-      $('btnSd').href = 'https://github.com/' + REPO + '/raw/main/sdcard.zip';
-      $('sdNote').textContent = 'from the repository';
-    }
-
-    if(!navigator.serial){
-      $('connState').innerHTML = '<span class="err">This browser has no Web Serial support.</span>';
-    }else{
-      $('btnConnect').disabled = false;
-      stepState('s1','active');
     }
   }catch(e){
-    body.innerHTML = '<span class="err">Could not reach GitHub: ' + e.message + '</span>';
+    body.innerHTML = '<span class="note">Could not reach GitHub (' + e.message +
+      '), so no release details. Flashing ' + hosted + ' still works.</span>';
   }
 }
 
@@ -332,11 +379,11 @@ function binaryToStr(u8){
 }
 
 async function download(url, expected, onPct){
-  const r = await fetch(url);
+  const r = await fetch(url, {cache:'no-cache'});
   if(!r.ok) throw new Error('download failed: HTTP ' + r.status);
   /* Pages serves this gzipped, so content-length is the COMPRESSED size and
-     is useless for progress. Prefer the size the release reports. */
-  const total = expected || +r.headers.get('content-length') || 0;
+     is useless for progress. Prefer the manifest's uncompressed size. */
+  let total = expected || 0;
   const reader = r.body.getReader();
   const chunks = [];
   let got = 0;
@@ -345,12 +392,76 @@ async function download(url, expected, onPct){
     if(done) break;
     chunks.push(value);
     got += value.length;
-    if(total) onPct(Math.min(100, Math.round(got / total * 100)));
+    /* If the hosted image outgrows the expected total, the total is stale --
+       drop to indeterminate rather than pinning the bar at a wrong 100%. */
+    if(total && got > total) total = 0;
+    onPct(total ? Math.round(got / total * 100) : null);
   }
   const out = new Uint8Array(got);
   let o = 0;
   for(const c of chunks){ out.set(c, o); o += c.length; }
   return out;
+}
+
+async function sha256Hex(u8){
+  if(!(crypto && crypto.subtle)) return null;
+  const d = await crypto.subtle.digest('SHA-256', u8);
+  return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+/* End offset of the ESP image starting at `start`, walking its segment table:
+   a 24-byte header, then segment_count records of load_addr + length + data,
+   padded so the trailing checksum byte lands on a 16-byte boundary, plus a
+   32-byte SHA when the header says one is appended. Returns -1 if the file
+   ends mid-image -- which is how a truncated download is caught without
+   knowing what the image is supposed to weigh. */
+function espImageEnd(img, start){
+  if(start + 24 > img.length || img[start] !== 0xE9) return -1;
+  const dv = new DataView(img.buffer, img.byteOffset, img.byteLength);
+  const segs = img[start + 1];
+  if(segs < 1 || segs > 16) return -1;
+  let p = start + 24;
+  for(let i = 0; i < segs; i++){
+    if(p + 8 > img.length) return -1;
+    const len = dv.getUint32(p + 4, true);
+    if(len > 0x1000000) return -1;
+    p += 8 + len;
+    if(p > img.length) return -1;
+  }
+  p += 16 - ((p - start + 1) % 16 || 16) + 1;      /* pad, then checksum byte */
+  if(img[start + 23] === 1) p += 32;               /* appended SHA-256 */
+  return p <= img.length ? p : -1;
+}
+
+/* Validate by structure, not by length: an ESP image header at the start, a
+   partition table at 0x8000, and the app partition it points at present and
+   complete in the file. This holds for an image of any size, so trimming or
+   growing the firmware needs no change here. */
+function verifyImage(img){
+  if(img.length < 0x9000 || img[0] !== 0xE9){
+    throw new Error('not an ESP32 image (first byte 0x' + (img[0]||0).toString(16) +
+                    ', expected 0xe9) - nothing was written');
+  }
+  if(img[0x8000] !== 0xAA || img[0x8001] !== 0x50){
+    throw new Error('no partition table at 0x8000 - image looks corrupt, nothing was written');
+  }
+  const dv = new DataView(img.buffer, img.byteOffset, img.byteLength);
+  for(let i = 0x8000; i < 0x9000; i += 32){
+    if(img[i] !== 0xAA || img[i+1] !== 0x50) break;
+    if(img[i+2] !== 0x00 || img[i+3] !== 0x00) continue;   /* want type=app subtype=factory */
+    const off = dv.getUint32(i + 4, true);
+    if(off >= img.length || img[off] !== 0xE9){
+      throw new Error('image is truncated: no app at 0x' + off.toString(16) +
+                      ' (file is ' + img.length + ' bytes) - nothing was written');
+    }
+    if(espImageEnd(img, off) < 0){
+      throw new Error('image is truncated: the app at 0x' + off.toString(16) +
+                      ' runs past the end of the file (' + img.length +
+                      ' bytes) - nothing was written');
+    }
+    return off;
+  }
+  throw new Error('no factory app partition in the table - nothing was written');
 }
 
 $('btnFlash').onclick = async () => {
@@ -365,14 +476,24 @@ $('btnFlash').onclick = async () => {
     });
     logLine('[ok] downloaded ' + (image.length/1048576).toFixed(2) + ' MB');
 
-    /* Refuse to write a short or truncated image to somebody's board. */
-    if(firmwareSize && image.length !== firmwareSize){
-      throw new Error('image is ' + image.length + ' bytes, expected ' + firmwareSize +
-                      ' - download incomplete, nothing was written');
+    /* Refuse to write a short or truncated image to somebody's board. The
+       size check only fires when the manifest states a size AND the download
+       came up short -- a larger hosted image is a new build, not a fault. */
+    if(firmwareSize && image.length < firmwareSize){
+      throw new Error('download incomplete: got ' + image.length + ' of ' + firmwareSize +
+                      ' bytes - nothing was written');
     }
-    if(image[0] !== 0xE9){
-      throw new Error('not an ESP32 image (first byte 0x' + image[0].toString(16) +
-                      ', expected 0xe9) - nothing was written');
+    const appAt = verifyImage(image);
+    logLine('[ok] image valid: app at 0x' + appAt.toString(16) + ', ' + image.length + ' bytes');
+
+    if(firmwareSha){
+      phase.textContent = 'Verifying checksum...';
+      const got = await sha256Hex(image);
+      if(got && got !== firmwareSha){
+        throw new Error('checksum mismatch (got ' + got.slice(0,16) + '..., expected ' +
+                        firmwareSha.slice(0,16) + '...) - nothing was written');
+      }
+      if(got) logLine('[ok] sha256 verified');
     }
 
     setPct(0);
@@ -387,8 +508,8 @@ $('btnFlash').onclick = async () => {
 
     phase.textContent = 'Writing flash...';
     await esploader.writeFlash({
-      fileArray:[{data: binaryToStr(image), address: 0x0}],
-      flashSize:'16MB', flashMode:'dio', flashFreq:'80m',
+      fileArray:[{data: binaryToStr(image), address: flashAddress}],
+      flashSize, flashMode:'dio', flashFreq:'80m',
       eraseAll:false, compress:true,
       reportProgress:(i, written, total) => {
         const p = Math.round(written / total * 100);
@@ -418,7 +539,11 @@ $('btnFlash').onclick = async () => {
 
 $('btnClear').onclick = () => { logEl.textContent = ''; };
 
-loadRelease();
+(async () => {
+  const manifest = await loadManifest();
+  enableConnect();          /* before the release call: GitHub must not gate flashing */
+  await loadRelease(manifest);
+})();
 </script>
 </body>
 </html>
