@@ -1,8 +1,8 @@
 {
   "name": "momentum_t_embed_RELEASE.bin",
   "path": "firmware/momentum_t_embed_RELEASE.bin",
-  "size": 3296832,
-  "sha256": "b91dc08a64a01a02765bf5022f298f12b596dd514a01a997d3d55e44118f97d8",
+  "size": 3307328,
+  "sha256": "81a6c325133d8368f0334c12b02337341fd88adb20d5c2d49f99fc4a74939cfb",
   "flashAddress": "0x0",
   "flashSize": "16MB"
 }

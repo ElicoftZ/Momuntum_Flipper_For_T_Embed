@@ -520,12 +520,36 @@ $('btnFlash').onclick = async () => {
 
     setPct(100);
     phase.textContent = 'Resetting...';
-    await transport.setDTR(false);
-    await transport.setRTS(true);
-    await new Promise(r => setTimeout(r, 120));
-    await transport.setRTS(false);
+    /* This board is an ESP32-S3 on NATIVE USB (VID 303A / PID 1001), not a
+       USB-UART bridge. The classic DTR/RTS toggle below drives EN through a
+       bridge chip's transistors -- hardware this board does not have -- so it
+       did nothing at all here: the flash succeeded, the page said so, and the
+       chip sat in the download stub until the user physically replugged it.
+       That is what "flashed but never boots" was.
+
+       esptool-js already knows the right sequence: it keys off
+       transport.getPid() === USB_JTAG_SERIAL_PID (0x1001, exactly this board)
+       and uses its UsbJtagSerialReset. Ask for it by name, and keep the old
+       toggle only as a fallback for a build that lacks the method. */
+    let reset_ok = false;
+    try{
+      if(typeof esploader.hardReset === 'function'){
+        await esploader.hardReset();
+        reset_ok = true;
+      }
+    }catch(e){
+      logLine('[..] hardReset failed (' + e.message + '), trying line toggle');
+    }
+
+    if(!reset_ok){
+      await transport.setDTR(false);
+      await transport.setRTS(true);
+      await new Promise(r => setTimeout(r, 120));
+      await transport.setRTS(false);
+    }
 
     logLine('[ok] flash complete, device reset');
+    logLine('[i]  if the screen stays blank, unplug and replug the board once.');
     phase.innerHTML = '<span class="ok">Successfully flashed.</span>';
     stepState('s2','done');
     $('success').classList.remove('hide');
