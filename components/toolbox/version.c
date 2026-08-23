@@ -63,7 +63,13 @@ const char* version_get_custom_name(const Version* v) {
 }
 
 void version_set_custom_name(Version* v, const char* name) {
-    if(!v) return;
+    /* NULL means "the global Version", exactly as it does in
+     * version_get_custom_name() above. This used to return instead, so the two
+     * disagreed: namechanger set the name with NULL (silently discarded), then
+     * read it back with NULL (which DID resolve to the global one) and applied
+     * that -- re-applying the MAC-derived default it was trying to replace. The
+     * custom device name could therefore never survive a reboot. */
+    if(!v) v = (Version*)version_get();
     v->custom_name = name;
 }
 

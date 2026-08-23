@@ -54,13 +54,15 @@ static bool sd_mount_card_internal(StorageData* storage, bool notify) {
             SDError status = f_mount(sd_data->fs, sd_data->path, 1);
 
             if(status == FR_OK || status == FR_NO_FILESYSTEM) {
-#ifndef FURI_RAM_EXEC
-                FATFS* fs;
-                uint32_t free_clusters;
-
-                status = f_getfree(sd_data->path, &free_clusters, &fs);
-#endif
-
+                /* No f_getfree() here on purpose. Right after a mount FatFs has
+                 * no cached free-cluster count, so f_getfree() walks the entire
+                 * FAT -- megabytes of it on a large card, which over SPI costs
+                 * seconds to a minute of boot and scales with the user's card
+                 * size and cluster size. The count was then discarded: the call
+                 * only served to tell FR_OK from FR_NO_FILESYSTEM, and
+                 * f_mount(.., 1) already reports that itself. Free space is
+                 * still computed on demand by storage_ext_fs_info() for the SD
+                 * Info screen, which is where a pause is acceptable. */
                 if(status == FR_OK || status == FR_NO_FILESYSTEM) {
                     result = true;
                 }

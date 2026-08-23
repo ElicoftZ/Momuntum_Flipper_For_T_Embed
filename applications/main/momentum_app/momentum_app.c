@@ -2018,6 +2018,11 @@ int32_t momentum_app(void* p) {
          * for XP or mood, and this is what upstream does too. */
         app->dolphin->state->data.icounter = app->dolphin_xp;
         app->dolphin->state->data.butthurt = app->dolphin_butthurt;
+        /* dolphin_state_save() returns early unless the state is marked dirty,
+         * and app->dolphin_dirty is this app's own flag, not the state's -- so
+         * without this the save was a silent no-op and an edited XP/mood lived
+         * only in RAM, reverting on the next reboot or deep-sleep wake. */
+        app->dolphin->state->dirty = true;
         dolphin_state_save(app->dolphin->state);
     }
 

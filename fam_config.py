@@ -50,6 +50,12 @@ APPS = [
     "ble_spam",
     "findmy",
     "findmy_startup",
+    # Applies the custom Device Name at boot. The Momentum app has always
+    # written the name to NAMECHANGER_PATH and read it back to seed its own
+    # field, so the setting LOOKED like it stuck -- but this service, the only
+    # thing that ever applies it to the running device, was never in the build.
+    # The name therefore reverted on every boot and every deep-sleep wake.
+    "namechanger_srv",
     "js_app",
     "js_event_loop",
     "js_gui",

@@ -252,7 +252,18 @@ static void dolphin_process_event(FuriEventLoopObject* object, void* context) {
             !dolphin_state_xp_to_levelup(dolphin->state->data.icounter);
 
     } else if(event.type == DolphinEventTypeFlush) {
-        furi_event_loop_timer_start(dolphin->flush_timer, FLUSH_TIMEOUT_TICKS);
+        /* Flush means "persist now", so it must WRITE -- it used to re-arm the
+         * same delay timer a deed arms, which pushed the save 30 s further out
+         * instead of forcing it. That silently broke every caller: the backup
+         * app calls this to capture fresh XP before sweeping NVS and got the
+         * stale blob, or none at all on a device that had never idled 30 s
+         * after earning XP -- so a backup recorded zero and the restore put
+         * zero back. dolphin_flush() sends this synchronously, so the NVS write
+         * has completed by the time it returns. dolphin_state_save() is a no-op
+         * unless the state is dirty, so this costs no flash cycle when nothing
+         * has changed. */
+        furi_event_loop_timer_stop(dolphin->flush_timer);
+        dolphin_state_save(dolphin->state);
 
     } else if(event.type == DolphinEventTypeLevel) {
         dolphin_state_increase_level(dolphin->state);

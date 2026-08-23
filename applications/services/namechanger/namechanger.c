@@ -29,18 +29,48 @@ static bool namechanger_init() {
 
     bool res = false;
 
+    /* Every failure below used to be a bare `break`, so a rejected name looked
+     * exactly like no name at all: the device silently kept its MAC-derived
+     * default and nothing said why. Say which check failed -- the rules here
+     * (2-8 chars, alphanumeric only) are stricter than the text field that
+     * writes the file, so a perfectly reasonable name can be refused. */
     do {
         uint32_t version;
-        if(!flipper_format_file_open_existing(file, NAMECHANGER_PATH)) break;
-        if(!flipper_format_read_header(file, str, &version)) break;
-        if(furi_string_cmp_str(str, NAMECHANGER_HEADER)) break;
-        if(version != NAMECHANGER_VERSION) break;
+        if(!flipper_format_file_open_existing(file, NAMECHANGER_PATH)) {
+            FURI_LOG_W(TAG, "no name file at %s", NAMECHANGER_PATH);
+            break;
+        }
+        if(!flipper_format_read_header(file, str, &version)) {
+            FURI_LOG_W(TAG, "name file has no readable header");
+            break;
+        }
+        if(furi_string_cmp_str(str, NAMECHANGER_HEADER)) {
+            FURI_LOG_W(TAG, "wrong header \"%s\"", furi_string_get_cstr(str));
+            break;
+        }
+        if(version != NAMECHANGER_VERSION) {
+            FURI_LOG_W(TAG, "wrong version %lu", (unsigned long)version);
+            break;
+        }
 
-        if(!flipper_format_read_string(file, "Name", str)) break;
+        if(!flipper_format_read_string(file, "Name", str)) {
+            FURI_LOG_W(TAG, "name file has no Name key");
+            break;
+        }
         // Check for size
         size_t temp_string_size = furi_string_size(str);
-        if(temp_string_size > (size_t)8) break;
-        if(temp_string_size < (size_t)2) break;
+        if(temp_string_size > (size_t)8) {
+            FURI_LOG_W(
+                TAG,
+                "name \"%s\" is %u chars, max 8",
+                furi_string_get_cstr(str),
+                (unsigned)temp_string_size);
+            break;
+        }
+        if(temp_string_size < (size_t)2) {
+            FURI_LOG_W(TAG, "name is shorter than 2 chars");
+            break;
+        }
 
         // Check for forbidden characters
         const char* name_ptr = furi_string_get_cstr(str);
@@ -54,11 +84,20 @@ static bool namechanger_init() {
             }
         }
 
-        if(chars_check_failed) break;
+        if(chars_check_failed) {
+            FURI_LOG_W(
+                TAG,
+                "name \"%s\" has a character outside 0-9 A-Z a-z (spaces are not allowed)",
+                furi_string_get_cstr(str));
+            break;
+        }
 
         // If all checks was good we can set the name
         version_set_custom_name(NULL, strdup(furi_string_get_cstr(str)));
         furi_hal_version_set_name(version_get_custom_name(NULL));
+        /* Read back rather than echoing the file: this line claimed success
+         * while the name silently failed to apply. */
+        FURI_LOG_I(TAG, "applied custom name \"%s\"", furi_hal_version_get_name_ptr());
 
         res = true;
     } while(false);

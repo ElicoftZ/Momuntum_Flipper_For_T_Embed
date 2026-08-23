@@ -30,6 +30,12 @@ FuriStreamBuffer* furi_stream_buffer_alloc(size_t size, size_t trigger_level) {
     const size_t buffer_size = size + 1;
 
     FuriStreamBuffer* stream_buffer = calloc(1, sizeof(FuriStreamBuffer) + buffer_size);
+    /* Without this, an out-of-memory here derefs NULL to compute the two
+     * arguments below and surfaces inside FreeRTOS as
+     * "assert failed: xStreamBufferGenericCreateStatic (pxStaticStreamBuffer)",
+     * which names neither this allocation nor its caller. Fail here instead,
+     * where the size and the calling thread are still visible. */
+    furi_check(stream_buffer, "stream buffer alloc failed");
     StreamBufferHandle_t hStreamBuffer = xStreamBufferCreateStatic(
         buffer_size, trigger_level, stream_buffer->buffer, &stream_buffer->container);
 

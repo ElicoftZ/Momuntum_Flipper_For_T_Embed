@@ -8,6 +8,7 @@
 #include <notification/notification_messages.h>
 
 #include <loader/loader.h>
+#include <dolphin/dolphin.h>
 
 #define TAG "Power"
 
@@ -362,8 +363,20 @@ void power_trigger_ui_update(Power* power) {
     view_port_update(power->battery_view_port);
 }
 
+/* Persist the dolphin's XP/level before the device goes away. Earned XP only
+ * sits in RAM until a delayed flush timer fires, so a power off or reboot taken
+ * shortly after earning it dropped the progress entirely. dolphin_flush() writes
+ * synchronously and is a no-op when nothing is dirty, so this costs a queue
+ * round trip and no flash cycle in the common case. */
+static void power_flush_dolphin(void) {
+    Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+    dolphin_flush(dolphin);
+    furi_record_close(RECORD_DOLPHIN);
+}
+
 static void power_handle_shutdown(Power* power) {
     UNUSED(power);
+    power_flush_dolphin();
     furi_hal_power_off();
     /* furi_hal_power_off() should not return (enters deep sleep).
      * If it does, halt as fallback. */
@@ -371,6 +384,8 @@ static void power_handle_shutdown(Power* power) {
 }
 
 static void power_handle_reboot(PowerBootMode mode) {
+    power_flush_dolphin();
+
     if(mode == PowerBootModeNormal) {
         update_operation_disarm();
     } else if(mode == PowerBootModeDfu) {
