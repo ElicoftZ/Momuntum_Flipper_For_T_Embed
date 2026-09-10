@@ -144,3 +144,38 @@ Preserves the original Flipper Zero architecture as closely as possible:
 - **HAL** maps STM32 peripherals to ESP-IDF (SPI → `esp_lcd`, I2C → PN532/CST816S, RMT → IR, NimBLE → BLE, TinyUSB → USB-HID)
 - **Display** renders the original 128×64 mono framebuffer, then 2× upscales to RGB565
 - **Crypto** uses real mbedtls (no Flipper-Enclave key — affects encrypted SubGHz keystores only)
+
+## Credits & Acknowledgements
+
+This project stands entirely on the work of others. It is a **fork** built on top of, and grateful to:
+
+- **[Flipper Zero firmware](https://github.com/flipperdevices/flipperzero-firmware)** — Flipper Devices Inc. The original firmware, UI, Furi OS, services and application framework that everything here derives from. *(GPLv3)*
+- **[Momentum Firmware](https://github.com/Next-Flip/Momentum-Firmware)** — the Momentum team. The custom-firmware feature set (dolphin, passport, settings, apps) this port brings over. *(GPLv3)* — see [NOTICE_MOMENTUM_PORT.md](NOTICE_MOMENTUM_PORT.md).
+- **[Flipper-Zero-ESP32-Port](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port)** — **Sor3nt**. The ESP32 / ESP-IDF port this repository is a fork of; the HAL, board bring-up, web flasher and much of the wireless tooling originate there.
+- **[ESP-IDF](https://github.com/espressif/esp-idf)** — Espressif Systems. The SDK and toolchain this port targets.
+
+T-Embed fork maintained by **[ElicoftZ](https://github.com/ElicoftZ)**.
+
+### Bundled third-party components
+
+Each retains its own license — see the `LICENSE` / `COPYING` / `NOTICE` file next to it in the tree:
+
+| Component | Used for | Upstream |
+|---|---|---|
+| doomgeneric | Doom | [ozkl/doomgeneric](https://github.com/ozkl/doomgeneric) |
+| Helix | MP3 decoding (Streaming) | RealNetworks Helix |
+| libsmb2 | SMB2/3 client | [sahlberg/libsmb2](https://github.com/sahlberg/libsmb2) *(LGPL-2.1)* |
+| heatshrink | compression | [atomicobject/heatshrink](https://github.com/atomicobject/heatshrink) |
+| mJS | JS Runner | [cesanta/mjs](https://github.com/cesanta/mjs) |
+| Hotspot Arcade | arcade app | [tarikbc/hotspot-arcade](https://github.com/tarikbc/hotspot-arcade) |
+| WPair | WhisperPair | [zalexdev/wpair-app](https://github.com/zalexdev/wpair-app) — see [NOTICE](applications/main/ble_spam/whisper_pair/NOTICE) |
+
+Additional community apps under `applications_user/` — TagTinker, Flipper Authenticator, xRemote, Tamagotchi (tamalib), Blackjack, ProtoPirate, WMBuster, Wolf3D (Wolf4SDL) and others — each ship under their own `LICENSE`.
+
+> No Momentum asset-pack artwork is redistributed here. If you add asset packs, audit and preserve each asset's own license and attribution before distributing.
+
+## License
+
+Licensed under the **[GNU General Public License v3.0](LICENSE)**, inherited from Flipper Zero and Momentum. Bundled components are covered by their own licenses listed above.
+
+**If you distribute binaries of this firmware, you must comply with GPLv3** — make the complete corresponding source available and preserve the license texts and attribution of every bundled component. This README is not a substitute for the full license texts or legal advice.
