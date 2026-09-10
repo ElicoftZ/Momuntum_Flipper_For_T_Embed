@@ -37,6 +37,8 @@ typedef struct {
     uint32_t frequency;
     uint8_t* data;
     size_t data_size;
+    float latitude;
+    float longitude;
 } SubGhzRadioPreset;
 
 typedef enum {
@@ -59,6 +61,8 @@ typedef enum {
     SubGhzProtocolStatusErrorEncoderGetUpload = (-12), ///< Payload encoder failure
     // Special Values
     SubGhzProtocolStatusErrorProtocolNotFound = (-13), ///< Protocol not found
+    SubGhzProtocolStatusErrorParserLatitude = (-14), ///< Missing `Latitude`
+    SubGhzProtocolStatusErrorParserLongitude = (-15), ///< Missing `Longitude`
     SubGhzProtocolStatusReserved = 0x7FFFFFFF, ///< Prevents enum down-size compiler optimization.
 } SubGhzProtocolStatus;
 
@@ -75,7 +79,9 @@ typedef SubGhzProtocolStatus (*SubGhzDeserialize)(void* context, FlipperFormat* 
 typedef void (*SubGhzDecoderFeed)(void* decoder, bool level, uint32_t duration);
 typedef void (*SubGhzDecoderReset)(void* decoder);
 typedef uint8_t (*SubGhzGetHashData)(void* decoder);
+typedef uint32_t (*SubGhzGetHashDataLong)(void* decoder);
 typedef void (*SubGhzGetString)(void* decoder, FuriString* output);
+typedef void (*SubGhzGetStringBrief)(void* decoder, FuriString* output);
 
 struct SubGhzBlockGeneric;
 typedef struct SubGhzBlockGeneric* (*SubGhzGetGeneric)(void* context);
@@ -96,6 +102,9 @@ typedef struct {
     SubGhzGetGeneric get_generic;
     SubGhzSerialize serialize;
     SubGhzDeserialize deserialize;
+
+    SubGhzGetHashDataLong get_hash_data_long;
+    SubGhzGetStringBrief get_string_brief;
 } SubGhzProtocolDecoder;
 
 typedef struct {
@@ -137,6 +146,16 @@ typedef enum {
     SubGhzProtocolFlag_NiceFlorS = (1 << 15),
 } SubGhzProtocolFlag;
 
+typedef enum {
+    SubGhzProtocolFilter_ReversRB2 = (1 << 0),
+    SubGhzProtocolFilter_Alarms = (1 << 1),
+    SubGhzProtocolFilter_Sensors = (1 << 2),
+    SubGhzProtocolFilter_Princeton = (1 << 3),
+    SubGhzProtocolFilter_NiceFlorS = (1 << 4),
+    SubGhzProtocolFilter_Weather = (1 << 5),
+    SubGhzProtocolFilter_TPMS = (1 << 6),
+} SubGhzProtocolFilter;
+
 struct SubGhzProtocol {
     const char* name;
     SubGhzProtocolType type;
@@ -144,4 +163,6 @@ struct SubGhzProtocol {
 
     const SubGhzProtocolEncoder* encoder;
     const SubGhzProtocolDecoder* decoder;
+
+    SubGhzProtocolFilter filter;
 };

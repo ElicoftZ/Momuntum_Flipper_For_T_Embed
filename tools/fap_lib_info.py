@@ -61,7 +61,7 @@ def main():
         "ExtFile": ExtFile,
         "FlipperAppType": _AnyEnum(),
     }
-    with open(fam_path) as f:
+    with open(fam_path, "r", encoding="utf-8") as f:
         exec(compile(f.read(), fam_path, "exec"), g)
 
     # The main app is the one that carries fap_private_libs (plugins don't).

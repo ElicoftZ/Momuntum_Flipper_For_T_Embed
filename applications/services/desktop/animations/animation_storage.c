@@ -12,6 +12,7 @@
 #include <assets_dolphin_internal.h>
 #include <assets_dolphin_blocking.h>
 #include <momentum/momentum.h>
+#include <momentum/png_icon.h>
 
 #define ANIMATION_META_FILE     "meta.txt"
 #define ANIMATION_MANIFEST_FILE "manifest.txt"
@@ -356,8 +357,31 @@ static bool animation_storage_load_frames(
         frames_ok = false;
         furi_string_printf(filename, "%s/%s/frame_%d.bm", directory, name, i);
 
-        if(storage_common_stat(storage, furi_string_get_cstr(filename), &file_info) != FSE_OK)
-            break;
+        if(storage_common_stat(storage, furi_string_get_cstr(filename), &file_info) != FSE_OK) {
+            /* Asset-pack archives carry their source frame_N.png files. Read
+             * that official format when no precompiled .bm exists. */
+            furi_string_printf(filename, "%s/%s/frame_%d.png", directory, name, i);
+            uint8_t* bitmap = NULL;
+            size_t bitmap_size = 0;
+            uint32_t png_width = 0;
+            uint32_t png_height = 0;
+            if(!momentum_png_icon_load(
+                   file,
+                   furi_string_get_cstr(filename),
+                   &bitmap,
+                   &bitmap_size,
+                   &png_width,
+                   &png_height) ||
+               bitmap_size != max_filesize || png_width != width || png_height != height) {
+                free(bitmap);
+                break;
+            }
+
+            FURI_CONST_ASSIGN_PTR(icon->frames[i], bitmap);
+            file_info.size = bitmap_size;
+            frames_ok = true;
+            continue;
+        }
         if((file_info.size == 0) || (file_info.size > max_filesize)) {
             FURI_LOG_E(
                 TAG,
@@ -379,6 +403,7 @@ static bool animation_storage_load_frames(
         FURI_CONST_ASSIGN_PTR(icon->frames[i], calloc(1, max_filesize));
         if(storage_file_read(file, (void*)icon->frames[i], file_info.size) != file_info.size) {
             FURI_LOG_E(TAG, "Read failed: \'%s\'", furi_string_get_cstr(filename));
+            storage_file_close(file);
             break;
         }
         storage_file_close(file);

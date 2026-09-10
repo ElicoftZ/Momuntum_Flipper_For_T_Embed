@@ -1,4 +1,4 @@
-#include "wlan_hal.h"
+#include <wlan_hal.h>
 #include "wlan_evil_portal_html.h"
 
 #include <string.h>
@@ -17,6 +17,7 @@
 #include <esp_timer.h>
 #include <esp_attr.h>
 #include <furi.h>
+#include <furi_hal_bt.h>
 #include <btshim.h>
 
 #define TAG "EvilPortal"
@@ -87,7 +88,6 @@ static volatile bool s_verify_active = false;
 static volatile bool s_verify_connected = false;
 static volatile bool s_verify_failed = false;
 static volatile uint8_t s_verify_disconnect_reason = 0;
-static bool s_bt_was_on = false;
 static bool s_event_handlers_registered = false;
 
 static void evil_ap_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
@@ -145,6 +145,9 @@ static bool s_verify_creds_enabled = false;
 // google.com) instead of the GOOGLE_FAILED ("Couldn't sign you in") page.
 // Set from cfg->bridge_redirect by evil_portal_start_worker.
 static bool s_bridge_redirect = false;
+/* True only when WE stopped BLE to free internal DRAM for the softAP, so
+ * stop() restores it and a user who had BLE off keeps it off. */
+static bool s_bt_was_on = false;
 static volatile bool s_creds_already_valid = false;
 
 static char* s_html_buf = NULL;
@@ -1086,7 +1089,11 @@ static void evil_portal_start_worker(void* arg) {
     wcfg.dynamic_rx_buf_num = 4;
     wcfg.dynamic_tx_buf_num = 8;
     esp_err_t err = esp_wifi_init(&wcfg);
-    if(err != ESP_OK) {
+    if(err == ESP_ERR_WIFI_INIT_STATE) {
+        /* wlan_prepare reserves the WiFi driver at boot and leaves it
+         * initialized; share it instead of failing. */
+        ESP_LOGI(TAG, "  wifi driver already initialized; sharing it");
+    } else if(err != ESP_OK) {
         ESP_LOGE(TAG, "  wifi_init: %s", esp_err_to_name(err));
         return;
     }
@@ -1246,16 +1253,21 @@ bool wlan_hal_evil_portal_start(const WlanHalEvilPortalConfig* cfg) {
 
     if(wlan_hal_is_started()) {
         ESP_LOGI(TAG, "start: stopping STA mode first");
-        wlan_hal_stop();
+        wlan_hal_stop_for_reconfigure();
     }
 
-    Bt* bt = furi_record_open(RECORD_BT);
-    s_bt_was_on = bt_is_enabled(bt);
-    if(s_bt_was_on) {
-        ESP_LOGI(TAG, "start: stopping BLE stack to free RAM");
-        bt_stop_stack(bt);
+    /* Free the ~60 KB the BLE controller holds in internal DRAM so the softAP
+     * has DMA-capable memory to attach. Normal STA scans now coexist with BLE;
+     * this mode-specific handoff is the only place the WLAN app stops it. */
+    {
+        Bt* bt = furi_record_open(RECORD_BT);
+        s_bt_was_on = bt && bt_is_enabled(bt) && furi_hal_bt_is_active();
+        if(s_bt_was_on) {
+            ESP_LOGI(TAG, "start: stopping BLE stack to free RAM");
+            bt_stop_stack(bt);
+        }
+        if(bt) furi_record_close(RECORD_BT);
     }
-    furi_record_close(RECORD_BT);
 
     ESP_LOGI(TAG, "start: free internal heap before init: %lu",
              (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
@@ -1274,14 +1286,18 @@ bool wlan_hal_evil_portal_start(const WlanHalEvilPortalConfig* cfg) {
             furi_record_close(RECORD_BT);
             s_bt_was_on = false;
         }
+        wlan_hal_resume_user_radio();
         return false;
     }
-    if(!sa.result && s_bt_was_on) {
-        ESP_LOGW(TAG, "start: failed in worker, restoring BLE");
-        Bt* bt2 = furi_record_open(RECORD_BT);
-        bt_start_stack(bt2);
-        furi_record_close(RECORD_BT);
-        s_bt_was_on = false;
+    if(!sa.result) {
+        if(s_bt_was_on) {
+            ESP_LOGW(TAG, "start: failed in worker, restoring BLE");
+            Bt* bt2 = furi_record_open(RECORD_BT);
+            bt_start_stack(bt2);
+            furi_record_close(RECORD_BT);
+            s_bt_was_on = false;
+        }
+        wlan_hal_resume_user_radio();
     }
     return sa.result;
 }
@@ -1329,6 +1345,7 @@ static void evil_portal_stop_worker(void* arg) {
 void wlan_hal_evil_portal_stop(void) {
     if(!s_running) {
         ESP_LOGI(TAG, "stop: not running");
+        wlan_hal_resume_user_radio();
         return;
     }
     wlan_hal_run_in_worker(evil_portal_stop_worker, NULL);
@@ -1340,6 +1357,9 @@ void wlan_hal_evil_portal_stop(void) {
         furi_record_close(RECORD_BT);
         s_bt_was_on = false;
     }
+
+    /* Return from AP mode to the idle STA radio requested by the lock menu. */
+    wlan_hal_resume_user_radio();
 }
 
 bool wlan_hal_evil_portal_is_running(void) {

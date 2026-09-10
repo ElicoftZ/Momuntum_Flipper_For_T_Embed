@@ -4,9 +4,16 @@
 #include <string.h>
 
 static FuriHalBleProfileBase* ble_profile_hid_ext_start(FuriHalBleProfileParams profile_params) {
-    UNUSED(profile_params);
+    BleProfileHidExtParams* hid_ext_profile_params = profile_params;
+    GapConfig config = {0};
 
-    return ble_profile_hid->start(NULL);
+    furi_check(hid_ext_profile_params);
+    memcpy(config.mac_address, hid_ext_profile_params->mac, sizeof(config.mac_address));
+    strlcpy(config.adv_name, hid_ext_profile_params->name, sizeof(config.adv_name));
+    config.bonding_mode = hid_ext_profile_params->bonding;
+    config.pairing_method = hid_ext_profile_params->pairing;
+
+    return ble_profile_hid_start_with_config(ble_profile_hid, &config);
 }
 
 static void ble_profile_hid_ext_stop(FuriHalBleProfileBase* profile) {

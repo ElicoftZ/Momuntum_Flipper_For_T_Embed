@@ -42,6 +42,18 @@ typedef struct {
     char name_or_path[128];
 } FavoriteApp;
 
+typedef enum {
+    DesktopHoldOkActionFavoriteApp = 0,
+    DesktopHoldOkActionControlCenter,
+    DesktopHoldOkActionCount,
+} DesktopHoldOkAction;
+
+typedef enum {
+    DesktopControlCenterStyleCurrent = 0,
+    DesktopControlCenterStyleMomentum,
+    DesktopControlCenterStyleCount,
+} DesktopControlCenterStyle;
+
 typedef struct {
     uint32_t auto_lock_delay_ms;
     uint8_t usb_inhibit_auto_lock;
@@ -50,6 +62,8 @@ typedef struct {
     uint8_t display_clock;
     FavoriteApp favorite_apps[FavoriteAppNumber];
     FavoriteApp dummy_apps[DummyAppNumber];
+    uint8_t hold_ok_action;
+    uint8_t control_center_style;
 } DesktopSettings;
 
 void desktop_settings_load(DesktopSettings* settings);

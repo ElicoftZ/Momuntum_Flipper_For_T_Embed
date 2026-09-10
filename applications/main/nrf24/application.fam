@@ -4,7 +4,7 @@ App(
     apptype=FlipperAppType.MENUEXTERNAL,
     entry_point="nrf24_app",
     stack_size=4 * 1024,
-    icon="A_Sub1ghz_14",
+    icon="A_Nrf24_14",
     order=66,
     fap_libs=["assets"],
 )

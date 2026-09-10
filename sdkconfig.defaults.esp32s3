@@ -7,12 +7,10 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 
-# Release table: single firmware, 8 MB factory, no ota_0. Dual Boot is disabled
-# in public builds, so the slot it needed goes to the app. Swap both filenames
-# back to partitions_singleapp_16mb.csv to build a dual-boot image.
+# Dual-OTA partition table for the 16 MB flash (self-update). See partitions_ota_16mb.csv.
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_release_16mb.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_release_16mb.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_ota_16mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_ota_16mb.csv"
 
 # ESP32-S3 is dual-core Xtensa — keep unicore for Furi compatibility
 CONFIG_FREERTOS_UNICORE=y
@@ -20,12 +18,10 @@ CONFIG_FREERTOS_UNICORE=y
 # BLE: Use legacy 4.2 advertising (5.0 extended adv not seen by all phones)
 CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
 # CONFIG_BT_BLE_50_FEATURES_SUPPORTED is not set
-# Allocate Bluedroid host buffers (GATT/HCI/ACL) from PSRAM first, so internal
-# RAM stays free for the BLE controller's DMA TX buffers. Without this, starting
-# a RAM-heavy app (e.g. Sub-GHz: 61 decoders + presets) while screen-streaming
-# over BLE RPC exhausts internal RAM -> controller "BLE_INIT: Malloc failed" ->
-# TX stall -> GATT timeout -> disconnect.
-CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
+# Allocate NimBLE host objects and buffers from PSRAM. The controller keeps its
+# DMA-critical memory internal, while the host no longer competes with WiFi and
+# RAM-heavy apps for scarce internal DRAM.
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 
 # Don't cache PHY calibration in NVS. With BT buffers in PSRAM (above), the NVS
 # flash-write that phy_init does on boot ("Saving new calibration data") briefly
@@ -35,6 +31,15 @@ CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
 # the NVS store removes that flash-write entirely; the PHY is (re)calibrated on
 # every boot instead (a few ms, no RF quality loss).
 # CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE is not set
+
+# Same class of bug as the PHY-cal store above: the WiFi NVS store issues
+# flash-writes at runtime that stall the shared flash/PSRAM MSPI cache. The SMB
+# browser runs long libsmb2 crypto (NTLMSSP) out of flash/PSRAM; a WiFi NVS
+# flash-write in that window panics it ("Cache disabled but cached memory region
+# accessed", crash in NTOWFv2). Disabling the WiFi NVS store removes the last
+# runtime flash-writer (app settings already go to SD via saved_struct). WiFi
+# still works; it just re-reads config each boot instead of caching it in NVS.
+# CONFIG_ESP_WIFI_NVS_ENABLED is not set
 
 # PSRAM: T-Embed CC1101 has 8MB PSRAM
 CONFIG_SPIRAM=y
@@ -46,7 +51,7 @@ CONFIG_SPIRAM_USE_MALLOC=y
 # fall to PSRAM. Lowered from 4096: Sub-GHz alloc'd ~25KB of small (<4096B) chunks
 # into internal RAM, dropping it to ~1.5KB free and starving the BLE controller's
 # TX buffers. With 1024 those chunks go to the abundant (5MB) PSRAM instead.
-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=1024
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=256
 # Reserve 64KB internal RAM for DMA/stacks/TCBs
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
 # Allow task stacks in PSRAM (needed for large apps)
@@ -61,10 +66,15 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 # NFC needs 3DES (felica, mf_ultralight)
 CONFIG_MBEDTLS_DES_C=y
 
+# WPA3-SAE authentication has proved reliable with the S3 hardware-AES backend
+# when wlan_hal reserves its two transient DMA bounce buffers before GUI views
+# fragment internal RAM.
+CONFIG_MBEDTLS_HARDWARE_AES=y
+
 # TinyUSB (USB HID for BadUSB + CDC for RPC + MSC for SD-Card USB-Stick)
 # Composite descriptor lives in components/furi_hal/furi_hal_usb_tinyusb_composite.c
-CONFIG_TINYUSB_HID_COUNT=1
-CONFIG_TINYUSB_HID_BUFSIZE=16
+CONFIG_TINYUSB_HID_COUNT=2
+CONFIG_TINYUSB_HID_BUFSIZE=64
 CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_CDC_COUNT=1
 CONFIG_TINYUSB_MSC_ENABLED=y
@@ -76,8 +86,9 @@ CONFIG_TINYUSB_DEBUG_LEVEL=1
 
 # esp_http_server: increase header / URI limits for Evil Portal so smartphones
 # with large cookie sets don't trip the 431 "Request Header Fields Too Large" error.
-CONFIG_HTTPD_MAX_REQ_HDR_LEN=4096
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
 CONFIG_HTTPD_MAX_URI_LEN=2048
+CONFIG_HTTPD_WS_SUPPORT=y
 
 # Live-Credential-Dissektor parst im tcpip_thread → etwas mehr Stack-Reserve.
 CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=4096
@@ -98,25 +109,59 @@ CONFIG_LWIP_IP_FORWARD=y
 CONFIG_LWIP_IPV4_NAPT=y
 CONFIG_LWIP_L2_TO_L3_COPY=y
 
-# ---- Dual boot: hardware escape hatch back to this firmware ----
-# Hold the side/Back button (IO06) at power-on for 3 s and the *bootloader*
-# erases otadata, which makes the ROM bootloader start `factory` -- this
-# firmware. It runs before any app code, so it still works when the firmware
-# installed in ota_0 hangs, crashes or never reaches its own "back to Flipper"
-# control. Without it, a bad second firmware means recovery over USB.
+# Hardware escape hatch: hold the side/Back key (IO06, active low) for 3 s while
+# the board starts and the BOOTLOADER erases otadata, so the board comes up on
+# `factory` -- this firmware. It runs before any app code, so it recovers a board
+# whose ota_0 firmware hangs, crashes, or has no way back of its own.
 #
-# IO06 is the side key: not an ESP32-S3 strapping pin (those are 0/3/45/46), so
-# holding it at reset is safe. IO00 could NOT be used -- it is the download-mode
-# strapping pin, so holding that drops the chip into the serial bootloader.
-# The button is active low, hence PIN_LOW.
+# This was configured and hardware-verified on 2026-08-17 and then LOST -- it was
+# never committed, and a later revert took it out of the tree. The symptom is
+# silent: the key does nothing and the board just boots whatever otadata says.
 #
-# BOOTLOADER_DATA_FACTORY_RESET is a *string* of partition names to wipe, not a
-# bool, and it defaults to "nvs" -- leaving it alone would erase settings and BT
-# bonds on every escape-hatch press. Forced empty so only otadata is cleared,
-# which is all that is needed to select `factory`.
+# IO00 cannot be used: it is the ESP32-S3 download-mode strapping pin, so holding
+# it at reset drops the chip into the serial bootloader. IO06 is not a strapping
+# pin (those are 0/3/45/46).
+#
+# BOOTLOADER_DATA_FACTORY_RESET defaults to "nvs" and is a STRING, not a bool --
+# left alone it would wipe settings and BT bonds on every escape-hatch press. Only
+# otadata should be cleared, so it is forced empty.
 CONFIG_BOOTLOADER_FACTORY_RESET=y
 CONFIG_BOOTLOADER_NUM_PIN_FACTORY_RESET=6
 CONFIG_BOOTLOADER_FACTORY_RESET_PIN_LOW=y
 CONFIG_BOOTLOADER_OTA_DATA_ERASE=y
 CONFIG_BOOTLOADER_DATA_FACTORY_RESET=""
 CONFIG_BOOTLOADER_HOLD_TIME_GPIO=3
+
+# Dual Recovery 2.0 trial boots. Selecting an OTA image marks it NEW; its first
+# reset/crash while still pending automatically aborts that image and returns
+# to the protected factory partition. Third-party firmware needs no changes.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# --- WiFi internal-DRAM footprint (Hotspot Arcade / SoftAP) ---
+# esp_wifi_init needs CONTIGUOUS INTERNAL DRAM for its esf_buf pool, which
+# PSRAM cannot back. With the stock values (STATIC_RX=10, AMPDU on) there was
+# only ~13 KB free and a ~7 KB largest block by the time an app asked for the
+# AP, and init failed with ESP_ERR_NO_MEM. Each static RX buffer is ~1.6 KB of
+# internal DRAM, and the AMPDU block-ack windows cost more on top.
+# A local SoftAP serving one small web UI does not need AMPDU or deep queues.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=3
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+# CONFIG_ESP_WIFI_AMPDU_RX_ENABLED is not set
+# CONFIG_ESP_WIFI_AMPDU_TX_ENABLED is not set
+CONFIG_ESP_WIFI_MGMT_SBUF_NUM=16
+# Pushes what CAN live in PSRAM there. Not sufficient alone (measured), but it
+# stacks with the reductions above.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# esf_buf_setup_static() allocates ONE CONTIGUOUS pool, and static TX
+# buffers dominate it: 16 x ~1.6 KB = ~25 KB. Measured on hardware, the
+# AP starts when the largest free internal block is ~28 KB and fails with
+# "alloc eb fail(1)" at ~20 KB -- with 60 KB still free overall. So this
+# is a FRAGMENTATION limit, not a total-memory one, and the fix is to
+# shrink what must be contiguous.
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=4
+# lwIP sys_thread_sem_get() stores a per-thread semaphore via pthread TLS,
+# and Furi threads use a TLS pointer too. With only 1 slot they collide and
+# pthread_getspecific() NULL-derefs the moment a non-httpd task pushes a
+# WebSocket frame (Hotspot Arcade game change / gameplay).
+CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS=3

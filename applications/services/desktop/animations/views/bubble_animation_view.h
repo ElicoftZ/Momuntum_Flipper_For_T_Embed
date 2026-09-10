@@ -9,6 +9,17 @@ typedef struct BubbleAnimationView BubbleAnimationView;
 /** Callback type to be called when interact button pressed */
 typedef void (*BubbleAnimationInteractCallback)(void*);
 
+/** Let OK stand in for Right while an interaction is actually waiting.
+ *
+ * This board has no reachable Right button, and the level-up ("NEW MAIL")
+ * animation is a BLOCKING one -- so without this the dolphin can never be
+ * levelled up and the desktop stays on that screen forever.
+ *
+ * Gated on a pending interaction, which is what lets it be a plain short press:
+ * while NEW MAIL is on screen OK claims it, and the moment it is claimed OK
+ * goes back to opening the main menu. */
+void bubble_animation_view_set_interact_pending(BubbleAnimationView* view, bool pending);
+
 /**
  * Allocate bubble animation view.
  * This is animation with bubbles, and 2 phases:

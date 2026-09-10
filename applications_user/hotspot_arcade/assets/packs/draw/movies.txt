@@ -1,0 +1,65 @@
+Pack: Movies
+
+Word: batman
+---
+Word: superman
+---
+Word: spiderman
+---
+Word: yoda
+---
+Word: godzilla
+---
+Word: shrek
+---
+Word: minion
+---
+Word: gollum
+---
+Word: chewbacca
+---
+Word: joker
+---
+Word: nemo
+---
+Word: simba
+---
+Word: elsa
+---
+Word: gandalf
+---
+Word: mario
+---
+Word: dracula
+---
+Word: kingkong
+---
+Word: pikachu
+---
+Word: hulk
+---
+Word: wolverine
+---
+Word: groot
+---
+Word: r2d2
+---
+Word: stormtrooper
+---
+Word: hermione
+---
+Word: harry potter
+---
+Word: sonic
+---
+Word: kermit
+---
+Word: olaf
+---
+Word: buzz lightyear
+---
+Word: woody
+---
+Word: mickey mouse
+---
+Word: wednesday

@@ -15,23 +15,29 @@ SELECTED_BOARD=""
 declare -A TARGETS=(
     ["esp32s3"]="esp32s3"
     ["waveshare_c6"]="esp32c6"
+    ["waveshare_c6_1.9"]="esp32c6"
+    ["waveshare_c6_1.47"]="esp32c6"
     ["t_embed"]="esp32s3"
 )
 declare -A NAMES=(
     ["esp32s3"]="esp32s3_generic"
     ["waveshare_c6"]="waveshare_c6_1.9"
+    ["waveshare_c6_1.9"]="waveshare_c6_1.9"
+    ["waveshare_c6_1.47"]="waveshare_c6_1.47"
     ["t_embed"]="lilygo_t_embed_cc1101"
 )
 declare -A DIRS=(
     ["esp32s3"]="build_s3"
     ["waveshare_c6"]="build_waveshare_c6"
+    ["waveshare_c6_1.9"]="build_waveshare_c6"
+    ["waveshare_c6_1.47"]="build_waveshare_c6_1.47"
     ["t_embed"]="build_t_embed"
 )
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") --board <name> [options]
-Boards: esp32s3, waveshare_c6, t_embed
+Boards: esp32s3, waveshare_c6, waveshare_c6_1.9, waveshare_c6_1.47, t_embed
 Options: -p|--port, -m|--monitor, --build-only
 EOF
 }
@@ -100,7 +106,7 @@ cd "${SCRIPT_DIR}"
 
 # Remove root sdkconfig if it belongs to a different target
 if [[ -f "sdkconfig" ]]; then
-    CURRENT_CONFIG_TARGET=$(grep -oP '(?<=CONFIG_IDF_TARGET=")[^"]+' sdkconfig 2>/dev/null || echo "")
+    CURRENT_CONFIG_TARGET=$(sed -n 's/^CONFIG_IDF_TARGET="\([^"]*\)"/\1/p' sdkconfig 2>/dev/null || echo "")
     if [[ -z "${CURRENT_CONFIG_TARGET}" || "${CURRENT_CONFIG_TARGET}" != "${TARGET}" ]]; then
         echo "Root sdkconfig mismatch (Config: '${CURRENT_CONFIG_TARGET}', Needed: '${TARGET}'). Removing..."
         rm -f sdkconfig
@@ -109,19 +115,25 @@ fi
 
 # Remove build-dir sdkconfig if it belongs to a different target
 if [[ -f "${BUILD_DIR}/sdkconfig" ]]; then
-    BD_TARGET=$(grep -oP '(?<=CONFIG_IDF_TARGET=")[^"]+' "${BUILD_DIR}/sdkconfig" 2>/dev/null || echo "")
+    BD_TARGET=$(sed -n 's/^CONFIG_IDF_TARGET="\([^"]*\)"/\1/p' "${BUILD_DIR}/sdkconfig" 2>/dev/null || echo "")
     if [[ -z "${BD_TARGET}" || "${BD_TARGET}" != "${TARGET}" ]]; then
         echo "Build dir sdkconfig mismatch (Config: '${BD_TARGET}', Needed: '${TARGET}'). Removing..."
         rm -f "${BUILD_DIR}/sdkconfig"
     fi
 fi
 
+# Check for board-specific sdkconfig defaults
+BOARD_DEFAULTS_OPTS=()
+if [[ -f "sdkconfig.defaults.${BOARD}" ]]; then
+    BOARD_DEFAULTS_OPTS=("-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.${BOARD}")
+fi
+
 # Set target (creates/updates sdkconfig)
-idf.py -B "${BUILD_DIR}" set-target "${TARGET}"
+idf.py -B "${BUILD_DIR}" "${BOARD_DEFAULTS_OPTS[@]}" set-target "${TARGET}"
 
 # Construct command
 COMMANDS=("reconfigure" "build")
-PY_OPTS=("-B" "${BUILD_DIR}" "-DFLIPPER_BOARD=${BOARD}")
+PY_OPTS=("-B" "${BUILD_DIR}" "-DFLIPPER_BOARD=${BOARD}" "${BOARD_DEFAULTS_OPTS[@]}")
 
 if [[ "${BUILD_ONLY}" -eq 0 ]]; then
     COMMANDS+=("flash")

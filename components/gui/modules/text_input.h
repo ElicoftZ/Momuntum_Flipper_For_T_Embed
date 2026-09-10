@@ -72,6 +72,11 @@ void text_input_set_result_callback(
  */
 void text_input_set_minimum_length(TextInput* text_input, size_t minimum_length);
 
+/** Control sentence-style capitalization of the first character.
+ * Disable this for case-sensitive values such as passwords and tokens.
+ */
+void text_input_set_auto_capitalize(TextInput* text_input, bool enabled);
+
 void text_input_set_validator(
     TextInput* text_input,
     TextInputValidatorCallback callback,

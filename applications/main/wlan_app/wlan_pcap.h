@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <storage/storage.h>
 
+/* Preserve complete management frames, including long probe request IEs. */
+#define WLAN_PCAP_SNAPLEN 4096u
+
 typedef struct __attribute__((packed)) {
     uint32_t magic;
     uint16_t version_major;

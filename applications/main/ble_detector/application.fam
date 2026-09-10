@@ -1,0 +1,9 @@
+App(
+    appid="ble_detector",
+    name="BLE Detector",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="ble_detector_app",
+    stack_size=8 * 1024,
+    icon="I_BleDetector_14",
+    order=68,
+)

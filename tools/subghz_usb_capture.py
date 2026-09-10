@@ -77,7 +77,7 @@ def main():
 
                 total_samples = sum(len(l.split()) for l in raw_data_lines)
 
-                with open(output, "w") as f:
+                with open(output, "w", encoding="utf-8") as f:
                     f.write("Filetype: Flipper SubGhz RAW File\n")
                     f.write("Version: 1\n")
                     f.write(f"Frequency: {frequency}\n")

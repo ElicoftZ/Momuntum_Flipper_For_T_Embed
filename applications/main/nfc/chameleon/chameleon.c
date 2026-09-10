@@ -1,48 +1,45 @@
 /**
  * @file chameleon.c
- * @brief Bluedroid GATT-client transport + ChameleonUltra NUS protocol.
+ * @brief NimBLE GATT-client transport + ChameleonUltra NUS protocol.
  *
- * Structure mirrors applications/main/ble_spam/ble_walk_hal.c (proven
- * Bluedroid GATTC pattern: stop BT service → controller/bluedroid init in
- * BLE mode → GAP scan → GATTC open → service/char discovery), extended with
- * notification subscription (CCCD) and the ChameleonUltra frame protocol.
+ * The normal Flipper BLE profile is stopped while this client owns NimBLE.
+ * The transport scans, connects, discovers Nordic UART Service, subscribes to
+ * notifications, and exchanges ChameleonUltra protocol frames.
  */
 #include "chameleon.h"
 
-#include <esp_bt.h>
-#include <esp_bt_main.h>
-#include <esp_gap_ble_api.h>
-#include <esp_gattc_api.h>
-#include <esp_gatt_common_api.h>
 #include <esp_log.h>
 #include <furi.h>
 #include <btshim.h>
+#include <host/ble_att.h>
+#include <host/ble_gap.h>
+#include <host/ble_gatt.h>
+#include <host/ble_hs.h>
+#include <nimble_glue.h>
 #include <string.h>
 
-#define TAG               "Chameleon"
-#define CHAM_GATTC_APP_ID 0x43
-#define CHAM_DEV_NAME     "ChameleonUltra"
+#define TAG           "Chameleon"
+#define CHAM_DEV_NAME "ChameleonUltra"
 
-/* Nordic UART Service UUIDs, stored little-endian (Bluedroid uuid128 order):
+/* Nordic UART Service UUIDs, stored in NimBLE's little-endian UUID128 order:
  * 6E400001-B5A3-F393-E0A9-E50E24DCCA9E (service), -0002 TX(write), -0003 RX(notify) */
-static const uint8_t NUS_SVC[16] =
-    {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
-     0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E};
-static const uint8_t NUS_TX[16] =
-    {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
-     0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E};
-static const uint8_t NUS_RX[16] =
-    {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
-     0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E};
-static const uint16_t CCCD_UUID = 0x2902;
+static const ble_uuid128_t NUS_SVC_UUID = BLE_UUID128_INIT(
+    0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+    0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E);
+static const ble_uuid128_t NUS_TX_UUID = BLE_UUID128_INIT(
+    0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+    0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E);
+static const ble_uuid128_t NUS_RX_UUID = BLE_UUID128_INIT(
+    0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+    0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E);
+static const ble_uuid16_t CCCD_UUID = BLE_UUID16_INIT(0x2902);
 
 /* HF14A_RAW option bits: b7 activateRfField, b6 waitResponse, b5 appendCrc,
  * b4 autoSelect, b3 keepRfField, b2 checkResponseCrc. Default = a normal
  * ISO14443-3A exchange with auto-anticollision and CRC handling. */
 #define CHAMELEON_RAW_OPT_DEFAULT ((1 << 6) | (1 << 5) | (1 << 4) | (1 << 2)) /* 0x74 */
 
-static esp_gatt_if_t s_gattc_if = ESP_GATT_IF_NONE;
-static uint16_t s_conn_id = 0;
+static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static volatile bool s_connected = false;
 static bool s_hal_started = false;
 /* True if BT was disabled in settings when we connected: we force-started the
@@ -52,24 +49,17 @@ static bool s_bt_was_disabled = false;
 
 static volatile bool s_scanning = false;
 static volatile bool s_dev_found = false;
-static esp_bd_addr_t s_dev_addr;
-static esp_ble_addr_type_t s_dev_addr_type;
-
-#define CHAM_MAX_SVC 24
-typedef struct {
-    esp_bt_uuid_t uuid;
-    uint16_t start;
-    uint16_t end;
-} ChamSvc;
-static ChamSvc s_svcs[CHAM_MAX_SVC];
-static volatile uint16_t s_svc_count = 0;
+static ble_addr_t s_dev_addr;
 
 static volatile bool s_search_done = false;
+static volatile bool s_chars_done = false;
+static volatile bool s_dsc_done = false;
 static uint16_t s_svc_start = 0;
 static uint16_t s_svc_end = 0;
 static uint16_t s_write_handle = 0;
 static uint16_t s_notify_handle = 0;
-static volatile bool s_notify_registered = false;
+static uint16_t s_cccd_handle = 0;
+static volatile bool s_cccd_done = false;
 static volatile bool s_cccd_written = false;
 
 static int s_device_mode = -1; /* cache to skip redundant CHANGE_DEVICE_MODE */
@@ -79,30 +69,6 @@ static uint8_t s_acc[CHAMELEON_RESP_DATA_MAX + 32];
 static size_t s_acc_len = 0;
 static ChameleonResp s_last_resp;
 static volatile bool s_resp_ready = false;
-
-static bool uuid_is(const esp_bt_uuid_t* u, const uint8_t ref[16]) {
-    if(u->len != ESP_UUID_LEN_128) return false;
-    if(memcmp(u->uuid.uuid128, ref, 16) == 0) return true;
-    /* Be byte-order tolerant: also accept the reversed representation */
-    for(int i = 0; i < 16; i++)
-        if(u->uuid.uuid128[i] != ref[15 - i]) return false;
-    return true;
-}
-
-static void uuid_log(const char* tag, const esp_bt_uuid_t* u) {
-    if(u->len == ESP_UUID_LEN_16) {
-        ESP_LOGD(TAG, "%s uuid16=%04X", tag, u->uuid.uuid16);
-    } else if(u->len == ESP_UUID_LEN_128) {
-        const uint8_t* b = u->uuid.uuid128;
-        ESP_LOGD(
-            TAG,
-            "%s uuid128=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-            tag, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10],
-            b[11], b[12], b[13], b[14], b[15]);
-    } else {
-        ESP_LOGD(TAG, "%s uuid len=%d", tag, u->len);
-    }
-}
 
 static uint8_t cham_lrc(const uint8_t* d, size_t n) {
     uint8_t s = 0;
@@ -139,131 +105,164 @@ static void cham_try_parse(void) {
     s_acc_len = rest;
 }
 
-/* ---------------------------------------------------------------- GAP ---- */
+/* ------------------------------------------------------------ NimBLE GAP --- */
 
-static void cham_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param) {
-    switch(event) {
-    case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
-        if(param->scan_param_cmpl.status == ESP_BT_STATUS_SUCCESS)
-            esp_ble_gap_start_scanning(0);
-        break;
-    case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
-        s_scanning = (param->scan_start_cmpl.status == ESP_BT_STATUS_SUCCESS);
-        break;
-    case ESP_GAP_BLE_SCAN_RESULT_EVT:
-        if(param->scan_rst.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT && !s_dev_found) {
-            char name[33] = "";
-            for(int pass = 0; pass < 2 && name[0] == '\0'; pass++) {
-                uint8_t* adv;
-                uint8_t adv_len;
-                if(pass == 0) {
-                    adv = param->scan_rst.ble_adv;
-                    adv_len = param->scan_rst.adv_data_len;
-                } else {
-                    adv = param->scan_rst.ble_adv + param->scan_rst.adv_data_len;
-                    adv_len = param->scan_rst.scan_rsp_len;
-                }
-                uint8_t pos = 0;
-                while(pos < adv_len) {
-                    uint8_t len = adv[pos];
-                    if(len == 0 || pos + len >= adv_len) break;
-                    uint8_t type = adv[pos + 1];
-                    if(type == 0x09 || type == 0x08) {
-                        uint8_t nl = len - 1;
-                        if(nl > 32) nl = 32;
-                        memcpy(name, &adv[pos + 2], nl);
-                        name[nl] = '\0';
-                        break;
-                    }
-                    pos += len + 1;
-                }
-            }
-            if(strcmp(name, CHAM_DEV_NAME) == 0) {
-                memcpy(s_dev_addr, param->scan_rst.bda, 6);
-                s_dev_addr_type = param->scan_rst.ble_addr_type;
-                s_dev_found = true;
-                esp_ble_gap_stop_scanning();
-            }
+static void cham_parse_name(const uint8_t* data, uint8_t data_len, char name[33]) {
+    name[0] = '\0';
+    uint8_t pos = 0;
+    while(pos + 1 < data_len) {
+        uint8_t len = data[pos];
+        if(len == 0 || pos + len >= data_len) break;
+        uint8_t type = data[pos + 1];
+        if(type == BLE_HS_ADV_TYPE_COMP_NAME || type == BLE_HS_ADV_TYPE_INCOMP_NAME) {
+            uint8_t name_len = len - 1;
+            if(name_len > 32) name_len = 32;
+            memcpy(name, data + pos + 2, name_len);
+            name[name_len] = '\0';
+            return;
         }
-        break;
-    case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
-        s_scanning = false;
-        break;
-    default:
-        break;
+        pos += len + 1;
     }
 }
 
-/* --------------------------------------------------------------- GATTC --- */
+static void cham_receive_notification(struct os_mbuf* om) {
+    uint16_t incoming_len = OS_MBUF_PKTLEN(om);
+    if(incoming_len == 0) return;
 
-static void cham_gattc_cb(
-    esp_gattc_cb_event_t event,
-    esp_gatt_if_t gattc_if,
-    esp_ble_gattc_cb_param_t* param) {
-    switch(event) {
-    case ESP_GATTC_REG_EVT:
-        if(param->reg.status == ESP_GATT_OK) s_gattc_if = gattc_if;
+    size_t space = sizeof(s_acc) - s_acc_len;
+    if(incoming_len > space) {
+        s_acc_len = 0;
+        space = sizeof(s_acc);
+    }
+    uint16_t copy_len = incoming_len > space ? (uint16_t)space : incoming_len;
+    uint16_t copied = 0;
+    if(ble_hs_mbuf_to_flat(om, s_acc + s_acc_len, copy_len, &copied) == 0) {
+        s_acc_len += copied;
+        cham_try_parse();
+    }
+}
+
+static int cham_gap_cb(struct ble_gap_event* event, void* context) {
+    (void)context;
+    switch(event->type) {
+    case BLE_GAP_EVENT_DISC:
+        if(!s_dev_found) {
+            char name[33];
+            cham_parse_name(event->disc.data, event->disc.length_data, name);
+            if(strcmp(name, CHAM_DEV_NAME) == 0) {
+                s_dev_addr = event->disc.addr;
+                s_dev_found = true;
+                ble_gap_disc_cancel();
+            }
+        }
         break;
-    case ESP_GATTC_OPEN_EVT:
-        if(param->open.status == ESP_GATT_OK) {
-            s_conn_id = param->open.conn_id;
+    case BLE_GAP_EVENT_DISC_COMPLETE:
+        s_scanning = false;
+        break;
+    case BLE_GAP_EVENT_CONNECT:
+        if(event->connect.status == 0) {
+            s_conn_handle = event->connect.conn_handle;
             s_connected = true;
-            esp_ble_gattc_send_mtu_req(gattc_if, s_conn_id);
+            ble_gattc_exchange_mtu(s_conn_handle, NULL, NULL);
         } else {
+            s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
             s_connected = false;
         }
         break;
-    case ESP_GATTC_CFG_MTU_EVT:
-        ESP_LOGD(TAG, "MTU=%d", param->cfg_mtu.mtu);
-        break;
-    case ESP_GATTC_SEARCH_RES_EVT:
-        uuid_log("SVC", &param->search_res.srvc_id.uuid);
-        if(s_svc_count < CHAM_MAX_SVC) {
-            ChamSvc* s = &s_svcs[s_svc_count];
-            memcpy(&s->uuid, &param->search_res.srvc_id.uuid, sizeof(esp_bt_uuid_t));
-            s->start = param->search_res.start_handle;
-            s->end = param->search_res.end_handle;
-            s_svc_count++;
-        }
-        if(uuid_is(&param->search_res.srvc_id.uuid, NUS_SVC)) {
-            s_svc_start = param->search_res.start_handle;
-            s_svc_end = param->search_res.end_handle;
-        }
-        break;
-    case ESP_GATTC_SEARCH_CMPL_EVT:
-        ESP_LOGD(TAG, "search complete: %u services", s_svc_count);
-        s_search_done = true;
-        break;
-    case ESP_GATTC_REG_FOR_NOTIFY_EVT:
-        ESP_LOGD(TAG, "reg_for_notify status=%d", param->reg_for_notify.status);
-        if(param->reg_for_notify.status == ESP_GATT_OK) s_notify_registered = true;
-        break;
-    case ESP_GATTC_WRITE_DESCR_EVT:
-        ESP_LOGD(TAG, "write_descr status=%d", param->write.status);
-        s_cccd_written = true;
-        break;
-    case ESP_GATTC_NOTIFY_EVT:
-        ESP_LOGD(TAG, "NOTIFY len=%u h=%u", param->notify.value_len, param->notify.handle);
-        if(param->notify.value_len > 0) {
-            size_t space = sizeof(s_acc) - s_acc_len;
-            size_t n = param->notify.value_len;
-            if(n > space) {
-                /* Overflow — reset accumulator and keep latest chunk */
-                s_acc_len = 0;
-                n = (param->notify.value_len > sizeof(s_acc)) ? sizeof(s_acc) :
-                                                                param->notify.value_len;
-            }
-            memcpy(s_acc + s_acc_len, param->notify.value, n);
-            s_acc_len += n;
-            cham_try_parse();
-        }
-        break;
-    case ESP_GATTC_DISCONNECT_EVT:
+    case BLE_GAP_EVENT_DISCONNECT:
+        s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         s_connected = false;
+        break;
+    case BLE_GAP_EVENT_NOTIFY_RX:
+        if(event->notify_rx.attr_handle == s_notify_handle) {
+            cham_receive_notification(event->notify_rx.om);
+        }
         break;
     default:
         break;
     }
+    return 0;
+}
+
+/* ------------------------------------------------------------- NimBLE GATT --- */
+
+static int cham_service_cb(
+    uint16_t conn_handle,
+    const struct ble_gatt_error* error,
+    const struct ble_gatt_svc* service,
+    void* context) {
+    (void)conn_handle;
+    (void)context;
+    if(error->status == 0 && service) {
+        if(ble_uuid_cmp(&service->uuid.u, &NUS_SVC_UUID.u) == 0) {
+            s_svc_start = service->start_handle;
+            s_svc_end = service->end_handle;
+        }
+    } else {
+        s_search_done = true;
+    }
+    return 0;
+}
+
+static int cham_char_cb(
+    uint16_t conn_handle,
+    const struct ble_gatt_error* error,
+    const struct ble_gatt_chr* characteristic,
+    void* context) {
+    (void)conn_handle;
+    (void)context;
+    if(error->status == 0 && characteristic) {
+        if(ble_uuid_cmp(&characteristic->uuid.u, &NUS_TX_UUID.u) == 0) {
+            s_write_handle = characteristic->val_handle;
+        } else if(ble_uuid_cmp(&characteristic->uuid.u, &NUS_RX_UUID.u) == 0) {
+            s_notify_handle = characteristic->val_handle;
+        }
+    } else {
+        s_chars_done = true;
+    }
+    return 0;
+}
+
+static int cham_dsc_cb(
+    uint16_t conn_handle,
+    const struct ble_gatt_error* error,
+    uint16_t chr_val_handle,
+    const struct ble_gatt_dsc* descriptor,
+    void* context) {
+    (void)conn_handle;
+    (void)context;
+    if(error->status == 0 && descriptor && chr_val_handle == s_notify_handle &&
+       ble_uuid_cmp(&descriptor->uuid.u, &CCCD_UUID.u) == 0) {
+        s_cccd_handle = descriptor->handle;
+    } else if(error->status != 0) {
+        s_dsc_done = true;
+    }
+    return 0;
+}
+
+static int cham_cccd_write_cb(
+    uint16_t conn_handle,
+    const struct ble_gatt_error* error,
+    struct ble_gatt_attr* attr,
+    void* context) {
+    (void)conn_handle;
+    (void)attr;
+    (void)context;
+    s_cccd_written = error->status == 0;
+    s_cccd_done = true;
+    return 0;
+}
+
+static int cham_write_cb(
+    uint16_t conn_handle,
+    const struct ble_gatt_error* error,
+    struct ble_gatt_attr* attr,
+    void* context) {
+    (void)conn_handle;
+    (void)attr;
+    (void)context;
+    if(error->status != 0) ESP_LOGW(TAG, "GATT write failed: %d", error->status);
+    return 0;
 }
 
 /* --------------------------------------------------- HAL start / stop ---- */
@@ -272,88 +271,46 @@ static bool cham_hal_start(void) {
     if(s_hal_started) return true;
 
     Bt* bt = furi_record_open(RECORD_BT);
-    /* If BT is disabled in settings the radio stack was never started, so the
-     * ESP BT controller is uninitialized. Bring it up through the normal
-     * service path first (ble_serial does esp_bt_controller_init); otherwise
-     * the controller takeover below dereferences an uninitialized controller
-     * and crashes. */
     s_bt_was_disabled = !bt_is_enabled(bt);
-    if(s_bt_was_disabled) {
-        ESP_LOGI(TAG, "BT disabled in settings, force-starting stack first");
-        bt_start_stack(bt);
-        furi_delay_ms(300);
-    }
     bt_stop_stack(bt);
     furi_record_close(RECORD_BT);
-    furi_delay_ms(100);
+    furi_delay_ms(50);
 
-    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    esp_err_t err = esp_bt_controller_init(&bt_cfg);
-    if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
-    err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-    if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
+    esp_err_t err = nimble_glue_init("Chameleon Client");
+    if(err != ESP_OK) return false;
+    nimble_glue_configure_security(false, false, false, BLE_HS_IO_NO_INPUT_OUTPUT);
+    ble_att_set_preferred_mtu(247);
+    err = nimble_glue_start(NULL, NULL);
+    if(err != ESP_OK) {
+        nimble_glue_stop();
+        return false;
+    }
 
-    esp_bluedroid_config_t bd_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
-    err = esp_bluedroid_init_with_cfg(&bd_cfg);
-    if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
-    err = esp_bluedroid_enable();
-    if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
-
-    s_gattc_if = ESP_GATT_IF_NONE;
     s_connected = false;
-
-    if(esp_ble_gap_register_callback(cham_gap_cb) != ESP_OK) return false;
-    if(esp_ble_gattc_register_callback(cham_gattc_cb) != ESP_OK) return false;
-    if(esp_ble_gattc_app_register(CHAM_GATTC_APP_ID) != ESP_OK) return false;
-
-    for(int i = 0; i < 40 && s_gattc_if == ESP_GATT_IF_NONE; i++) furi_delay_ms(50);
-    if(s_gattc_if == ESP_GATT_IF_NONE) return false;
-
-    esp_ble_gatt_set_local_mtu(247);
+    s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_hal_started = true;
     return true;
 }
 
 static void cham_hal_stop(void) {
-    if(s_connected) {
-        esp_ble_gattc_close(s_gattc_if, s_conn_id);
-        furi_delay_ms(100);
-    }
     if(s_scanning) {
-        esp_ble_gap_stop_scanning();
-        furi_delay_ms(50);
+        ble_gap_disc_cancel();
+        for(int i = 0; i < 20 && s_scanning; i++) furi_delay_ms(10);
     }
-    if(s_gattc_if != ESP_GATT_IF_NONE) {
-        esp_ble_gattc_app_unregister(s_gattc_if);
-        furi_delay_ms(50);
+    if(s_connected && s_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        for(int i = 0; i < 40 && s_connected; i++) furi_delay_ms(25);
     }
-    if(esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) {
-        esp_bluedroid_disable();
-        furi_delay_ms(50);
-        esp_bluedroid_deinit();
-        furi_delay_ms(50);
-    }
-    if(esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_disable();
-        furi_delay_ms(50);
-    }
-    if(esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_deinit();
-        furi_delay_ms(50);
-    }
+    nimble_glue_stop();
 
     Bt* bt = furi_record_open(RECORD_BT);
-    bt_start_stack(bt);
-    if(s_bt_was_disabled) {
-        /* BT was off in settings before we connected — put it back off so we
-         * don't leave the device advertising against the user's choice. */
-        furi_delay_ms(200);
-        bt_stop_stack(bt);
-        s_bt_was_disabled = false;
-    }
+    if(!s_bt_was_disabled) bt_start_stack(bt);
     furi_record_close(RECORD_BT);
 
-    s_gattc_if = ESP_GATT_IF_NONE;
+    s_bt_was_disabled = false;
+    s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_connected = false;
+    s_scanning = false;
     s_hal_started = false;
     s_device_mode = -1;
 }
@@ -372,25 +329,32 @@ bool chameleon_connect(volatile bool* abort_flag) {
     s_dev_found = false;
     s_connected = false;
     s_search_done = false;
-    s_notify_registered = false;
+    s_chars_done = false;
+    s_dsc_done = false;
+    s_cccd_done = false;
     s_cccd_written = false;
-    s_svc_start = s_svc_end = s_write_handle = s_notify_handle = 0;
-    s_svc_count = 0;
+    s_svc_start = s_svc_end = s_write_handle = s_notify_handle = s_cccd_handle = 0;
     s_acc_len = 0;
     s_resp_ready = false;
 
-    esp_ble_scan_params_t sp = {
-        .scan_type = BLE_SCAN_TYPE_ACTIVE,
-        .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
-        .scan_filter_policy = BLE_SCAN_FILTER_ALLOW_ALL,
-        .scan_interval = 0x50,
-        .scan_window = 0x30,
+    struct ble_gap_disc_params scan_params = {
+        .passive = 0,
+        .itvl = 0x50,
+        .window = 0x30,
+        .filter_duplicates = 0,
     };
-    esp_ble_gap_set_scan_params(&sp); /* scan starts in GAP cb */
+    int rc = ble_gap_disc(
+        nimble_glue_own_address_type(), BLE_HS_FOREVER, &scan_params, cham_gap_cb, NULL);
+    if(rc != 0) {
+        ESP_LOGW(TAG, "scan start failed: %d", rc);
+        cham_hal_stop();
+        return false;
+    }
+    s_scanning = true;
 
     for(int i = 0; i < 300 && !s_dev_found; i++) { /* up to ~15 s */
         if(abort_flag && *abort_flag) {
-            esp_ble_gap_stop_scanning();
+            ble_gap_disc_cancel();
             cham_hal_stop();
             return false;
         }
@@ -401,17 +365,20 @@ bool chameleon_connect(volatile bool* abort_flag) {
         cham_hal_stop();
         return false;
     }
-    esp_ble_gap_stop_scanning();
-    furi_delay_ms(100);
+    if(s_scanning) ble_gap_disc_cancel();
+    for(int i = 0; i < 20 && s_scanning; i++) furi_delay_ms(10);
 
     /* Connect */
-    if(esp_ble_gattc_open(s_gattc_if, s_dev_addr, s_dev_addr_type, true) != ESP_OK) {
+    rc = ble_gap_connect(
+        nimble_glue_own_address_type(), &s_dev_addr, 5000, NULL, cham_gap_cb, NULL);
+    if(rc != 0) {
+        ESP_LOGW(TAG, "connect start failed: %d", rc);
         cham_hal_stop();
         return false;
     }
     for(int i = 0; i < 100 && !s_connected; i++) {
         if(abort_flag && *abort_flag) {
-            esp_ble_gattc_close(s_gattc_if, 0);
+            ble_gap_conn_cancel();
             cham_hal_stop();
             return false;
         }
@@ -423,78 +390,72 @@ bool chameleon_connect(volatile bool* abort_flag) {
         return false;
     }
 
-    /* Discover ALL services (NULL filter — the proven ble_walk pattern; a
-     * 128-bit UUID filter is unreliable across the Bluedroid cache), then
-     * match the NUS service from the collected list. */
+    /* Discover services and match Nordic UART Service. */
     s_search_done = false;
-    s_svc_count = 0;
-    esp_ble_gattc_search_service(s_gattc_if, s_conn_id, NULL);
+    rc = ble_gattc_disc_all_svcs(s_conn_handle, cham_service_cb, NULL);
+    if(rc != 0) s_search_done = true;
     for(int i = 0; i < 150 && !s_search_done; i++) furi_delay_ms(20);
     if(!s_search_done) {
         ESP_LOGW(TAG, "service discovery timeout");
         cham_hal_stop();
         return false;
     }
-    for(int i = 0; i < s_svc_count; i++) {
-        if(uuid_is(&s_svcs[i].uuid, NUS_SVC)) {
-            s_svc_start = s_svcs[i].start;
-            s_svc_end = s_svcs[i].end;
-            break;
-        }
-    }
     if(s_svc_start == 0) {
-        ESP_LOGW(TAG, "NUS service not among %u services", s_svc_count);
+        ESP_LOGW(TAG, "NUS service not found");
         cham_hal_stop();
         return false;
     }
     ESP_LOGD(TAG, "NUS svc handles %u..%u", s_svc_start, s_svc_end);
 
     /* Find TX (write) + RX (notify) characteristic handles */
-    uint16_t count = 16;
-    esp_gattc_char_elem_t chars[16];
-    if(esp_ble_gattc_get_all_char(
-           s_gattc_if, s_conn_id, s_svc_start, s_svc_end, chars, &count, 0) != ESP_GATT_OK) {
+    s_chars_done = false;
+    rc = ble_gattc_disc_all_chrs(
+        s_conn_handle, s_svc_start, s_svc_end, cham_char_cb, NULL);
+    if(rc != 0) {
         cham_hal_stop();
         return false;
     }
-    for(int i = 0; i < count; i++) {
-        uuid_log("CHR", &chars[i].uuid);
-        if(uuid_is(&chars[i].uuid, NUS_TX)) s_write_handle = chars[i].char_handle;
-        else if(uuid_is(&chars[i].uuid, NUS_RX))
-            s_notify_handle = chars[i].char_handle;
-    }
+    for(int i = 0; i < 100 && !s_chars_done; i++) furi_delay_ms(20);
     if(s_write_handle == 0 || s_notify_handle == 0) {
         ESP_LOGW(TAG, "NUS chars missing (w=%u n=%u)", s_write_handle, s_notify_handle);
         cham_hal_stop();
         return false;
     }
 
-    /* Subscribe to notifications: register + write CCCD = 0x0001 */
-    s_notify_registered = false;
-    esp_ble_gattc_register_for_notify(s_gattc_if, s_dev_addr, s_notify_handle);
-    for(int i = 0; i < 100 && !s_notify_registered; i++) furi_delay_ms(20);
-    if(!s_notify_registered) {
-        ESP_LOGW(TAG, "register_for_notify failed");
+    /* Discover and write the notification CCCD. */
+    s_dsc_done = false;
+    rc = ble_gattc_disc_all_dscs(
+        s_conn_handle, s_notify_handle, s_svc_end, cham_dsc_cb, NULL);
+    if(rc != 0) {
+        cham_hal_stop();
+        return false;
+    }
+    for(int i = 0; i < 100 && !s_dsc_done; i++) furi_delay_ms(20);
+    if(s_cccd_handle == 0) {
+        ESP_LOGW(TAG, "CCCD descriptor not found");
         cham_hal_stop();
         return false;
     }
 
-    esp_bt_uuid_t cccd = {.len = ESP_UUID_LEN_16, .uuid.uuid16 = CCCD_UUID};
-    esp_gattc_descr_elem_t descr;
-    uint16_t dcount = 1;
-    esp_gatt_status_t ds = esp_ble_gattc_get_descr_by_char_handle(
-        s_gattc_if, s_conn_id, s_notify_handle, cccd, &descr, &dcount);
-    if(ds == ESP_GATT_OK && dcount > 0) {
-        uint8_t v[2] = {0x01, 0x00};
-        s_cccd_written = false;
-        esp_ble_gattc_write_char_descr(
-            s_gattc_if, s_conn_id, descr.handle, sizeof(v), v,
-            ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-        for(int i = 0; i < 60 && !s_cccd_written; i++) furi_delay_ms(20);
-        ESP_LOGD(
-            TAG, "CCCD handle=%u written=%d", descr.handle, (int)s_cccd_written);
-    } else {
-        ESP_LOGW(TAG, "CCCD descr not found (ds=%d dcount=%u)", ds, dcount);
+    uint8_t cccd_value[2] = {0x01, 0x00};
+    s_cccd_done = false;
+    s_cccd_written = false;
+    rc = ble_gattc_write_flat(
+        s_conn_handle,
+        s_cccd_handle,
+        cccd_value,
+        sizeof(cccd_value),
+        cham_cccd_write_cb,
+        NULL);
+    if(rc != 0) {
+        cham_hal_stop();
+        return false;
+    }
+    for(int i = 0; i < 60 && !s_cccd_done; i++) furi_delay_ms(20);
+    if(!s_cccd_written) {
+        ESP_LOGW(TAG, "CCCD write failed");
+        cham_hal_stop();
+        return false;
     }
 
     ESP_LOGD(TAG, "connected & subscribed");
@@ -536,12 +497,11 @@ bool chameleon_cmd(
     s_resp_ready = false;
     s_acc_len = 0;
 
-    esp_err_t e = esp_ble_gattc_write_char(
-        s_gattc_if, s_conn_id, s_write_handle, 10 + len, frame,
-        ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
-    ESP_LOGD(TAG, "cmd %u write -> %s (wh=%u)", cmd, esp_err_to_name(e), s_write_handle);
-    if(e != ESP_OK) {
-        ESP_LOGW(TAG, "write_char: %s", esp_err_to_name(e));
+    int rc = ble_gattc_write_flat(
+        s_conn_handle, s_write_handle, frame, 10 + len, cham_write_cb, NULL);
+    ESP_LOGD(TAG, "cmd %u write -> %d (wh=%u)", cmd, rc, s_write_handle);
+    if(rc != 0) {
+        ESP_LOGW(TAG, "write_char: %d", rc);
         return false;
     }
 

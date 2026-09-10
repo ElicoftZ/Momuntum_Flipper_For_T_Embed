@@ -1,0 +1,73 @@
+Pack: Everyday
+
+A: Be able to fly
+B: Be invisible
+---
+A: Read minds
+B: See the future
+---
+A: Always be 10 min early
+B: Always be 5 min late
+---
+A: Never use the internet again
+B: Never watch films again
+---
+A: Fight one horse-sized duck
+B: 100 duck-sized horses
+---
+A: Live without music
+B: Live without TV
+---
+A: Have unlimited pizza
+B: Have unlimited tacos
+---
+A: Teleport anywhere
+B: Time travel
+---
+A: Talk to animals
+B: Speak every language
+---
+A: Always be too hot
+B: Always be too cold
+---
+A: No phone for a week
+B: No coffee for a month
+---
+A: Explore space
+B: Explore the deep ocean
+---
+A: Never use headphones again
+B: Never use a screen after dark
+---
+A: Always have to tell the truth
+B: Have to stay silent one day a week
+---
+A: A free ticket anywhere once a year
+B: Free food in your town forever
+---
+A: Fall asleep anywhere instantly
+B: Never need more than four hours
+---
+A: Lose your phone for a month
+B: Lose your favourite jumper forever
+---
+A: Always be slightly too early
+B: Never know what time it is
+---
+A: Have a personal chef
+B: Have a personal driver
+---
+A: Live where it's always spring
+B: Live where it's always autumn
+---
+A: Never wait in a queue again
+B: Never sit in traffic again
+---
+A: Be brilliant at one instrument
+B: Speak one more language perfectly
+---
+A: A shower that is always perfect
+B: A bed that is always the right temperature
+---
+A: Never lose your keys again
+B: Never lose a sock again

@@ -6,7 +6,6 @@
 #include <desktop/views/desktop_view_slideshow.h>
 #include <dialogs/dialogs.h>
 #include <dolphin/dolphin.h>
-#include <flipper_application/flipper_application.h>
 #include <dolphin/dolphin_i.h>
 #include <dolphin/helpers/dolphin_state.h>
 #include <gui/gui.h>
@@ -16,6 +15,7 @@
 #include <gui/modules/variable_item_list.h>
 #include <flipper_format/flipper_format.h>
 #include <gui/view_dispatcher.h>
+#include <locale/locale.h>
 /* Resolves to components/loader, which is the loader that this build compiles;
  * applications/services/loader is a second, uncompiled copy. */
 #include <loader/loader_menu.h>
@@ -27,6 +27,7 @@
 #include <toolbox/stream/file_stream.h>
 #include <toolbox/value_index.h>
 #include <toolbox/name_generator.h>
+#include <wifi/wlan_hal.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,7 +39,10 @@
 #define MOMENTUM_DIRECTORY_NAME_SIZE  256U
 #define MOMENTUM_MAX_USER_FREQS       24U
 #define MOMENTUM_MAX_MAINMENU_ITEMS   64U
-#define MOMENTUM_DOLPHIN_XP_MAX       9999U
+/* One past the top threshold, so the editor can actually reach the max level.
+ * Derived rather than hardcoded: this used to be a literal 9999 that silently
+ * disagreed with a dolphin capped at 1800. */
+#define MOMENTUM_DOLPHIN_XP_MAX       (DOLPHIN_LEVELS[DOLPHIN_LEVEL_COUNT - 1] + 1U)
 #define MOMENTUM_DOLPHIN_BUTTHURT_MAX 14
 /* Embedded in the firmware image (main/CMakeLists.txt EMBED_FILES), so the
  * intro works on a card that has never seen this firmware. A copy on the SD
@@ -91,10 +95,20 @@ typedef enum {
 /* Rows of the Mainmenu page, which the enter handler and the post-edit refresh
  * both index into. */
 typedef enum {
+    /* These are POSITIONS in the Mainmenu page's variable_item_list, so the
+     * order here must match the order the rows are added in, exactly. When
+     * "Hide Dual Boot" was added it was inserted into the list between Add and
+     * Move but appended to the END of this enum, which shifted every row from
+     * index 4 on: the enter callback tested Remove(5) against the Move row --
+     * which has values, so OK entered edit mode and the callback never ran --
+     * and refresh() applied the "need two items" lock to Hide Dual Boot. Net
+     * effect: items could not be removed. Keep this list and the
+     * variable_item_list_add() sequence in step. */
     MomentumMainmenuRowMenuStyle,
     MomentumMainmenuRowReset,
     MomentumMainmenuRowItem,
     MomentumMainmenuRowAdd,
+    MomentumMainmenuRowHideDualBoot,
     MomentumMainmenuRowMove,
     MomentumMainmenuRowRemove,
 } MomentumMainmenuRow;
@@ -279,10 +293,110 @@ static const uint32_t momentum_clock_values[] = {
     1,
 };
 
+static const uint32_t momentum_time_format_values[] = {
+    LocaleTimeFormat24h,
+    LocaleTimeFormat12h,
+};
+
+static const char* const momentum_time_format_text[] = {
+    "24H",
+    "12H",
+};
+
+/* Auto uses a certificate-verified IP lookup only while WiFi is connected.
+ * Every currently inhabited civil UTC offset is also available manually, so
+ * the clock remains usable offline and if the public service is unavailable. */
+static const int32_t momentum_timezone_values[] = {
+    0,
+    -720,
+    -660,
+    -600,
+    -570,
+    -540,
+    -480,
+    -420,
+    -360,
+    -300,
+    -240,
+    -210,
+    -180,
+    -120,
+    -60,
+    0,
+    60,
+    120,
+    180,
+    210,
+    240,
+    270,
+    300,
+    330,
+    345,
+    360,
+    390,
+    420,
+    480,
+    525,
+    540,
+    570,
+    600,
+    630,
+    660,
+    720,
+    765,
+    780,
+    825,
+    840,
+};
+
+static const char* const momentum_timezone_text[] = {
+    "Auto (IP)",
+    "UTC-12:00",
+    "UTC-11:00",
+    "UTC-10:00",
+    "UTC-09:30",
+    "UTC-09:00",
+    "UTC-08:00",
+    "UTC-07:00",
+    "UTC-06:00",
+    "UTC-05:00",
+    "UTC-04:00",
+    "UTC-03:30",
+    "UTC-03:00",
+    "UTC-02:00",
+    "UTC-01:00",
+    "UTC+00:00",
+    "UTC+01:00",
+    "UTC+02:00",
+    "UTC+03:00",
+    "UTC+03:30",
+    "UTC+04:00",
+    "UTC+04:30",
+    "UTC+05:00",
+    "UTC+05:30",
+    "UTC+05:45",
+    "UTC+06:00",
+    "UTC+06:30",
+    "UTC+07:00",
+    "UTC+08:00",
+    "UTC+08:45",
+    "UTC+09:00",
+    "UTC+09:30",
+    "UTC+10:00",
+    "UTC+10:30",
+    "UTC+11:00",
+    "UTC+12:00",
+    "UTC+12:45",
+    "UTC+13:00",
+    "UTC+13:45",
+    "UTC+14:00",
+};
+
 static void momentum_settings_show_page(
     MomentumSettingsApp* app,
     MomentumSettingsPage page,
     uint8_t selected_item);
+static void momentum_settings_show_time_sync_message(MomentumSettingsApp* app, bool started);
 static void momentum_settings_show_freq_list(MomentumSettingsApp* app);
 static void momentum_settings_use_defaults_changed(VariableItem* item);
 static void momentum_settings_butthurt_changed(VariableItem* item);
@@ -459,6 +573,8 @@ static void momentum_settings_list_enter(void* context, uint32_t index) {
             app->asset_pack_submenu, momentum_settings_asset_pack_index(app));
         view_dispatcher_switch_to_view(
             app->view_dispatcher, MomentumSettingsViewAssetPacks);
+    } else if(app->current_page == MomentumSettingsPageGeneral && index == 3U) {
+        momentum_settings_show_time_sync_message(app, wlan_hal_start_manual_time_sync());
     } else if(app->current_page == MomentumSettingsPageProtocols && index == 2U) {
         view_dispatcher_send_custom_event(
             app->view_dispatcher, MomentumSettingsPageFrequencies);
@@ -542,6 +658,16 @@ static void momentum_settings_cycle_anims_changed(VariableItem* item) {
     uint8_t index = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, momentum_cycle_anim_text[index]);
     app->settings.cycle_anims = momentum_cycle_anim_values[index];
+    app->dirty = true;
+}
+
+static void momentum_settings_hide_dualboot_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    /* Stored inverted from the label: the row reads "Dual Boot: Show/Hide",
+     * the setting is hide_dualboot. */
+    app->settings.hide_dualboot = (index != 0);
     app->dirty = true;
 }
 
@@ -778,6 +904,43 @@ static void momentum_settings_scroll_changed(VariableItem* item) {
     app->dirty = true;
 }
 
+static void momentum_settings_time_format_changed(VariableItem* item) {
+    uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_time_format_text[index]);
+    locale_set_time_format((LocaleTimeFormat)momentum_time_format_values[index]);
+}
+
+static void momentum_settings_timezone_changed(VariableItem* item) {
+    uint8_t index = variable_item_get_current_value_index(item);
+    if(index >= COUNT_OF(momentum_timezone_values)) return;
+
+    variable_item_set_current_value_text(item, momentum_timezone_text[index]);
+    if(index == 0U) {
+        /* Keep showing the last valid offset until the asynchronous refresh
+         * succeeds; a network failure must never throw the clock back to UTC. */
+        furi_hal_rtc_set_timezone(true, furi_hal_rtc_get_timezone_offset_minutes());
+        wlan_hal_request_timezone_refresh();
+    } else {
+        furi_hal_rtc_set_timezone(false, (int16_t)momentum_timezone_values[index]);
+    }
+}
+
+static void momentum_settings_show_time_sync_message(MomentumSettingsApp* app, bool started) {
+    DialogMessage* message = dialog_message_alloc();
+    dialog_message_set_header(message, "Time Sync", 64, 2, AlignCenter, AlignTop);
+    dialog_message_set_text(
+        message,
+        started ? "Connecting to saved WiFi...\nThe RTC will update once."
+                : "No saved WiFi network\nor sync could not start.",
+        64,
+        30,
+        AlignCenter,
+        AlignCenter);
+    dialog_message_set_buttons(message, NULL, NULL, "OK");
+    dialog_message_show(app->dialogs, message);
+    dialog_message_free(message);
+}
+
 static void momentum_settings_midnight_changed(VariableItem* item) {
     MomentumSettingsApp* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -873,26 +1036,85 @@ static void momentum_settings_mainmenu_clear(MomentumSettingsApp* app) {
     app->mainmenu_count = 0;
 }
 
+/* Mirrors loader_menu_mark_seen(): shown and removed entries both mean the file
+ * knew about the app, so it is not new. */
+static void momentum_settings_mainmenu_mark_seen(
+    FuriString* name,
+    bool* seen_internal,
+    bool* seen_external) {
+    for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
+        if(furi_string_equal(name, FLIPPER_APPS[i].name)) {
+            seen_internal[i] = true;
+            return;
+        }
+    }
+    for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+        if(furi_string_equal(name, FLIPPER_EXTERNAL_APPS[i].name)) {
+            seen_external[i] = true;
+            return;
+        }
+    }
+}
+
 static void momentum_settings_mainmenu_load(MomentumSettingsApp* app) {
     Stream* stream = file_stream_alloc(app->storage);
     FuriString* line = furi_string_alloc();
     unsigned long version;
 
+    bool* seen_internal = calloc(FLIPPER_APPS_COUNT, sizeof(bool));
+    bool* seen_external = calloc(FLIPPER_EXTERNAL_APPS_COUNT, sizeof(bool));
+
     if(file_stream_open(stream, MAINMENU_APPS_PATH, FSAM_READ, FSOM_OPEN_EXISTING) &&
        stream_read_line(stream, line) &&
        sscanf(furi_string_get_cstr(line), MAINMENU_APPS_HEADER_FMT, &version) == 1 &&
-       version == MAINMENU_APPS_VERSION) {
+       version >= MAINMENU_APPS_VERSION_MIN && version <= MAINMENU_APPS_VERSION) {
         while(stream_read_line(stream, line)) {
             furi_string_trim(line);
-            if(furi_string_size(line)) momentum_settings_mainmenu_add_line(app, line);
+            if(!furi_string_size(line)) continue;
+
+            if(furi_string_get_char(line, 0) == MAINMENU_REMOVED_PREFIX) {
+                furi_string_right(line, 1);
+                momentum_settings_mainmenu_mark_seen(line, seen_internal, seen_external);
+                continue;
+            }
+
+            momentum_settings_mainmenu_mark_seen(line, seen_internal, seen_external);
+            momentum_settings_mainmenu_add_line(app, line);
         }
+
+        /* Same rule as the menu itself: an app the file never mentioned is newer
+         * than the file, so show it rather than hide it. The editor has to agree
+         * with the menu, or saving would write the new app straight back out as
+         * removed. Path entries are never built-ins, so they need no accounting. */
+        FuriString* name = furi_string_alloc();
+        for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
+            if(seen_internal[i]) continue;
+            furi_string_set_str(name, FLIPPER_APPS[i].name);
+            momentum_settings_mainmenu_add_line(app, name);
+        }
+        for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+            if(seen_external[i] || momentum_settings_mainmenu_is_pinned(i)) continue;
+            furi_string_set_str(name, FLIPPER_EXTERNAL_APPS[i].name);
+            momentum_settings_mainmenu_add_line(app, name);
+        }
+        furi_string_free(name);
     } else {
         momentum_settings_mainmenu_load_defaults(app);
     }
 
+    free(seen_internal);
+    free(seen_external);
+
     furi_string_free(line);
     file_stream_close(stream);
     stream_free(stream);
+}
+
+static bool momentum_settings_mainmenu_has_line(MomentumSettingsApp* app, const char* line) {
+    for(uint8_t i = 0; i < app->mainmenu_count; i++) {
+        if(!strcmp(app->mainmenu_lines[i], line)) return true;
+    }
+    return false;
 }
 
 static void momentum_settings_mainmenu_save(MomentumSettingsApp* app) {
@@ -902,6 +1124,21 @@ static void momentum_settings_mainmenu_save(MomentumSettingsApp* app) {
         stream_write_format(stream, MAINMENU_APPS_HEADER_FMT "\n", MAINMENU_APPS_VERSION);
         for(uint8_t i = 0; i < app->mainmenu_count; i++) {
             stream_write_format(stream, "%s\n", app->mainmenu_lines[i]);
+        }
+
+        /* Record the built-ins that are NOT in the menu, so a later build can tell a
+         * deliberate removal from an app that did not exist yet, and append only the
+         * latter. Without these lines every removal would come back on next boot. */
+        for(size_t i = 0; i < FLIPPER_APPS_COUNT; i++) {
+            if(momentum_settings_mainmenu_has_line(app, FLIPPER_APPS[i].name)) continue;
+            stream_write_format(
+                stream, "%c%s\n", MAINMENU_REMOVED_PREFIX, FLIPPER_APPS[i].name);
+        }
+        for(size_t i = 0; i < FLIPPER_EXTERNAL_APPS_COUNT; i++) {
+            if(momentum_settings_mainmenu_is_pinned(i)) continue;
+            if(momentum_settings_mainmenu_has_line(app, FLIPPER_EXTERNAL_APPS[i].name)) continue;
+            stream_write_format(
+                stream, "%c%s\n", MAINMENU_REMOVED_PREFIX, FLIPPER_EXTERNAL_APPS[i].name);
         }
     } else {
         FURI_LOG_E(TAG, "Main menu layout could not be saved");
@@ -1071,25 +1308,19 @@ static void momentum_settings_mainmenu_show_reset(MomentumSettingsApp* app) {
     view_dispatcher_switch_to_view(app->view_dispatcher, MomentumSettingsViewMainmenu);
 }
 
-static bool momentum_settings_mainmenu_browser_item(
-    FuriString* path,
-    void* context,
-    uint8_t** icon_ptr,
-    FuriString* item_name) {
-    MomentumSettingsApp* app = context;
-    return flipper_application_load_name_and_icon(path, app->storage, icon_ptr, item_name);
-}
-
 static void momentum_settings_mainmenu_add_file(MomentumSettingsApp* app) {
+    /* Keep the picker responsive even with hundreds of apps. The chosen FAP's
+     * metadata is read once by momentum_settings_mainmenu_add_line(); opening
+     * every ELF merely to populate this list is unnecessary SD I/O. */
     DialogsFileBrowserOptions options = {
         .extension = ".fap|.js",
         .base_path = EXT_PATH("apps"),
         .skip_assets = true,
         .hide_dot_files = true,
-        .icon = &I_unknown_10px,
+        .icon = &I_file_10px,
         .hide_ext = true,
-        .item_loader_callback = momentum_settings_mainmenu_browser_item,
-        .item_loader_context = app,
+        .item_loader_callback = NULL,
+        .item_loader_context = NULL,
     };
 
     FuriString* path = furi_string_alloc_set_str(options.base_path);
@@ -1222,6 +1453,19 @@ static void momentum_settings_show_page(
             app);
 
         variable_item_list_add(app->variable_item_list, "Add Item", 1, NULL, app);
+
+        /* Placed on the Mainmenu page because that is what it changes: the
+         * Dual Boot entry reboots into another firmware, which is not
+         * something to leave one OK press away on a shared device. */
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Hide Dual Boot",
+            COUNT_OF(momentum_unlock_anim_text),
+            momentum_settings_hide_dualboot_changed,
+            app);
+        value_index = app->settings.hide_dualboot ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
 
         item = variable_item_list_add(
             app->variable_item_list,
@@ -1454,6 +1698,39 @@ static void momentum_settings_show_page(
         value_index = app->settings.scroll_marquee ? 1U : 0U;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, value_index ? "Marquee" : "Standard");
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Time Format",
+            COUNT_OF(momentum_time_format_values),
+            momentum_settings_time_format_changed,
+            app);
+        value_index = (uint8_t)value_index_uint32(
+            locale_get_time_format(),
+            momentum_time_format_values,
+            COUNT_OF(momentum_time_format_values));
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_time_format_text[value_index]);
+
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Time Zone",
+            COUNT_OF(momentum_timezone_values),
+            momentum_settings_timezone_changed,
+            app);
+        if(furi_hal_rtc_get_timezone_auto()) {
+            value_index = 0U;
+        } else {
+            value_index = (uint8_t)(1U + value_index_int32(
+                                             furi_hal_rtc_get_timezone_offset_minutes(),
+                                             &momentum_timezone_values[1],
+                                             COUNT_OF(momentum_timezone_values) - 1U));
+        }
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_timezone_text[value_index]);
+
+        item = variable_item_list_add(app->variable_item_list, "Sync Time", 1, NULL, app);
+        variable_item_set_current_value_text(item, "Press OK");
 
         item = variable_item_list_add(
             app->variable_item_list,
@@ -1967,6 +2244,7 @@ int32_t momentum_app(void* p) {
     UNUSED(p);
     MomentumSettingsApp* app = momentum_settings_app_alloc();
     view_dispatcher_run(app->view_dispatcher);
+    bool reboot_for_asset_pack = false;
 
     if(app->dirty) {
         const bool pack_changed =
@@ -1974,16 +2252,17 @@ int32_t momentum_app(void* p) {
 
         momentum_settings = app->settings;
         name_generator_set_prefix_after(momentum_settings.file_naming_prefix_after);
-        if(!momentum_settings_save()) {
+        const bool settings_saved = momentum_settings_save();
+        if(!settings_saved) {
             FURI_LOG_E(TAG, "Settings are active for this session but were not saved");
         }
 
-        if(pack_changed) {
-            // Icons and fonts are held in RAM, so the old pack has to go before
-            // the new one loads.
-            asset_packs_free();
-            asset_packs_init();
-        }
+        /* Existing IconAnimation objects retain pointers into the active pack,
+         * while the desktop animation manager caches the old animation tree.
+         * Freeing/reloading the pack live made those pointers dangle and still
+         * did not refresh the desktop. A clean restart after the saved change
+         * atomically applies icons, fonts, and animations. */
+        reboot_for_asset_pack = pack_changed && settings_saved;
     }
 
     if(app->name_dirty) {
@@ -2034,7 +2313,7 @@ int32_t momentum_app(void* p) {
 
     /* Everything above has been written, so it is safe to go down here. This
      * does not return. */
-    if(app->reboot_for_intro) {
+    if(app->reboot_for_intro || reboot_for_asset_pack) {
         power_reboot(app->power, PowerBootModeNormal);
     }
 

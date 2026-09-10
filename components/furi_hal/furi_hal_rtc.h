@@ -102,7 +102,30 @@ void furi_hal_rtc_set_heap_track_mode(FuriHalRtcHeapTrackMode mode);
 
 void furi_hal_rtc_get_datetime(DateTime* datetime);
 void furi_hal_rtc_set_datetime(DateTime* datetime);
+/** Accept the ESP system clock as authoritative (for example after one-shot
+ * SNTP). ESP-IDF keeps this clock backed by the ESP32 RTC timer through deep
+ * sleep; this also clears the manual offset maintained by the Flipper shim. */
+void furi_hal_rtc_sync_system_time(void);
 uint32_t furi_hal_rtc_get_timestamp(void);
+
+/** Monotonic elapsed seconds from the ESP32 RTC slow-clock counter. This is
+ * independent of the calendar clock and continues through deep sleep. */
+uint64_t furi_hal_rtc_get_counter_seconds(void);
+
+/** Duration of the most recently completed deep sleep. The value is captured
+ * on wake, remains fixed while awake, and is never affected by clock/SNTP. */
+uint64_t furi_hal_rtc_get_inactivity_seconds(void);
+/** Clear the stored last-sleep duration. */
+void furi_hal_rtc_reset_inactivity(void);
+
+/** Configure the local timezone used by localtime()/mktime().
+ *
+ * automatic=true means WiFi may replace offset_minutes after a successful,
+ * certificate-verified IP timezone lookup. The last valid offset is retained
+ * across reboots and lookup failures. Valid offsets are UTC-12:00..UTC+14:00. */
+void furi_hal_rtc_set_timezone(bool automatic, int16_t offset_minutes);
+bool furi_hal_rtc_get_timezone_auto(void);
+int16_t furi_hal_rtc_get_timezone_offset_minutes(void);
 
 FuriHalRtcLocaleTimeFormat furi_hal_rtc_get_locale_timeformat(void);
 void furi_hal_rtc_set_locale_timeformat(FuriHalRtcLocaleTimeFormat format);

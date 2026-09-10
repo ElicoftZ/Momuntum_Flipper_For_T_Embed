@@ -2,6 +2,7 @@
 #include "furi_hal_bq27220.h"
 #include "furi_hal_bq25896.h"
 #include "furi_hal_display.h"
+#include "furi_hal_rtc.h"
 #include "boards/board.h"
 
 #include <math.h>
@@ -517,6 +518,7 @@ void furi_hal_power_shutdown(void) {
     gpio_deep_sleep_hold_dis();
     /* Last thing before the lights go out. */
     power_sleep_mark();
+    furi_hal_rtc_prepare_for_shutdown();
 
     esp_deep_sleep_start();
 }

@@ -129,6 +129,24 @@ static void furi_hal_display_wait_flush(void) {
     }
 }
 
+static bool furi_hal_display_send_bitmap(
+    int x_start, int y_start, int x_end, int y_end, const void* pixels) {
+    furi_hal_display_prepare_flush();
+    esp_err_t err = esp_lcd_panel_draw_bitmap(
+        panel_handle, x_start, y_start, x_end, y_end, pixels);
+    if(err != ESP_OK) {
+        /* A failed command queues no colour transfer, hence no completion
+         * callback. Skip this frame and let the next redraw retry. */
+        ESP_LOGW(
+            TAG, "LCD transfer failed: %s; DMA free=%u largest=%u",
+            esp_err_to_name(err), (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+        return false;
+    }
+    furi_hal_display_wait_flush();
+    return true;
+}
+
 static void furi_hal_display_init_scale_lut(void) {
     for(size_t x = 0; x < SCALED_WIDTH; x++) {
         x_scale_lut[x] = (x * FB_WIDTH) / SCALED_WIDTH;
@@ -145,9 +163,7 @@ static void display_fill_color(uint16_t color) {
     for(int i = 0; i < LCD_H_RES; i++) line[i] = color;
     furi_hal_spi_bus_lock();
     for(int y = 0; y < LCD_V_RES; y++) {
-        furi_hal_display_prepare_flush();
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, LCD_H_RES, y + 1, line);
-        furi_hal_display_wait_flush();
+        if(!furi_hal_display_send_bitmap(0, y, LCD_H_RES, y + 1, line)) break;
     }
     furi_hal_spi_bus_unlock();
     free(line);
@@ -273,10 +289,8 @@ static void display_paint_bg_rect(size_t x, size_t y, size_t w, size_t h) {
             }
         }
 
-        furi_hal_display_prepare_flush();
-        esp_lcd_panel_draw_bitmap(
-            panel_handle, x, y + y_off, x + w, y + y_off + chunk_h, rgb565_buf);
-        furi_hal_display_wait_flush();
+        if(!furi_hal_display_send_bitmap(
+               x, y + y_off, x + w, y + y_off + chunk_h, rgb565_buf)) break;
     }
 }
 
@@ -328,40 +342,8 @@ void furi_hal_display_init(void) {
 #endif
         .bits_per_pixel = 16,
     };
-    /* --- Bring the ST7789 to a known-clean state, every boot --------------
-     * A software reset (esp_restart) does NOT power-cycle the display: the
-     * ST7789 keeps every register — MADCTL/colour-order, COLMOD, inversion,
-     * rotation. That happens after an `esptool` flash *and* after any other
-     * firmware that configured the panel differently ran before us. If any of
-     * that lingers the R/B channels end up swapped — Flipper orange shows up as
-     * blue — until the user pulls the battery (a real cold boot). So we do what
-     * a thorough driver (TFT_eSPI) does on every init: hardware-reset pulse →
-     * SWRESET command → full panel init → re-assert COLMOD. After that the panel
-     * is in *our* configuration regardless of what ran before. */
-
-    /* 1) Hardware reset pulse on RESX (HIGH → LOW → HIGH, generous timing). */
-    gpio_config_t rst_cfg = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << gpio_lcd_rst.pin,
-    };
-    gpio_config(&rst_cfg);
-    gpio_set_level((gpio_num_t)gpio_lcd_rst.pin, 1);   /* ensure a clean falling edge */
-    vTaskDelay(pdMS_TO_TICKS(10));
-    gpio_set_level((gpio_num_t)gpio_lcd_rst.pin, 0);   /* assert reset (active low) */
-    vTaskDelay(pdMS_TO_TICKS(20));                      /* RESX min low is 10us; be generous */
-    gpio_set_level((gpio_num_t)gpio_lcd_rst.pin, 1);   /* release reset */
-    vTaskDelay(pdMS_TO_TICKS(150));                     /* ST7789: wait ≥120ms after reset */
-
-    /* 2) Software reset (0x01) — re-loads all registers to factory defaults
-     *    even if the RESX pulse above didn't fully take (e.g. a glitch on the
-     *    line right after the ESP32 digital reset). The display still draws
-     *    pixels in that case, so this command reaches it just fine. */
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_handle, 0x01 /* SWRESET */, NULL, 0));
-    vTaskDelay(pdMS_TO_TICKS(150));
-
+    /* Use the driver's single reset sequence so boot does not spend extra time black. */
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
-
-    /* 3) esp_lcd does another RESX pulse, then SLPOUT + COLMOD + MADCTL. */
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
 
@@ -372,7 +354,7 @@ void furi_hal_display_init(void) {
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, BOARD_LCD_MIRROR_X, BOARD_LCD_MIRROR_Y));
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, BOARD_LCD_GAP_X, BOARD_LCD_GAP_Y));
 
-    /* 4) Belt-and-suspenders: pin down pixel format + normal display mode.
+    /* Pin down pixel format + normal display mode.
      *    COLMOD 0x55 = 16 bits/pixel (RGB565) — matches bits_per_pixel=16 above;
      *    NORON (0x13) = normal display mode (not partial/idle). Both are no-ops
      *    when the state is already right and cost nothing. */
@@ -487,13 +469,10 @@ void furi_hal_display_commit(const uint8_t* data, uint32_t size) {
         }
 
         /* DMA send this stripe */
-        furi_hal_display_prepare_flush();
-        esp_lcd_panel_draw_bitmap(
-            panel_handle,
-            MARGIN_X, MARGIN_Y + stripe_y,
-            MARGIN_X + SCALED_WIDTH, MARGIN_Y + stripe_y + stripe_h,
-            rgb565_buf);
-        furi_hal_display_wait_flush();
+        if(!furi_hal_display_send_bitmap(
+               MARGIN_X, MARGIN_Y + stripe_y,
+               MARGIN_X + SCALED_WIDTH, MARGIN_Y + stripe_y + stripe_h,
+               rgb565_buf)) break;
     }
 
     furi_hal_spi_bus_unlock();
@@ -521,6 +500,32 @@ uint16_t furi_hal_display_get_v_res(void) {
 
 esp_lcd_panel_handle_t furi_hal_display_get_panel_handle(void) {
     return panel_handle;
+}
+
+void furi_hal_display_blit_rgb565(
+    uint16_t x,
+    uint16_t y,
+    uint16_t width,
+    uint16_t height,
+    const uint16_t* data) {
+    if(!panel_handle || !rgb565_buf || !data || !width || !height) return;
+    if(x >= LCD_H_RES || y >= LCD_V_RES) return;
+    if((uint32_t)x + width > LCD_H_RES || (uint32_t)y + height > LCD_V_RES) return;
+
+    furi_hal_spi_bus_lock();
+    for(uint16_t row = 0; row < height; row += STRIPE_HEIGHT) {
+        uint16_t rows = STRIPE_HEIGHT;
+        if(row + rows > height) rows = height - row;
+
+        memcpy(
+            rgb565_buf,
+            &data[(size_t)row * width],
+            (size_t)width * rows * sizeof(uint16_t));
+
+        if(!furi_hal_display_send_bitmap(
+               x, y + row, x + width, y + row + rows, rgb565_buf)) break;
+    }
+    furi_hal_spi_bus_unlock();
 }
 
 void furi_hal_display_set_fg_color(uint16_t color) {

@@ -38,6 +38,8 @@
 /* Whether the SD was mounted before we took it over — restored on leave.
  * Single-instance scene, so a file-static is fine. */
 static bool s_sd_was_mounted = false;
+static QflipperBridgePcLinkMode s_pc_link_before_storage =
+    QflipperBridgePcLinkNativeSerial;
 
 void desktop_scene_usb_storage_callback(DesktopEvent event, void* context) {
     Desktop* desktop = (Desktop*)context;
@@ -64,7 +66,7 @@ static bool desktop_usb_storage_enter(Desktop* desktop, const char** error_msg) 
     }
 
     /* 3) Ensure the composite (HID + CDC + MSC) is installed. */
-    if(!furi_hal_usb_composite_install(0, 0, NULL, NULL)) {
+    if(!furi_hal_usb_composite_install(0, 0, NULL, NULL, false)) {
         *error_msg = "USB composite install failed";
         return false;
     }
@@ -92,6 +94,10 @@ static void desktop_usb_storage_leave(Desktop* desktop) {
         }
         s_sd_was_mounted = false;
     }
+
+    /* Tear the shared composite down so the internal USB PHY routes back to
+     * USB-Serial-JTAG — same "leave -> flash" restore as the qFlipper toggle. */
+    furi_hal_usb_composite_uninstall();
 }
 #endif /* USB_STORAGE_HAVE_USB */
 
@@ -103,6 +109,7 @@ void desktop_scene_usb_storage_on_enter(void* context) {
 
 #if USB_STORAGE_HAVE_USB
     /* Mutual exclusion: the qFlipper bridge holds the shared composite. */
+    s_pc_link_before_storage = qflipper_bridge_pc_link_mode();
     qflipper_bridge_stop();
 
     desktop_usb_storage_set_state(desktop->usb_storage_view, DesktopUsbStorageStateInit, NULL);
@@ -144,6 +151,18 @@ void desktop_scene_usb_storage_on_exit(void* context) {
 #if USB_STORAGE_HAVE_USB
     Desktop* desktop = (Desktop*)context;
     desktop_usb_storage_leave(desktop);
+
+    /* Return to the useful host mode that existed before Storage took over.
+     * qFlipper reuses the installed composite. Native Serial/JTAG is restored
+     * through the complete same-boot TinyUSB teardown path. */
+    if(s_pc_link_before_storage == QflipperBridgePcLinkQflipper) {
+        if(!qflipper_bridge_start()) {
+            FURI_LOG_E(TAG, "could not restore qFlipper after USB Storage");
+        }
+    } else if(!qflipper_bridge_restore_native_serial()) {
+        FURI_LOG_E(TAG, "could not restore native Serial after USB Storage");
+    }
+    s_pc_link_before_storage = QflipperBridgePcLinkNativeSerial;
 #else
     UNUSED(context);
 #endif

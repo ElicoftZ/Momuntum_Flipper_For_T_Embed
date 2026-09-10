@@ -203,6 +203,10 @@ WlanOuiTable* wlan_oui_load(void) {
     qsort(entries, idx, sizeof(OuiEntry), oui_compare);
 
     WlanOuiTable* t = malloc(sizeof(WlanOuiTable));
+    if(!t) {
+        free(entries);
+        return NULL;
+    }
     t->entries = entries;
     t->count = idx;
     return t;

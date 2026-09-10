@@ -4,6 +4,7 @@
  */
 
 #pragma once
+#include <momentum/settings_core.h>
 
 #include "../view.h"
 
@@ -75,6 +76,17 @@ void menu_set_selected_item(Menu* menu, uint32_t index);
  * @return     position of the selected item
  */
 uint32_t menu_get_selected_item(Menu* menu);
+
+/* Shared with the 2.0.0 Interface settings; Momentum remains the source of truth. */
+typedef enum {
+    LockScreenStyleDefault,
+    LockScreenStyleMomentum,
+    LockScreenStyleCount,
+} LockScreenStyle;
+void menu_set_style(MenuStyle style);
+MenuStyle menu_get_style(void);
+void lock_screen_set_style(LockScreenStyle style);
+LockScreenStyle lock_screen_get_style(void);
 
 #ifdef __cplusplus
 }

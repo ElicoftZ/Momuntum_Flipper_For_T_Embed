@@ -20,7 +20,7 @@ def load_api_hashes(api_file: str) -> set[int]:
     prev_hash = -1
     prev_line_no = 0
     sort_errors = []
-    with open(api_file) as f:
+    with open(api_file, "r", encoding="utf-8") as f:
         for line_no, line in enumerate(f, 1):
             m = re.search(r'\.hash\s*=\s*(0x[0-9a-fA-F]+)', line)
             if m:
@@ -49,7 +49,7 @@ def main():
 
     api_hashes = load_api_hashes(api_file)
 
-    with open(symbols_file) as f:
+    with open(symbols_file, "r", encoding="utf-8") as f:
         symbols = [line.strip() for line in f if line.strip()]
 
     missing = []

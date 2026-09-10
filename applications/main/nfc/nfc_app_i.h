@@ -144,6 +144,10 @@ struct NfcApp {
     Gui* gui;
     ViewDispatcher* view_dispatcher;
     NotificationApp* notifications;
+    /* True while the radio is up and the screen is being held awake.
+     * nfc_blink_*_start / nfc_blink_stop are not otherwise balanced -- a
+     * scene may start twice -- and insomnia is a counter. */
+    bool wake_held;
     SceneManager* scene_manager;
 
     char text_store[NFC_TEXT_STORE_SIZE + 1];

@@ -8,17 +8,38 @@ CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_large.csv"
 
 # Bluetooth Low Energy for Bad USB BLE HID
 CONFIG_BT_ENABLED=y
-CONFIG_BT_BLUEDROID_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
 CONFIG_BT_BLE_ENABLED=y
 CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
 # CONFIG_BT_BLE_50_FEATURES_SUPPORTED is not set
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MAX_BONDS=8
+CONFIG_BT_NIMBLE_MAX_CCCDS=8
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_SECURITY_ENABLE=y
+CONFIG_BT_NIMBLE_SM_LEGACY=y
+CONFIG_BT_NIMBLE_SM_SC=y
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=517
+CONFIG_BT_NIMBLE_GATT_MAX_PROCS=4
+# Use ESP-IDF's normal controller capacity. The previous one-activity cap
+# prevented even basic advertising and left no headroom for coexistence tests.
+CONFIG_BT_CTRL_BLE_MAX_ACT=6
+# Legacy advertising/scanning is used throughout this firmware. Keep the
+# unused BLE 5 extended scan/periodic-sync machinery out of the image and heap.
+# CONFIG_BT_NIMBLE_50_FEATURE_SUPPORT is not set
+
+# Keep the 2.4 GHz arbiter enabled so WiFi and BLE can stay active together.
+CONFIG_ESP_COEX_ENABLED=y
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 
 # FreeRTOS configuration for Furi compatibility
 CONFIG_FREERTOS_HZ=1000
 CONFIG_FREERTOS_SUPPORT_STATIC_ALLOCATION=y
 CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES=3
 CONFIG_FREERTOS_UNICORE=y
-CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS=1
+# Slot 0 is reserved by ESP-IDF pthread; Furi uses slot 1. Keep one spare so
+# thread cleanup can never overwrite the pthread deletion callback.
+CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS=3
 CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096

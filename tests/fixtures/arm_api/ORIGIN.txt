@@ -1,0 +1,12 @@
+api_symbols_88_2.csv is the exact user-supplied C:/Users/Eli/Downloads/api_symbols.csv.
+SHA-256: 5c9505984a19be218c19400d43ab9c7056996d003e69809945d9db03e95c04bb
+It matches the official development SDK retrieved on 2026-09-05:
+https://github.com/flipperdevices/flipperzero-firmware/blob/7f0b6e1c14431708cfde75ae1ba13df59e868041/targets/f7/api_symbols.csv
+
+api_symbols_87_1.csv is the official 1.4.3 release SDK retrieved on 2026-09-05:
+https://github.com/flipperdevices/flipperzero-firmware/blob/1.4.3/targets/f7/api_symbols.csv
+SHA-256: da9f564c06e20cdaa28070d2f9a2a3753774ba0f78b0a72bf4cbae726e5f8f77
+
+These are declaration inventories used for development/testing, not executable code
+or a claim that all symbols are implemented by the ARM interpreter.
+Upstream repository license: GNU General Public License v3.0.

@@ -17,6 +17,7 @@ void wlan_app_scene_evil_portal_bridge_pwd_on_enter(void* context) {
         app->evil_portal_bridge_password,
         sizeof(app->evil_portal_bridge_password),
         false);
+    text_input_set_auto_capitalize(app->text_input, false);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewTextInput);
 }

@@ -13,6 +13,8 @@
 
 /* ---- Board metadata ---- */
 #define BOARD_NAME        "Waveshare ESP32-C6-LCD-1.47"
+/* Kurz-ID = Release-Ordner unter https://sor3nt.github.io/release/<BOARD_ID>/latest */
+#define BOARD_ID          "waveshare_c6_1.47"
 #define BOARD_TARGET      "esp32c6"
 
 /* ---- Hardware Button Pins ---- */
@@ -87,7 +89,7 @@
 /* ---- Features ---- */
 #define BOARD_HAS_TOUCH         1
 #define BOARD_HAS_SD_CARD       1
-/* BLE disabled on this board: the C6 has no PSRAM and Bluedroid eats ~100KB of
+/* BLE disabled on this board: the C6 has no PSRAM and its radio stack consumes
  * heap, leaving too little for the WiFi driver + apps (wlan OOM-crashed). With
  * BLE off the radio stack is never started (see furi_hal_bt_is_available). */
 #define BOARD_HAS_BLE           0

@@ -25,6 +25,14 @@ static const uint8_t CH_BLUETOOTH[] = {
     40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
     59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80};
 
+/* BT Classic 2 — EXACT replica of the nRF24_jammer FAP (W0rthlessS0ul) BT list.
+ * A curated, scattered 21-channel subset spanning the band (not the full 79).
+ * Fewer channels → each is revisited ~4x more often (closer to the ~625us BT
+ * hop slot), which is why the FAP beats a wide 79-channel smear. Order kept
+ * verbatim; jammed sequentially with zero dwell (see scene_jam FAP path). */
+static const uint8_t CH_BLUETOOTH2[] = {32, 34, 46, 48, 50, 52, 0,  1,  2,  4, 6,
+                                        8,  22, 24, 26, 28, 30, 74, 76, 78, 80};
+
 /* Wireless USB dongles. */
 static const uint8_t CH_USB[] = {40, 50, 60};
 
@@ -54,6 +62,8 @@ const char* nrf24_jam_preset_name(Nrf24JamPreset preset) {
         return "BLE Advertising";
     case Nrf24JamPresetBluetooth:
         return "BT Classic";
+    case Nrf24JamPresetBluetooth2:
+        return "BT Classic 2";
     case Nrf24JamPresetUsb:
         return "USB Dongles";
     case Nrf24JamPresetVideo:
@@ -81,6 +91,8 @@ const char* nrf24_jam_preset_short(Nrf24JamPreset preset) {
         return "BLE Adv";
     case Nrf24JamPresetBluetooth:
         return "BT Classic";
+    case Nrf24JamPresetBluetooth2:
+        return "BT Cls 2";
     case Nrf24JamPresetUsb:
         return "USB Dongle";
     case Nrf24JamPresetVideo:
@@ -110,6 +122,9 @@ const uint8_t* nrf24_jam_preset_channels(Nrf24JamPreset preset, size_t* count) {
     case Nrf24JamPresetBluetooth:
         *count = ARRAY_COUNT(CH_BLUETOOTH);
         return CH_BLUETOOTH;
+    case Nrf24JamPresetBluetooth2:
+        *count = ARRAY_COUNT(CH_BLUETOOTH2);
+        return CH_BLUETOOTH2;
     case Nrf24JamPresetUsb:
         *count = ARRAY_COUNT(CH_USB);
         return CH_USB;
@@ -138,37 +153,55 @@ uint16_t nrf24_jam_preset_default_dwell_us(Nrf24JamPreset preset) {
     case Nrf24JamPresetUsb: /* 3 channels */
     case Nrf24JamPresetVideo: /* 3 channels */
         return 1000;
-    case Nrf24JamPresetWifi:
-    case Nrf24JamPresetBle:
-    case Nrf24JamPresetZigbee:
+    case Nrf24JamPresetWifi: /* fixed AP channels (1/6/11) */
+    case Nrf24JamPresetZigbee: /* fixed channels */
         return 300;
-    case Nrf24JamPresetFull:
+    case Nrf24JamPresetBluetooth2: /* FAP replica — engine runs it zero-dwell */
+        return 20;
     case Nrf24JamPresetBluetooth:
+    case Nrf24JamPresetBle:
+    case Nrf24JamPresetFull:
     case Nrf24JamPresetDrone:
     default:
-        return 200; /* fast sweep across many channels */
+        /* Wide/hopping targets (BT-Classic AFH ~1600 hops/s, BLE data hopping,
+         * FHSS drones): a very short dwell keeps the PLL below its ~130us re-lock
+         * time on purpose → the carrier chirps/smears across the whole band
+         * instead of cleanly parking on one channel and leaving the other ~78
+         * open. This is Bruce's zero-dwell smear, which blankets a fast hopper
+         * far better than clean per-channel parks. (The narrow fixed-channel
+         * presets above keep a long dwell — there clean parks concentrate more
+         * energy on the few channels that matter.) */
+        return 30;
     }
 }
 
 uint8_t nrf24_jam_preset_default_strategy(Nrf24JamPreset preset) {
-    switch(preset) {
-    case Nrf24JamPresetBleAdv: /* 3 fixed channels */
-    case Nrf24JamPresetRc: /* 4 channels */
-    case Nrf24JamPresetUsb: /* 3 channels */
-    case Nrf24JamPresetVideo: /* 3 channels */
-        /* Few channels → a continuous carrier parked on each is strongest (it is
-         * exactly what makes the FAP's BLE-advertising jam so effective). */
-        return Nrf24StrategyCw;
-    default:
-        /* Wide sweeps / FHSS → Turbo packet collisions across the band. */
-        return Nrf24StrategyTurbo;
-    }
+    (void)preset;
+    /* Match Bruce's nrf_jammer, which jams EVERY mode with a single continuous
+     * carrier (RF24::startConstCarrier) that never switches off — it only
+     * retunes across the mode's channels. A parked/sweeping CW tone saturates
+     * the victim's AGC far more effectively than discrete garbage packets, so
+     * data flooding (Flood/Turbo) is a much weaker jam in practice. Every preset
+     * therefore defaults to CW; users can still pick Flood/Turbo/AFH per preset
+     * in the config editor. */
+    return Nrf24StrategyCw;
 }
 
 uint8_t nrf24_jam_preset_default_hop(Nrf24JamPreset preset) {
-    /* CW presets walk their handful of channels sequentially (no point shuffling
-     * 3 channels); the Turbo sweeps randomise to spread collisions. */
-    return nrf24_jam_preset_default_strategy(preset) == Nrf24StrategyCw ? 0 : 1;
+    switch(preset) {
+    case Nrf24JamPresetBluetooth:
+    case Nrf24JamPresetBle:
+    case Nrf24JamPresetFull:
+    case Nrf24JamPresetDrone:
+        /* Wide smear presets: random hop spreads the chirp uniformly across the
+         * band. Sequential-ascending would let the slewing PLL chronically lag
+         * and weight the energy toward the low end of the band. */
+        return 1;
+    default:
+        /* Narrow fixed-channel presets walk their handful of channels
+         * sequentially — nothing to gain from shuffling 3-4 channels. */
+        return 0;
+    }
 }
 
 uint8_t nrf24_jam_preset_next_channel(Nrf24JamPreset preset, uint32_t* hop_index) {

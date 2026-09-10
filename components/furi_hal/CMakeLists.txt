@@ -26,6 +26,7 @@ set(FURI_HAL_SRCS
     "furi_hal_resources.c"
     "furi_hal_usb.c"
     "furi_hal_usb_cdc.c"
+    "furi_hal_usb_hid_u2f.c"
     "furi_hal_light.c"
     "furi_hal_vibro.c"
     "furi_hal_speaker.c"
@@ -48,8 +49,9 @@ set(FURI_HAL_SRCS
 set(FURI_HAL_REQUIRES
     furi toolbox input driver esp_lcd fatfs sdmmc datetime
     ble_hid ble_serial ble_profile furi_ble flipper_protobuf
+    nimble_glue bt
     esp_adc esp_driver_rmt esp_driver_i2s nvs_flash
-    app_update esp_partition
+    app_update esp_partition esp_hw_support esp_security efuse mbedtls esp_app_format
 )
 
 # HID backend: TinyUSB on SoCs with USB-OTG, stub elsewhere.

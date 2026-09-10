@@ -25,6 +25,11 @@
 #define URL_ANIMATION_NAME      "L0_Url_128x51"
 #define NEW_MAIL_ANIMATION_NAME "L0_NewMail_128x51"
 
+/* OFW animation metadata keeps one scene selected for several minutes. That is
+ * useful on the original always-on display, but looks stuck on this port. Keep
+ * explicit Cycle Anims settings intact and only bound the Meta.txt default. */
+#define DEFAULT_IDLE_ANIMATION_CYCLE_SECONDS 30U
+
 typedef enum {
     AnimationManagerStateIdle,
     AnimationManagerStateBlocked,
@@ -80,9 +85,15 @@ static void animation_manager_arm_idle_timer(
 
     furi_timer_stop(animation_manager->idle_animation_timer);
 
+    uint32_t metadata_duration_seconds = animation->duration;
+    if((momentum_settings.cycle_anims == 0) &&
+       (metadata_duration_seconds > DEFAULT_IDLE_ANIMATION_CYCLE_SECONDS)) {
+        metadata_duration_seconds = DEFAULT_IDLE_ANIMATION_CYCLE_SECONDS;
+    }
+
     bool enabled = false;
     uint32_t period_ms = momentum_animation_cycle_period_ms(
-        momentum_settings.cycle_anims, animation->duration, &enabled);
+        momentum_settings.cycle_anims, metadata_duration_seconds, &enabled);
     if(!enabled) return;
 
     if(period_ms >= UINT32_MAX) period_ms = UINT32_MAX - 1U;
@@ -217,6 +228,7 @@ bool animation_manager_interact_process(AnimationManager* animation_manager) {
 
     if(animation_manager->levelup_pending) {
         animation_manager->levelup_pending = false;
+        bubble_animation_view_set_interact_pending(animation_manager->animation_view, false);
         animation_manager->levelup_active = true;
         animation_manager_switch_to_one_shot_view(animation_manager);
         Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
@@ -293,6 +305,9 @@ static bool animation_manager_check_blocking(AnimationManager* animation_manager
         blocking_animation = animation_storage_find_animation(NEW_MAIL_ANIMATION_NAME);
         furi_check(blocking_animation);
         animation_manager->levelup_pending = true;
+        /* Tell the view a long OK now means "claim this", since Right is not
+         * reachable on this board. */
+        bubble_animation_view_set_interact_pending(animation_manager->animation_view, true);
     }
 
     if(blocking_animation) {
@@ -381,9 +396,10 @@ View* animation_manager_get_animation_view(AnimationManager* animation_manager) 
     return view_stack_get_view(animation_manager->view_stack);
 }
 
-static bool animation_manager_is_valid_idle_animation(
+static bool animation_manager_is_valid_idle_animation_relaxed(
     const StorageAnimationManifestInfo* info,
-    const DolphinStats* stats) {
+    const DolphinStats* stats,
+    bool ignore_level) {
     furi_assert(info);
     furi_assert(info->name);
 
@@ -407,12 +423,19 @@ static bool animation_manager_is_valid_idle_animation(
         if((stats->butthurt < info->min_butthurt) || (stats->butthurt > info->max_butthurt)) {
             result = false;
         }
-        if((stats->level < info->min_level) || (stats->level > info->max_level)) {
+        if(!ignore_level &&
+           ((stats->level < info->min_level) || (stats->level > info->max_level))) {
             result = false;
         }
     }
 
     return result;
+}
+
+static bool animation_manager_is_valid_idle_animation(
+    const StorageAnimationManifestInfo* info,
+    const DolphinStats* stats) {
+    return animation_manager_is_valid_idle_animation_relaxed(info, stats, false);
 }
 
 static StorageAnimation*
@@ -451,6 +474,47 @@ static StorageAnimation*
             animation_storage_free_storage_animation(&storage_animation);
             /* remove and increase iterator */
             StorageAnimationList_remove(animation_list, it);
+        }
+    }
+
+    /* Restoring a backup also restores Dolphin level and mood. Some legitimate
+     * combinations (notably a low-level, very sad/angry Dolphin) leave only one
+     * manifest entry eligible, so the Meta.txt timer fires but can only select
+     * that same animation forever. If strict progression filtering cannot
+     * provide a choice, retain the mood range and relax only the level gate.
+     * This keeps the restored emotion visible while allowing animations to
+     * cycle again. */
+    const size_t strict_count = StorageAnimationList_size(animation_list);
+    if((strict_count < 2U) && !momentum_settings.unlock_anims) {
+        for
+            M_EACH(item, animation_list, StorageAnimationList_t) {
+                animation_storage_free_storage_animation(item);
+            }
+        StorageAnimationList_clear(animation_list);
+        animation_storage_fill_animation_list(&animation_list);
+
+        for(StorageAnimationList_it(it, animation_list); !StorageAnimationList_end_p(it);) {
+            StorageAnimation* storage_animation = *StorageAnimationList_ref(it);
+            const StorageAnimationManifestInfo* manifest_info =
+                animation_storage_get_meta(storage_animation);
+            bool valid =
+                animation_manager_is_valid_idle_animation_relaxed(manifest_info, &stats, true);
+            if(!strcmp(manifest_info->name, HARDCODED_ANIMATION_NAME)) valid = false;
+
+            if(valid) {
+                StorageAnimationList_next(it);
+            } else {
+                animation_storage_free_storage_animation(&storage_animation);
+                StorageAnimationList_remove(animation_list, it);
+            }
+        }
+
+        if(StorageAnimationList_size(animation_list) > strict_count) {
+            FURI_LOG_I(
+                TAG,
+                "Only %u strict animation(s); relaxed level gate for mood %u",
+                (unsigned)strict_count,
+                (unsigned)stats.butthurt);
         }
     }
 
@@ -653,13 +717,10 @@ static void animation_manager_switch_to_one_shot_view(AnimationManager* animatio
     View* next_view = one_shot_view_get_view(animation_manager->one_shot_view);
     view_stack_remove_view(animation_manager->view_stack, prev_view);
     view_stack_add_view(animation_manager->view_stack, next_view);
-    if(stats.level == 1) {
-        one_shot_view_start_animation(animation_manager->one_shot_view, &A_Levelup1_128x64);
-    } else if(stats.level == 2) {
-        one_shot_view_start_animation(animation_manager->one_shot_view, &A_Levelup2_128x64);
-    } else {
-        furi_crash();
-    }
+    /* One level-agnostic animation, as Momentum does. The old pair literally drew
+    * "2" and "3" and anything past level 2 hit furi_crash() -- survivable only
+    * while three levels was the ceiling. */
+    one_shot_view_start_animation(animation_manager->one_shot_view, &A_Levelup_128x64);
 }
 
 static void animation_manager_switch_to_animation_view(AnimationManager* animation_manager) {

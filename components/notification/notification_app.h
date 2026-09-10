@@ -130,7 +130,9 @@ struct NotificationApp {
     FuriTimer* ui_spectrum_timer;
 
     NotificationDisplayLayer display;
-    bool display_led_lock;
+    /* Reference-counted because Wake mode and a running app may both require
+     * the display to stay awake at the same time. */
+    uint8_t display_led_lock_count;
     /* True while the WS2812 ring is darkened by the idle-off timer. Lets the
      * input callback decide between a full re-light (reset phase + restart
      * effect) and a cheap idle-timer re-arm that leaves a running animation

@@ -74,6 +74,7 @@ const char* furi_hal_version_get_name_ptr(void);
 const char* furi_hal_version_get_device_name_ptr(void);
 const char* furi_hal_version_get_ble_local_device_name_ptr(void);
 void furi_hal_version_set_name(const char* name);
+void furi_hal_version_set_hw_color(FuriHalVersionColor color);
 const uint8_t* furi_hal_version_get_ble_mac(void);
 
 const struct Version* furi_hal_version_get_firmware_version(void);

@@ -1,8 +1,10 @@
 #include "furi_hal_usb.h"
 #include "furi_hal_usb_hid.h"
 #include "furi_hal_usb_hid_backend.h"
+#include "furi_hal_usb_hid_u2f.h"
 
 #include <furi.h>
+#include <furi_hal_version.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -19,16 +21,37 @@
 #define HID_EP_BUF_SIZE 16
 #define HID_POLL_MS     5
 
+/* FIDO U2F is a second HID interface, present here as well as in the Composite
+ * descriptor, so U2F works whichever stack came up first this boot. */
+#define HID_U2F_ITF_NUM     1
+/* Endpoint NUMBER matters, not just the count. dfifo_alloc() writes the TX FIFO
+ * register as dieptxf[epnum - 1], and the ESP32-S3's ep_in_count = 5 means EP0
+ * plus only FOUR dedicated IN FIFOs -- endpoints 1..4. An IN endpoint numbered 5
+ * opens without error (dcd_edpt_open bounds-checks neither the number nor the
+ * FIFO register) but has no TX FIFO, so every queued transfer stalls and the
+ * endpoint is busy forever. Keep every IN endpoint at 0x81..0x84. */
+/* This layout only uses EP1, so EP2 is free. */
+#define HID_U2F_EP_OUT      0x02
+#define HID_U2F_EP_IN       0x82
+#define HID_U2F_EP_BUF_SIZE 64
+#define HID_U2F_POLL_MS     5
+
 static const uint8_t hid_report_descriptor[] = {
     TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
     TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(REPORT_ID_MOUSE)),
     TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(REPORT_ID_CONSUMER)),
 };
 
-#define HID_CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+#define HID_CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_HID_INOUT_DESC_LEN)
+
+/* wDescriptorLength of the U2F interface sits 7 bytes into its 9-byte HID class
+ * descriptor, which follows the interface's own 9 bytes. The U2F report
+ * descriptor lives in another translation unit, so the length is written in at
+ * install time -- the same trick the Composite descriptor uses. */
+#define HID_U2F_WDESC_OFFSET (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + 9 + 7)
 
 static const uint8_t hid_configuration_descriptor[] = {
-    TUD_CONFIG_DESCRIPTOR(1, 1, 0, HID_CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    TUD_CONFIG_DESCRIPTOR(1, 2, 0, HID_CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
     TUD_HID_DESCRIPTOR(
         0,
         4,
@@ -37,7 +60,18 @@ static const uint8_t hid_configuration_descriptor[] = {
         HID_EP_IN,
         HID_EP_BUF_SIZE,
         HID_POLL_MS),
+    TUD_HID_INOUT_DESCRIPTOR(
+        HID_U2F_ITF_NUM,
+        5 /* iInterface = "FIDO U2F" */,
+        false,
+        0 /* report_desc_len patched at install-time */,
+        HID_U2F_EP_OUT,
+        HID_U2F_EP_IN,
+        HID_U2F_EP_BUF_SIZE,
+        HID_U2F_POLL_MS),
 };
+
+static uint8_t s_config_desc_writable[sizeof(hid_configuration_descriptor)];
 
 static tusb_desc_device_t hid_device_descriptor = {
     .bLength = sizeof(tusb_desc_device_t),
@@ -49,7 +83,12 @@ static tusb_desc_device_t hid_device_descriptor = {
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor = HID_VID_DEFAULT,
     .idProduct = HID_PID_DEFAULT,
-    .bcdDevice = 0x0100,
+    /* Bumped when the interface layout changes. Windows caches a device's
+     * descriptors keyed on VID/PID/bcdDevice: adding the FIDO interface without
+     * changing any of them leaves the host using the STALE cached layout, so the
+     * new interface never appears and the device can land in an error state.
+     * 0x0100 = pre-U2F, 0x0101 = FIDO interface added. */
+    .bcdDevice = 0x0101,
     .iManufacturer = 1,
     .iProduct = 2,
     .iSerialNumber = 3,
@@ -59,7 +98,7 @@ static tusb_desc_device_t hid_device_descriptor = {
 static char s_manuf[HID_MANUF_PRODUCT_NAME_LEN + 1];
 static char s_product[HID_MANUF_PRODUCT_NAME_LEN + 1];
 static char s_serial[17];
-static const char* s_string_descriptor[5];
+static const char* s_string_descriptor[6];
 
 typedef struct {
     bool installed;
@@ -101,12 +140,14 @@ void tud_mount_cb(void) {
     hid_state_lock();
     hid_publish_mount(true);
     hid_state_unlock();
+    furi_hal_hid_u2f_on_mount(true);
 }
 
 void tud_umount_cb(void) {
     hid_state_lock();
     hid_publish_mount(false);
     hid_state_unlock();
+    furi_hal_hid_u2f_on_mount(false);
 }
 
 void tud_suspend_cb(bool remote_wakeup_en) {
@@ -114,17 +155,22 @@ void tud_suspend_cb(bool remote_wakeup_en) {
     hid_state_lock();
     hid_publish_mount(false);
     hid_state_unlock();
+    furi_hal_hid_u2f_on_mount(false);
 }
 
 void tud_resume_cb(void) {
+    bool mounted = tud_mounted();
     hid_state_lock();
-    hid_publish_mount(tud_mounted());
+    hid_publish_mount(mounted);
     hid_state_unlock();
+    furi_hal_hid_u2f_on_mount(mounted);
 }
 
 /* TinyUSB HID callbacks */
 uint8_t const* tud_hid_descriptor_report_cb(uint8_t instance) {
-    (void)instance;
+    if(instance == HID_U2F_ITF_NUM) {
+        return furi_hal_hid_u2f_report_desc(NULL);
+    }
     return hid_report_descriptor;
 }
 
@@ -155,7 +201,13 @@ void tud_hid_set_report_cb(
     hid_report_type_t report_type,
     uint8_t const* buffer,
     uint16_t bufsize) {
-    (void)instance;
+    if(instance == HID_U2F_ITF_NUM) {
+        /* OUT-endpoint frames arrive here with report_id 0; this build's TinyUSB
+         * passes report_type HID_REPORT_TYPE_OUTPUT (hid_device.c:410). Neither is
+         * filtered on, so both that and the older INVALID convention work. */
+        furi_hal_hid_u2f_on_report(buffer, bufsize);
+        return;
+    }
     if(report_type == HID_REPORT_TYPE_OUTPUT && report_id == REPORT_ID_KEYBOARD &&
        bufsize >= 1) {
         s_state.led_state = buffer[0];
@@ -183,7 +235,9 @@ bool furi_hal_usb_hid_backend_start(const FuriHalUsbHidConfig* cfg) {
     }
 
     const char* manuf = (cfg && cfg->manuf[0]) ? cfg->manuf : "Flipper Devices Inc.";
-    const char* product = (cfg && cfg->product[0]) ? cfg->product : "Flipper Zero";
+    const char* product =
+        (cfg && cfg->product[0]) ? cfg->product : furi_hal_version_get_name_ptr();
+    if(!product || !product[0]) product = "Flipper Zero";
     uint16_t vid = (cfg && cfg->vid) ? (uint16_t)cfg->vid : HID_VID_DEFAULT;
     uint16_t pid = (cfg && cfg->pid) ? (uint16_t)cfg->pid : HID_PID_DEFAULT;
 
@@ -199,6 +253,13 @@ bool furi_hal_usb_hid_backend_start(const FuriHalUsbHidConfig* cfg) {
     s_string_descriptor[2] = s_product;
     s_string_descriptor[3] = s_serial;
     s_string_descriptor[4] = "HID";
+    s_string_descriptor[5] = "FIDO U2F";
+
+    memcpy(s_config_desc_writable, hid_configuration_descriptor, sizeof(s_config_desc_writable));
+    size_t u2f_report_len = 0;
+    furi_hal_hid_u2f_report_desc(&u2f_report_len);
+    s_config_desc_writable[HID_U2F_WDESC_OFFSET] = (uint8_t)(u2f_report_len & 0xFF);
+    s_config_desc_writable[HID_U2F_WDESC_OFFSET + 1] = (uint8_t)((u2f_report_len >> 8) & 0xFF);
 
     tinyusb_config_t tusb_cfg = {
         .device_descriptor = &hid_device_descriptor,
@@ -207,11 +268,11 @@ bool furi_hal_usb_hid_backend_start(const FuriHalUsbHidConfig* cfg) {
             sizeof(s_string_descriptor) / sizeof(s_string_descriptor[0]),
         .external_phy = false,
 #if (TUD_OPT_HIGH_SPEED)
-        .fs_configuration_descriptor = hid_configuration_descriptor,
-        .hs_configuration_descriptor = hid_configuration_descriptor,
+        .fs_configuration_descriptor = s_config_desc_writable,
+        .hs_configuration_descriptor = s_config_desc_writable,
         .qualifier_descriptor = NULL,
 #else
-        .configuration_descriptor = hid_configuration_descriptor,
+        .configuration_descriptor = s_config_desc_writable,
 #endif
     };
 
@@ -224,6 +285,10 @@ bool furi_hal_usb_hid_backend_start(const FuriHalUsbHidConfig* cfg) {
     s_state.installed = true;
     FURI_LOG_I(TAG, "TinyUSB HID installed vid=%04x pid=%04x", vid, pid);
     return true;
+}
+
+bool furi_hal_usb_hid_backend_is_installed(void) {
+    return s_state.installed;
 }
 
 void furi_hal_usb_hid_backend_stop(void) {

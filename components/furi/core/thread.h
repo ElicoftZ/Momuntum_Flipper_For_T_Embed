@@ -147,6 +147,19 @@ FuriThread* furi_thread_alloc_service(
     void* context);
 
 /**
+ * @brief Create a service whose stack prefers PSRAM.
+ *
+ * Use only for services that never perform flash/NVS writes from their own
+ * task. The TCB remains in internal RAM. Boards without PSRAM fall back to an
+ * internal stack.
+ */
+FuriThread* furi_thread_alloc_service_psram(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context);
+
+/**
  * @brief Create a FuriThread instance w/ extra parameters.
  * 
  * @param[in] name human-readable thread name (can be NULL)
@@ -156,6 +169,44 @@ FuriThread* furi_thread_alloc_service(
  * @return pointer to the created FuriThread instance
  */
 FuriThread* furi_thread_alloc_ex(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context);
+
+/** Allocate an optional worker with an internal-RAM stack.
+ * Returns NULL if its TCB or stack cannot be allocated; never falls back to PSRAM.
+ */
+FuriThread* furi_thread_try_alloc_ex(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context);
+
+/** Create a joinable thread with a PSRAM stack and an internal-RAM TCB.
+ * Use only for tasks (including their callbacks) that never write flash/NVS.
+ * Boards without PSRAM fall back to an internal stack.
+ */
+FuriThread* furi_thread_alloc_ex_psram(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context);
+
+/**
+ * @brief Create a foreground application thread.
+ *
+ * Foreground applications use an internal-RAM stack reserved during boot so
+ * opening an application remains reliable after the internal heap becomes
+ * fragmented. Only one foreground application may use the reserve at a time.
+ *
+ * @param[in] name human-readable thread name (can be NULL)
+ * @param[in] stack_size stack size in bytes
+ * @param[in] callback pointer to a function to be executed in this thread
+ * @param[in] context pointer to a user-specified object (will be passed to the callback)
+ * @return pointer to the created FuriThread instance
+ */
+FuriThread* furi_thread_alloc_ex_foreground(
     const char* name,
     uint32_t stack_size,
     FuriThreadCallback callback,

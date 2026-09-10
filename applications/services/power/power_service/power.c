@@ -374,9 +374,15 @@ static void power_flush_dolphin(void) {
     furi_record_close(RECORD_DOLPHIN);
 }
 
+static void power_prepare_dolphin_for_sleep(void) {
+    Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+    dolphin_prepare_for_sleep(dolphin);
+    furi_record_close(RECORD_DOLPHIN);
+}
+
 static void power_handle_shutdown(Power* power) {
     UNUSED(power);
-    power_flush_dolphin();
+    power_prepare_dolphin_for_sleep();
     furi_hal_power_off();
     /* furi_hal_power_off() should not return (enters deep sleep).
      * If it does, halt as fallback. */
@@ -384,9 +390,12 @@ static void power_handle_shutdown(Power* power) {
 }
 
 static void power_handle_reboot(PowerBootMode mode) {
-    power_flush_dolphin();
-
     if(mode == PowerBootModeNormal) {
+        /* Normal reboots only. dolphin_flush() blocks on the dolphin service
+         * with FuriWaitForever, and a DFU or update reboot has to reach the
+         * updater even if that service is wedged -- losing at most 30 s of XP
+         * is the right trade against failing to start an update. */
+        power_flush_dolphin();
         update_operation_disarm();
     } else if(mode == PowerBootModeDfu) {
         furi_hal_rtc_set_boot_mode(FuriHalRtcBootModeDfu);

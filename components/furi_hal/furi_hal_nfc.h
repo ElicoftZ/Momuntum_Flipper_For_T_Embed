@@ -270,6 +270,28 @@ FuriHalNfcError furi_hal_nfc_listener_rx(uint8_t* rx_data, size_t rx_data_size, 
  */
 void furi_hal_nfc_emu_set_ndef(const uint8_t* msg, size_t len);
 
+/** Handle one ISO7816 command APDU received in card-emulation mode.
+ *
+ * Returns the number of response bytes written to `resp` (R-APDU including its
+ * trailing status word), or 0 to send nothing at all.
+ */
+typedef size_t (*FuriHalNfcApduHandler)(
+    void* context,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    uint8_t* resp,
+    size_t resp_cap);
+
+/** Emulate a generic ISO-DEP (ISO14443-4) card, handing every APDU to
+ * `handler`.
+ *
+ * This is the same PN532 target loop the NDEF emulation uses -- the chip
+ * handles activation, RATS/ATS and ISO-DEP framing including WTX -- but with an
+ * arbitrary application behind it instead of a fixed NDEF file. Pass NULL to
+ * disarm. Takes precedence over furi_hal_nfc_emu_set_ndef().
+ */
+void furi_hal_nfc_emu_set_apdu_handler(FuriHalNfcApduHandler handler, void* context);
+
 /**
  * @brief Go to sleep in listener mode.
  *

@@ -108,6 +108,26 @@ uint16_t furi_hal_display_get_v_res(void);
  */
 esp_lcd_panel_handle_t furi_hal_display_get_panel_handle(void);
 
+/** Blit a byte-swapped RGB565 image directly to the native color panel.
+ *
+ * This helper copies the source through the display HAL's small DMA stripe
+ * buffer, so the source may live in PSRAM. Callers must first suspend normal
+ * GUI rendering with gui_direct_draw_acquire(). Coordinates are in native
+ * panel pixels and the source is tightly packed (width pixels per row).
+ *
+ * @param x      Destination X coordinate
+ * @param y      Destination Y coordinate
+ * @param width  Image width in pixels
+ * @param height Image height in pixels
+ * @param data   Byte-swapped RGB565 pixel data
+ */
+void furi_hal_display_blit_rgb565(
+    uint16_t x,
+    uint16_t y,
+    uint16_t width,
+    uint16_t height,
+    const uint16_t* data);
+
 #ifdef __cplusplus
 }
 #endif

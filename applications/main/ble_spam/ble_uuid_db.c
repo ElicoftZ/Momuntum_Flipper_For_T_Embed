@@ -73,7 +73,7 @@ static const char* sig_lookup(const sig_entry_t* table, size_t n, uint16_t u) {
 
 typedef struct {
     uint8_t len;     // 2 or 16
-    uint8_t bytes[16]; // LE order, matches esp_bt_uuid_t.uuid.uuid128
+    uint8_t bytes[16]; // LE order, matches BleWalkUuid.uuid.uuid128
     char name[USER_MAP_MAX_NAME_LEN];
 } user_entry_t;
 
@@ -293,17 +293,17 @@ void ble_uuid_db_deinit(void) {
     s_initialized = false;
 }
 
-static const char* map_lookup(const uuid_map_t* map, const esp_bt_uuid_t* uuid) {
+static const char* map_lookup(const uuid_map_t* map, const BleWalkUuid* uuid) {
     if(!map->entries || map->count == 0) return NULL;
 
-    if(uuid->len == ESP_UUID_LEN_16) {
+    if(uuid->len == BLE_WALK_UUID_LEN_16) {
         uint8_t lo = uuid->uuid.uuid16 & 0xFF;
         uint8_t hi = (uuid->uuid.uuid16 >> 8) & 0xFF;
         for(uint16_t i = 0; i < map->count; ++i) {
             const user_entry_t* e = &map->entries[i];
             if(e->len == 2 && e->bytes[0] == lo && e->bytes[1] == hi) return e->name;
         }
-    } else if(uuid->len == ESP_UUID_LEN_128) {
+    } else if(uuid->len == BLE_WALK_UUID_LEN_128) {
         for(uint16_t i = 0; i < map->count; ++i) {
             const user_entry_t* e = &map->entries[i];
             if(e->len == 16 && memcmp(e->bytes, uuid->uuid.uuid128, 16) == 0) return e->name;
@@ -312,24 +312,24 @@ static const char* map_lookup(const uuid_map_t* map, const esp_bt_uuid_t* uuid) 
     return NULL;
 }
 
-const char* ble_uuid_db_lookup_service(const esp_bt_uuid_t* uuid) {
+const char* ble_uuid_db_lookup_service(const BleWalkUuid* uuid) {
     const char* hit = map_lookup(&s_services, uuid);
     if(hit) return hit;
     hit = map_lookup(&s_members, uuid);
     if(hit) return hit;
 
-    if(uuid->len == ESP_UUID_LEN_16) {
+    if(uuid->len == BLE_WALK_UUID_LEN_16) {
         return sig_lookup(
             SIG_SERVICES, sizeof(SIG_SERVICES) / sizeof(SIG_SERVICES[0]), uuid->uuid.uuid16);
     }
     return NULL;
 }
 
-const char* ble_uuid_db_lookup_char(const esp_bt_uuid_t* uuid) {
+const char* ble_uuid_db_lookup_char(const BleWalkUuid* uuid) {
     const char* hit = map_lookup(&s_chars, uuid);
     if(hit) return hit;
 
-    if(uuid->len == ESP_UUID_LEN_16) {
+    if(uuid->len == BLE_WALK_UUID_LEN_16) {
         return sig_lookup(SIG_CHARS, sizeof(SIG_CHARS) / sizeof(SIG_CHARS[0]), uuid->uuid.uuid16);
     }
     return NULL;

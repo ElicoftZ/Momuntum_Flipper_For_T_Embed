@@ -2,6 +2,7 @@
 
 enum SubmenuIndex {
     SubmenuIndexUniversalRemotes,
+    SubmenuIndexJammer,
     SubmenuIndexLearnNewRemote,
     SubmenuIndexSavedRemotes,
     SubmenuIndexGpioSettings,
@@ -23,6 +24,12 @@ void infrared_scene_start_on_enter(void* context) {
         submenu,
         "Universal Remotes",
         SubmenuIndexUniversalRemotes,
+        infrared_scene_start_submenu_callback,
+        infrared);
+    submenu_add_item(
+        submenu,
+        "IR Jammer",
+        SubmenuIndexJammer,
         infrared_scene_start_submenu_callback,
         infrared);
     submenu_add_item(
@@ -78,6 +85,8 @@ bool infrared_scene_start_on_event(void* context, SceneManagerEvent event) {
         scene_manager_set_scene_state(scene_manager, InfraredSceneStart, submenu_index);
         if(submenu_index == SubmenuIndexUniversalRemotes) {
             scene_manager_next_scene(scene_manager, InfraredSceneUniversal);
+        } else if(submenu_index == SubmenuIndexJammer) {
+            scene_manager_next_scene(scene_manager, InfraredSceneJammer);
         } else if(
             submenu_index == SubmenuIndexLearnNewRemote ||
             submenu_index == SubmenuIndexLearnNewRemoteRaw) {

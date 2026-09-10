@@ -160,6 +160,12 @@ static size_t listener_rx_len = 0;
 static uint8_t emu_ndef_msg[888];
 static size_t emu_ndef_len = 0;
 
+/* Generic ISO-DEP application emulation: same target loop, arbitrary APDU
+ * handler. Used by the FIDO applet, which cannot be expressed as an NDEF
+ * file. Takes precedence over emu_ndef_len when both are armed. */
+static FuriHalNfcApduHandler emu_apdu_handler = NULL;
+static void* emu_apdu_context = NULL;
+
 /* FeliCa listener configuration state */
 static uint8_t felica_idm[8];
 static uint8_t felica_pmm[8];
@@ -273,12 +279,13 @@ static FuriHalNfcError pn532_read_response(uint8_t* response, size_t* response_l
  * Send a PN532 command and receive the response.
  * Handles: I2C write → wait ACK → read ACK → wait response → read response.
  */
-static FuriHalNfcError pn532_send_command(
-    const uint8_t* cmd,
-    size_t cmd_len,
-    uint8_t* response,
-    size_t* response_len,
-    uint32_t timeout_ms) {
+/* Write a command frame and consume the PN532's ACK.
+ *
+ * Split out of pn532_send_command so that a caller waiting on a command which
+ * parks inside the chip -- TgInitAsTarget, TgGetData -- can do its own
+ * open-ended wait for the response instead of a fixed deadline. */
+static FuriHalNfcError
+    pn532_write_command(const uint8_t* cmd, size_t cmd_len, uint32_t timeout_ms) {
 
     /* Build I2C frame: [SFI=0x00] [00 00 FF] [LEN] [LCS] [TFI=0xD4] [cmd...] [DCS] [00] */
     uint8_t frame[cmd_len + 9];
@@ -332,6 +339,29 @@ static FuriHalNfcError pn532_send_command(
             ack_buf[0], ack_buf[1], ack_buf[2], ack_buf[3], ack_buf[4], ack_buf[5], ack_buf[6]);
         return FuriHalNfcErrorCommunication;
     }
+
+    return FuriHalNfcErrorNone;
+}
+
+/* UM0701 s7.1.1.3: an ACK frame from the host aborts the command the PN532 is
+ * currently executing. It is the only documented way to take back a
+ * TgInitAsTarget or TgGetData that is parked waiting on the RF side -- writing
+ * a fresh command frame on top of a pending one does NOT cancel it. */
+static void pn532_abort_command(void) {
+    static const uint8_t ack[] = {0x00, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00};
+    i2c_master_write_to_device(
+        BOARD_NFC_I2C_PORT, PN532_I2C_ADDR, ack, sizeof(ack), pdMS_TO_TICKS(100));
+}
+
+static FuriHalNfcError pn532_send_command(
+    const uint8_t* cmd,
+    size_t cmd_len,
+    uint8_t* response,
+    size_t* response_len,
+    uint32_t timeout_ms) {
+
+    FuriHalNfcError err = pn532_write_command(cmd, cmd_len, timeout_ms);
+    if(err != FuriHalNfcErrorNone) return err;
 
     /* Phase 2: Wait for and read response */
     if(!pn532_wait_ready(timeout_ms)) {
@@ -579,6 +609,160 @@ void furi_hal_nfc_emu_set_ndef(const uint8_t* msg, size_t len) {
     emu_ndef_len = len;
 }
 
+/* TgInitAsTarget payload shared by both emulation loops.
+ *
+ * SEL_RES=0x60 (bit 5 set => ISO14443-4 capable), so the reader runs RATS and
+ * the PN532 takes over ISO-DEP framing. These values are the known-working
+ * Bruce defaults; do NOT substitute a scanned tag's ATQA/UID, which produces a
+ * SENS_RES a phone never activates. The chip can only present a 3-byte NFCID1
+ * in target mode anyway, so an exact UID clone is not on offer. */
+static const uint8_t pn532_tg_init_iso_dep[] = {
+    PN532_CMD_TGINITASTARGET, 0x00, 0x08, 0x00, 0xDC, 0x44, 0x20, 0x60,
+    0x01, 0xFE, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xC0, 0xC1, 0xC2, 0xC3,
+    0xC4, 0xC5, 0xC6, 0xC7, 0xFF, 0xFF, 0xAA, 0x99, 0x88, 0x77, 0x66, 0x55,
+    0x44, 0x33, 0x22, 0x11, 0x01, 0x00, 0x0D, 0x52, 0x46, 0x49, 0x44, 0x49,
+    0x4F, 0x74, 0x20, 0x50, 0x4E, 0x35, 0x33, 0x32};
+
+void furi_hal_nfc_emu_set_apdu_handler(FuriHalNfcApduHandler handler, void* context) {
+    emu_apdu_handler = handler;
+    emu_apdu_context = context;
+}
+
+/* For the commands that park inside the PN532 until the RF side does something
+ * -- TgInitAsTarget waiting for a reader, TgGetData waiting for the next APDU.
+ * There is no useful deadline for either: the answer comes when someone taps.
+ *
+ * Issuing them with a timeout and re-sending on expiry is what broke card
+ * emulation. The chip keeps the original command live, so the re-send does not
+ * retry anything; it desynchronises the host, and the activation response then
+ * lands where the ACK of the re-sent command was expected, fails the ACK check
+ * and is discarded. Wait instead, and take the command back properly. */
+static FuriHalNfcError pn532_send_command_blocking(
+    const uint8_t* cmd,
+    size_t cmd_len,
+    uint8_t* response,
+    size_t* response_len,
+    bool* aborted) {
+
+    *aborted = false;
+
+    FuriHalNfcError err = pn532_write_command(cmd, cmd_len, PN532_LISTENER_POLL_MS);
+    if(err != FuriHalNfcErrorNone) return err;
+
+    while(!pn532_wait_ready(PN532_LISTENER_POLL_MS)) {
+        if(nfc_listener_abort_requested()) {
+            /* Or the chip stays parked in target mode for whoever opens NFC
+             * next. */
+            pn532_abort_command();
+            *aborted = true;
+            return FuriHalNfcErrorNone;
+        }
+    }
+
+    return pn532_read_response(response, response_len, response_len ? *response_len : 0);
+}
+
+/* Generic ISO-DEP application emulation.
+ *
+ * Structurally identical to the NDEF loop below -- arm with TgInitAsTarget,
+ * then TgGetData / TgSetData forever -- but every APDU goes to the registered
+ * handler. That is what lets the FIDO applet exist without teaching the HAL
+ * anything about FIDO. */
+static FuriHalNfcEvent pn532_apdu_emulate(void) {
+    uint8_t tg_init[sizeof(pn532_tg_init_iso_dep)];
+    memcpy(tg_init, pn532_tg_init_iso_dep, sizeof(tg_init));
+
+    bool armed = false;
+    uint32_t tginit_tries = 0;
+
+    FURI_LOG_I(TAG, "APDU emu: enter");
+
+    while(true) {
+        if(nfc_listener_abort_requested()) return FuriHalNfcEventAbortRequest;
+
+        /* The handler can be disarmed from another thread while we are here. */
+        if(emu_apdu_handler == NULL) return FuriHalNfcEventAbortRequest;
+
+        if(!armed) {
+            uint8_t r[16];
+            size_t rl = sizeof(r);
+            bool aborted = false;
+            /* Armed once, then waited on. Only a real command failure gets
+             * retried -- "no reader yet" is not a failure, it is the normal
+             * state of a card sitting on a table. */
+            FuriHalNfcError e =
+                pn532_send_command_blocking(tg_init, sizeof(tg_init), r, &rl, &aborted);
+            if(aborted) return FuriHalNfcEventAbortRequest;
+
+            if(e == FuriHalNfcErrorNone && rl >= 1) {
+                armed = true;
+                FURI_LOG_I(
+                    TAG,
+                    "APDU emu: target ACTIVATED (mode=%02X) after %lu tries",
+                    r[0],
+                    (unsigned long)tginit_tries);
+            } else {
+                if(tginit_tries == 0 || (tginit_tries % 100) == 0) {
+                    FURI_LOG_I(
+                        TAG,
+                        "APDU emu: TgInitAsTarget failed (err=%d try=%lu)",
+                        (int)e,
+                        (unsigned long)tginit_tries);
+                }
+                tginit_tries++;
+                furi_delay_ms(20);
+                continue;
+            }
+        }
+
+        uint8_t gd = PN532_CMD_TGGETDATA;
+        uint8_t req[262];
+        size_t req_len = sizeof(req);
+        bool gd_aborted = false;
+        /* Same treatment: a reader can pause between APDUs, and a deadline
+         * here would desynchronise mid-ceremony exactly as it did on arming. */
+        FuriHalNfcError ge = pn532_send_command_blocking(&gd, 1, req, &req_len, &gd_aborted);
+        if(gd_aborted) return FuriHalNfcEventAbortRequest;
+
+        if(ge != FuriHalNfcErrorNone || req_len < 1) {
+            furi_delay_ms(10);
+            continue;
+        }
+
+        uint8_t status = req[0];
+        if(status == 0x29 || status == 0x25 || status == 0x0A) {
+            /* Field lost -- the phone was taken away. Re-arm and wait. */
+            FURI_LOG_I(TAG, "APDU emu: RF lost (status=%02X) - re-arming", status);
+            armed = false;
+            furi_delay_ms(10);
+            continue;
+        }
+        if(status != 0x00 || req_len < 5) {
+            furi_delay_ms(5);
+            continue;
+        }
+
+        uint8_t resp[260];
+        size_t resp_len = 0;
+
+        if(emu_apdu_handler != NULL) {
+            resp_len = emu_apdu_handler(
+                emu_apdu_context, &req[1], req_len - 1, resp, sizeof(resp));
+        }
+        if(resp_len == 0 || resp_len > sizeof(resp)) continue;
+
+        uint8_t sd[1 + sizeof(resp)];
+        sd[0] = PN532_CMD_TGSETDATA;
+        memcpy(&sd[1], resp, resp_len);
+        uint8_t sr[8];
+        size_t srl = sizeof(sr);
+        if(pn532_send_command(sd, resp_len + 1, sr, &srl, 500) != FuriHalNfcErrorNone) {
+            armed = false;
+            furi_delay_ms(10);
+        }
+    }
+}
+
 /* Bruce-style ISO-DEP Type-4 NDEF tag emulation, run entirely inside the HAL.
  * The PN532 handles ISO14443-3A activation, RATS/ATS and ISO-DEP framing
  * (incl. WTX) in hardware; we only service ISO7816 SELECT / READ BINARY
@@ -595,19 +779,9 @@ static FuriHalNfcEvent pn532_type4_ndef_emulate(void) {
         0x00, 0x0F, 0x20, 0x00, 0x3B, 0x00, 0x34, 0x04,
         0x06, 0xE1, 0x04, (uint8_t)(ndef_cap >> 8), (uint8_t)(ndef_cap & 0xFF), 0x00, 0xFF};
 
-    /* TgInitAsTarget payload — SEL_RES=0x60 (bit5 set ⇒ ISO14443-4 capable),
-     * so the reader runs RATS and the PN532 takes over ISO-DEP framing.
-     * SENS_RES (bytes 2-3) and NFCID1t (bytes 4-6) are overridden below with
-     * the original tag's ATQA / first 3 UID bytes so the ISO-DEP clone is as
-     * close to the source NTAG as the PN532 allows (it can only present a
-     * 3-byte single-size NFCID1 in target mode — a 7-byte UID can't be
-     * cloned exactly, and SEL_RES must stay 0x60 for ISO-DEP to work). */
-    uint8_t tg_init[] = {
-        PN532_CMD_TGINITASTARGET, 0x00, 0x08, 0x00, 0xDC, 0x44, 0x20, 0x60,
-        0x01, 0xFE, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xC0, 0xC1, 0xC2, 0xC3,
-        0xC4, 0xC5, 0xC6, 0xC7, 0xFF, 0xFF, 0xAA, 0x99, 0x88, 0x77, 0x66, 0x55,
-        0x44, 0x33, 0x22, 0x11, 0x01, 0x00, 0x0D, 0x52, 0x46, 0x49, 0x44, 0x49,
-        0x4F, 0x74, 0x20, 0x50, 0x4E, 0x35, 0x33, 0x32};
+    uint8_t tg_init[sizeof(pn532_tg_init_iso_dep)];
+    memcpy(tg_init, pn532_tg_init_iso_dep, sizeof(tg_init));
+
     /* Do NOT override SENS_RES / NFCID1 with the scanned tag's ATQA/UID.
      * The known-working Bruce reference (same PN532 HW, its PN532.cpp
      * tgInitAsTargetIrq) uses these FIXED defaults — overriding
@@ -774,6 +948,12 @@ FuriHalNfcEvent furi_hal_nfc_listener_wait_event(uint32_t timeout_ms) {
     if(!nfc_hal_ready) return FuriHalNfcEventTimeout;
 
     if(nfc_listener_abort_requested()) return FuriHalNfcEventAbortRequest;
+
+    /* A registered APDU handler wins: it is a whole application, whereas the
+     * NDEF path below is one fixed file. */
+    if(emu_apdu_handler != NULL) {
+        return pn532_apdu_emulate();
+    }
 
     /* Type-4 NDEF emulation path (Bruce-style) — bypasses the raw type-A
      * listener entirely when an NDEF message has been armed. */

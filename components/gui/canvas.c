@@ -146,9 +146,7 @@ const CanvasFontParameters* canvas_get_font_params(const Canvas* canvas, Font fo
     furi_check(canvas);
     furi_check(font < FontTotalNumber);
     const CanvasFontParameters* pack_params = asset_packs_swap_font_params(font);
-    if(pack_params) {
-        return pack_params;
-    }
+    if(pack_params) return pack_params;
     return &canvas_font_params[font];
 }
 
@@ -189,6 +187,7 @@ void canvas_invert_color(Canvas* canvas) {
 void canvas_set_font(Canvas* canvas, Font font) {
     furi_check(canvas);
     u8g2_SetFontMode(&canvas->fb, 1);
+
     const uint8_t* pack_font = asset_packs_swap_font(font);
     if(pack_font) {
         u8g2_SetFont(&canvas->fb, pack_font);
@@ -203,7 +202,7 @@ void canvas_set_font(Canvas* canvas, Font font) {
     } else if(font == FontBigNumbers) {
         u8g2_SetFont(&canvas->fb, u8g2_font_profont22_tn);
     } else if(font == FontBatteryPercent) {
-        u8g2_SetFont(&canvas->fb, u8g2_font_5x7_tr); //u8g2_font_micro_tr);
+        u8g2_SetFont(&canvas->fb, u8g2_font_5x7_tr);
     } else {
         furi_crash();
     }
@@ -234,15 +233,16 @@ void canvas_draw_str_aligned(
     if(!str) return;
     x += canvas->offset_x;
     y += canvas->offset_y;
+    u8g2_t* fb = &canvas->fb;
 
     switch(horizontal) {
     case AlignLeft:
         break;
     case AlignRight:
-        x -= u8g2_GetUTF8Width(&canvas->fb, str);
+        x -= u8g2_GetUTF8Width(fb, str);
         break;
     case AlignCenter:
-        x -= (u8g2_GetUTF8Width(&canvas->fb, str) / 2);
+        x -= (u8g2_GetUTF8Width(fb, str) / 2);
         break;
     default:
         furi_crash();
@@ -251,19 +251,19 @@ void canvas_draw_str_aligned(
 
     switch(vertical) {
     case AlignTop:
-        y += u8g2_GetAscent(&canvas->fb);
+        y += u8g2_GetAscent(fb);
         break;
     case AlignBottom:
         break;
     case AlignCenter:
-        y += (u8g2_GetAscent(&canvas->fb) / 2);
+        y += (u8g2_GetAscent(fb) / 2);
         break;
     default:
         furi_crash();
         break;
     }
 
-    u8g2_DrawUTF8(&canvas->fb, x, y, str);
+    u8g2_DrawUTF8(fb, x, y, str);
 }
 
 uint16_t canvas_string_width(Canvas* canvas, const char* str) {
@@ -290,7 +290,8 @@ void canvas_draw_bitmap(
     y += canvas->offset_y;
     uint8_t* bitmap_data = NULL;
     compress_icon_decode(canvas->compress_icon, compressed_bitmap_data, &bitmap_data);
-    canvas_draw_u8g2_bitmap(&canvas->fb, x, y, width, height, bitmap_data, IconRotation0);
+    canvas_draw_u8g2_bitmap(
+        &canvas->fb, x, y, width, height, bitmap_data, IconRotation0);
 }
 
 void canvas_draw_icon_animation(
@@ -468,7 +469,13 @@ void canvas_draw_icon_ex(
     icon = asset_packs_swap_icon(icon);
     compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
     canvas_draw_u8g2_bitmap(
-        &canvas->fb, x, y, icon_get_width(icon), icon_get_height(icon), icon_data, rotation);
+        &canvas->fb,
+        x,
+        y,
+        icon_get_width(icon),
+        icon_get_height(icon),
+        icon_data,
+        rotation);
 }
 
 void canvas_draw_icon(Canvas* canvas, int32_t x, int32_t y, const Icon* icon) {
@@ -481,7 +488,13 @@ void canvas_draw_icon(Canvas* canvas, int32_t x, int32_t y, const Icon* icon) {
     icon = asset_packs_swap_icon(icon);
     compress_icon_decode(canvas->compress_icon, icon_get_frame_data(icon, 0), &icon_data);
     canvas_draw_u8g2_bitmap(
-        &canvas->fb, x, y, icon_get_width(icon), icon_get_height(icon), icon_data, IconRotation0);
+        &canvas->fb,
+        x,
+        y,
+        icon_get_width(icon),
+        icon_get_height(icon),
+        icon_data,
+        IconRotation0);
 }
 
 void canvas_draw_dot(Canvas* canvas, int32_t x, int32_t y) {
@@ -493,7 +506,8 @@ void canvas_draw_dot(Canvas* canvas, int32_t x, int32_t y) {
 
 void canvas_draw_overlay(Canvas* canvas) {
     furi_check(canvas);
-    const uint8_t original_color = canvas->fb.draw_color;
+    u8g2_t* fb = &canvas->fb;
+    const uint8_t original_color = fb->draw_color;
     canvas_set_color(canvas, ColorWhite);
     for(size_t y = 0; y < canvas->height; y++) {
         const size_t offset = y % 2U;
@@ -501,7 +515,7 @@ void canvas_draw_overlay(Canvas* canvas) {
             canvas_draw_dot(canvas, x, y);
         }
     }
-    canvas->fb.draw_color = original_color;
+    fb->draw_color = original_color;
 }
 
 void canvas_draw_box(Canvas* canvas, int32_t x, int32_t y, size_t width, size_t height) {
@@ -616,7 +630,8 @@ void canvas_draw_xbm_ex(
     furi_check(canvas);
     x += canvas->offset_x;
     y += canvas->offset_y;
-    canvas_draw_u8g2_bitmap(&canvas->fb, x, y, width, height, bitmap_data, rotation);
+    canvas_draw_u8g2_bitmap(
+        &canvas->fb, x, y, width, height, bitmap_data, rotation);
 }
 
 void canvas_draw_glyph(Canvas* canvas, int32_t x, int32_t y, uint16_t ch) {

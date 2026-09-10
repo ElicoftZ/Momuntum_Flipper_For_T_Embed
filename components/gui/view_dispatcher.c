@@ -245,9 +245,17 @@ void view_dispatcher_draw_callback(Canvas* canvas, void* context) {
 
 void view_dispatcher_input_callback(InputEvent* event, void* context) {
     ViewDispatcher* view_dispatcher = context;
-    furi_check(
-        furi_message_queue_put(view_dispatcher->input_queue, event, FuriWaitForever) ==
-        FuriStatusOk);
+    /* This callback runs in the global GUI thread.  One slow application must
+     * never block that thread (and the whole display) because its private input
+     * queue filled.  A saturated queue already contains the newest actionable
+     * input; dropping excess repeat/edge events is safer than freezing every
+     * application and status viewport. */
+    if(furi_message_queue_put(view_dispatcher->input_queue, event, 0) != FuriStatusOk) {
+        static uint32_t dropped_input_events = 0;
+        if((++dropped_input_events & 0x0FU) == 1U) {
+            FURI_LOG_W(TAG, "Input queue full; dropped %lu event(s)", dropped_input_events);
+        }
+    }
 }
 
 void view_dispatcher_handle_input(ViewDispatcher* view_dispatcher, InputEvent* event) {

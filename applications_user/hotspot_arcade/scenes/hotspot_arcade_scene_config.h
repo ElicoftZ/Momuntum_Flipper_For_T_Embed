@@ -1,0 +1,8 @@
+ADD_SCENE(hotspot_arcade, main, Main)
+ADD_SCENE(hotspot_arcade, dashboard, Dashboard)
+ADD_SCENE(hotspot_arcade, games, Games)
+ADD_SCENE(hotspot_arcade, leaderboard, Leaderboard)
+ADD_SCENE(hotspot_arcade, console, Console)
+ADD_SCENE(hotspot_arcade, ssid, Ssid)
+ADD_SCENE(hotspot_arcade, settings, Settings)
+ADD_SCENE(hotspot_arcade, message, Message)

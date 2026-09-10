@@ -1,6 +1,7 @@
 #include "infrared_app_i.h"
 
 #include <power/power_service/power.h>
+#include <furi_hal_power.h>
 
 #include <string.h>
 #include <toolbox/path.h>
@@ -143,7 +144,10 @@ static void infrared_find_vacant_remote_name(FuriString* name, const char* path)
 }
 
 static InfraredApp* infrared_alloc(void) {
-    InfraredApp* infrared = malloc(sizeof(InfraredApp));
+    /* InfraredAppState grew new jammer/transmit fields. Zero the whole owner so
+     * an unopened scene can never leave is_transmitting or a callback pointer
+     * as heap garbage and trip the worker's state checks. */
+    InfraredApp* infrared = calloc(1, sizeof(InfraredApp));
 
     infrared->task_thread =
         furi_thread_alloc_ex("InfraredTask", INFRARED_TASK_STACK_SIZE, NULL, infrared);
@@ -206,6 +210,10 @@ static InfraredApp* infrared_alloc(void) {
     view_dispatcher_add_view(
         view_dispatcher, InfraredViewStack, view_stack_get_view(infrared->view_stack));
 
+    infrared->widget = widget_alloc();
+    view_dispatcher_add_view(
+        view_dispatcher, InfraredViewWidget, widget_get_view(infrared->widget));
+
     infrared->move_view = infrared_move_view_alloc();
     view_dispatcher_add_view(
         view_dispatcher, InfraredViewMove, infrared_move_view_get_view(infrared->move_view));
@@ -263,6 +271,9 @@ static void infrared_free(InfraredApp* infrared) {
 
     view_dispatcher_remove_view(view_dispatcher, InfraredViewStack);
     view_stack_free(infrared->view_stack);
+
+    view_dispatcher_remove_view(view_dispatcher, InfraredViewWidget);
+    widget_free(infrared->widget);
 
     view_dispatcher_remove_view(view_dispatcher, InfraredViewMove);
     infrared_move_view_free(infrared->move_view);
@@ -386,6 +397,18 @@ void infrared_tx_start(InfraredApp* infrared) {
         infrared->worker, infrared_worker_tx_get_signal_steady_callback, infrared);
     infrared_worker_tx_start(infrared->worker);
 
+    /* Hold the CPU awake for as long as a signal is going out.
+     * Holding a remote button down produces no input events, so without this
+     * the board can drop into deep sleep in the middle of a transmission --
+     * while the user is still holding the button. Display Wake is owned by the
+     * Control Centre; taking its boolean notification lock here would let an IR
+     * stop accidentally release the global Wake mode.
+     *
+     * Balanced by is_transmitting: this function and infrared_tx_stop both
+     * return early unless the flag is about to change, so insomnia (a counter)
+    * can never be entered twice or left dangling. */
+    furi_hal_power_insomnia_enter();
+
     infrared->app_state.is_transmitting = true;
 }
 
@@ -410,6 +433,9 @@ void infrared_tx_stop(InfraredApp* infrared) {
     infrared_worker_tx_set_get_signal_callback(infrared->worker, NULL, NULL);
 
     infrared_play_notification_message(infrared, InfraredNotificationMessageBlinkStop);
+
+    /* Idle again. Paired with the enter in infrared_tx_start. */
+    furi_hal_power_insomnia_exit();
 
     infrared->app_state.is_transmitting = false;
     infrared->app_state.last_transmit_time = furi_get_tick();

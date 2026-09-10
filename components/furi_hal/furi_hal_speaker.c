@@ -24,6 +24,7 @@
 #include <driver/i2s_std.h>
 #include <driver/gpio.h>
 #include <esp_timer.h>
+#include <esp_heap_caps.h>
 
 #include <math.h>
 #ifndef M_PI
@@ -106,7 +107,14 @@ static void speaker_generate_buffer(void) {
     size_t needed = samples_per_cycle * 2 * sizeof(int16_t); /* stereo */
     if(wave_buffer == NULL || wave_buffer_samples != samples_per_cycle) {
         if(wave_buffer) free(wave_buffer);
-        wave_buffer = malloc(needed);
+        /* I2S copies samples into its internal DMA buffers. */
+        wave_buffer = heap_caps_malloc_prefer(
+            needed, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_DEFAULT);
+        if(!wave_buffer) {
+            wave_buffer_samples = 0;
+            wave_buffer_bytes = 0;
+            return;
+        }
         wave_buffer_samples = samples_per_cycle;
     }
     wave_buffer_bytes = needed;
@@ -265,7 +273,8 @@ void furi_hal_speaker_init(void) {
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(i2s_tx_handle, &std_cfg));
 
     /* Start the writer thread (it idles until speaker_mode != Idle) */
-    speaker_thread = furi_thread_alloc_ex("SpeakerWorker", SPEAKER_THREAD_STACK, speaker_writer_thread, NULL);
+    /* This worker only generates samples and feeds I2S; it never writes NVS. */
+    speaker_thread = furi_thread_alloc_ex_psram("SpeakerWorker", SPEAKER_THREAD_STACK, speaker_writer_thread, NULL);
     speaker_thread_run = true;
     furi_thread_start(speaker_thread);
 

@@ -41,6 +41,9 @@ void subghz_txrx_free(SubGhzTxRx* instance);
  */
 bool subghz_txrx_is_database_loaded(SubGhzTxRx* instance);
 
+/** Load the rolling-code keystore on first use instead of blocking app startup. */
+bool subghz_txrx_load_database(SubGhzTxRx* instance);
+
 /**
  * Set preset 
  * 

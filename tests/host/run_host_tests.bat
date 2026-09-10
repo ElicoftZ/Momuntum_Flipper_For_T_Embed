@@ -40,4 +40,19 @@ cl /nologo /std:c17 /W4 /WX /D_CRT_SECURE_NO_WARNINGS /I "%REPO%\lib" ^
 if errorlevel 1 exit /b %errorlevel%
 
 "%REPO%\build_host\momentum_core_test.exe"
+if errorlevel 1 exit /b %errorlevel%
+
+rem The CTAP2 CBOR codec is deliberately free of furi and ESP-IDF includes for
+rem exactly this reason: it is the one part of the FIDO2 work that can be
+rem pinned down without spending a flash cycle. Encoder vectors come from
+rem RFC 8949 Appendix A, so a pass means byte-exact against the standard.
+cl /nologo /std:c17 /W4 /WX /D_CRT_SECURE_NO_WARNINGS ^
+    /I "%REPO%\applications\main\u2f" ^
+    "%REPO%\tests\host\fido_cbor_test.c" ^
+    "%REPO%\applications\main\u2f\fido_cbor.c" ^
+    /Fe:"%REPO%\build_host\fido_cbor_test.exe" ^
+    /Fo:"%REPO%\build_host\\"
+if errorlevel 1 exit /b %errorlevel%
+
+"%REPO%\build_host\fido_cbor_test.exe"
 exit /b %errorlevel%

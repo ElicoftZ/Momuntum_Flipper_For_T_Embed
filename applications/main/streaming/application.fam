@@ -1,0 +1,33 @@
+App(
+    appid="streaming",
+    name="Streaming",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="streaming_app",
+    requires=["gui", "wifi"],
+    stack_size=16 * 1024,
+    order=84,
+    icon="A_Streaming_14",
+    fap_category="Media",
+    fap_private_libs=[
+        Lib(
+            name="helix",
+            sources=["*.c"],
+            fap_include_paths=["."],
+            cdefines=[
+                "ARDUINO",
+            ],
+            cflags=[
+                "-w",
+                "-Wno-error=implicit-function-declaration",
+                "-Wno-error=incompatible-pointer-types",
+                "-Wno-error=int-conversion",
+                "-Wno-error=pointer-sign",
+                "-Wno-error=unused-variable",
+                "-Wno-error=unused-function",
+                "-Wno-error=unused-but-set-variable",
+                "-Wno-error=unused-parameter",
+                "-Wno-error=discarded-qualifiers",
+            ],
+        ),
+    ],
+)

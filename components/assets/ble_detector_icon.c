@@ -1,0 +1,20 @@
+#include "assets_icons.h"
+#include <gui/icon_i.h>
+
+/* User supplied BLE detector radio icon, reduced to the menu's 14x14 format. */
+static const uint8_t _I_BleDetector_14_0[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00,
+    0x1a, 0x80, 0x1d, 0x80, 0x1d, 0x80, 0x1d, 0xff,
+    0x07, 0xff, 0x03, 0xff, 0x03, 0xff, 0x03, 0xff,
+    0x03, 0xff, 0x03, 0xff, 0x03, 0x00, 0x00,
+};
+
+static const uint8_t* const _I_BleDetector_14[] = {_I_BleDetector_14_0};
+
+const Icon I_BleDetector_14 = {
+    .width = 14,
+    .height = 14,
+    .frame_count = 1,
+    .frame_rate = 0,
+    .frames = _I_BleDetector_14,
+};

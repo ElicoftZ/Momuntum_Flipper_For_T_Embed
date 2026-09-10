@@ -140,3 +140,16 @@ void ble_profile_serial_notify_buffer_is_empty(FuriHalBleProfileBase* profile) {
     if(!sp || !sp->serial) return;
     ble_serial_notify_buffer_is_empty(sp->serial);
 }
+
+bool ble_profile_serial_refresh_name(FuriHalBleProfileBase* profile) {
+    BleProfileSerial* sp = serial_profile_cast(profile);
+    if(!sp || !sp->serial) return false;
+
+    char device_name[BLE_SERIAL_DEVICE_NAME_LEN + 1U];
+    snprintf(
+        device_name,
+        sizeof(device_name),
+        "Flipper %s",
+        furi_hal_version_get_name_ptr());
+    return ble_serial_set_device_name(sp->serial, device_name);
+}

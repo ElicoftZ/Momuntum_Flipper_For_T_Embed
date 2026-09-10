@@ -120,6 +120,8 @@ static int32_t jam_worker(void* context) {
     bool built = false;
     uint32_t start_tick = 0;
     uint32_t last_view_tick = 0;
+    uint32_t last_cps_hops = 0; /* Hops beim letzten View-Update (Momentanraten-Basis) */
+    uint32_t last_cps = 0; /* geglättete c/s (EWMA) */
 
     while(!ctx->stop) {
         bool want = ctx->desired_running;
@@ -153,11 +155,47 @@ static int32_t jam_worker(void* context) {
             ctx->active = true;
             ctx->active_strategy = cfg->strategy;
             start_tick = furi_get_tick();
+            last_view_tick = start_tick;
+            last_cps_hops = hops;
+            last_cps = 0;
         } else if(!want && ctx->active) {
             jam_teardown(ctx);
         }
 
-        if(ctx->active && cfg->strategy == Nrf24StrategyAfh) {
+        /* BT Classic 2 = exact replica of the nRF24_jammer FAP jam_bluetooth
+         * (LIST mode): continuous carrier (brought up above) + tight loop that
+         * only retunes RF_CH across the curated 21-channel list, ZERO dwell and
+         * a per-write bus acquire/release (no 30 ms batch hold → no long
+         * un-jammed gaps). Fewer channels + zero dwell give a per-channel
+         * revisit near the ~625 us BT hop slot, unlike our wide 79-ch smear. */
+        bool fap_bt = app->jam.source == Nrf24SourceProtocol &&
+                      app->jam.protocol == Nrf24JamPresetBluetooth2 &&
+                      cfg->strategy == Nrf24StrategyCw;
+
+        if(ctx->active && fap_bt) {
+            /* Exact replica of the FAP jam_bluetooth() loop AND its UI behaviour:
+             * retune RF_CH across the curated list forever with ZERO dwell — and,
+             * like the FAP (which never calls view_port_update while is_running),
+             * DO NOT redraw the screen while jamming. On the T-Embed the nRF24 SCK
+             * (GPIO11) is physically shared with the LCD clock, so every redraw
+             * would lock the SPI bus and park the carrier on one channel for a
+             * whole LCD frame. Keeping the screen static hands the entire bus to
+             * the hop, matching the FAP's band coverage. The screen keeps whatever
+             * it showed when "Run" was pressed until the loop exits (stop / pause /
+             * config change), where the shared view-update below refreshes once. */
+            while(!ctx->stop && ctx->desired_running && !ctx->dirty) {
+                cur_ch = chbuf[hop_index % chcount];
+                nrf24_hw_acquire();
+                nrf24_hw_jammer_set_channel(cur_ch);
+                nrf24_hw_release();
+                hop_index++;
+                hops++;
+                if(hop_index >= chcount) {
+                    hop_index = 0;
+                    sweeps++;
+                }
+            }
+        } else if(ctx->active && cfg->strategy == Nrf24StrategyAfh) {
             /* AFH exhaustion: park a strong CW carrier on one channel long
              * enough (dwell read as MILLISECONDS) for the victim's adaptive
              * hopping to classify it bad, then step to the next — sequentially,
@@ -218,13 +256,24 @@ static int32_t jam_worker(void* context) {
 
         uint32_t now = furi_get_tick();
         if(now - last_view_tick >= pdMS_TO_TICKS(150)) {
+            uint32_t d_tick = now - last_view_tick;
             last_view_tick = now;
             uint32_t elapsed_ms = 0;
             uint32_t cps = 0;
             if(ctx->active) {
                 uint32_t et = now - start_tick;
                 elapsed_ms = (tick_hz == 1000) ? et : (uint32_t)((uint64_t)et * 1000 / tick_hz);
-                if(elapsed_ms > 300) cps = (uint32_t)((uint64_t)hops * 1000 / elapsed_ms);
+                /* Momentanrate: Hops seit dem letzten Update / Intervalldauer. Ein
+                 * kumulativer Schnitt (hops/elapsed) würde vom überhöhten ersten
+                 * Sample nach unten konvergieren statt konstant zu bleiben; leichte
+                 * EWMA glättet Jitter durch Batch-Grenzen und LCD-Refresh. */
+                uint32_t d_ms =
+                    (tick_hz == 1000) ? d_tick : (uint32_t)((uint64_t)d_tick * 1000 / tick_hz);
+                uint32_t d_hops = hops - last_cps_hops;
+                uint32_t inst = d_ms > 0 ? (uint32_t)((uint64_t)d_hops * 1000 / d_ms) : 0;
+                cps = last_cps ? (last_cps * 3 + inst) / 4 : inst;
+                last_cps = cps;
+                last_cps_hops = hops;
             }
             uint8_t ch = cur_ch;
             uint32_t s = sweeps;
@@ -242,6 +291,7 @@ static int32_t jam_worker(void* context) {
                 },
                 true);
         }
+
 
         furi_delay_ms(ctx->active ? 1 : 10);
     }
@@ -331,9 +381,9 @@ bool nrf24_app_scene_jam_on_event(void* context, SceneManagerEvent event) {
         g_ctx->dirty = true;
         return true;
     case Nrf24JamEventCycleSource:
-        /* Just switch source type; scanning happens on demand via the Scan
-         * button (jam_should_scan), not automatically on cycle. */
-        nrf24_source_cycle_type(app);
+        /* Rotate CW: next target in the flat preset+source list (wraps). Scanning
+         * happens on demand via the Scan button (jam_should_scan), not on step. */
+        nrf24_source_step(app, +1);
         g_ctx->dirty = true;
         return true;
     case Nrf24JamEventConfig:

@@ -24,11 +24,16 @@ APPS = [
     "power",
     "power_start",
     "power_settings",
+    "desktop_settings",
     "loader",
     "loader_start",
+    "namechanger_srv",
+    "spoofing_settings",
     "notification_settings",
+    "system_settings",
     "backup_settings",
     "power_profiler",
+    "interface_settings",
     "desktop",
     "archive",
     "about",
@@ -44,10 +49,17 @@ APPS = [
     "passport",
     "nfc",
     "infrared",
-    "lfrfid",
+    # 125 kHz RFID is NOT built: the T-Embed has NFC only, no LF antenna. The
+    # app would open, find no hardware and mislead. The archive keeps its
+    # .rfid tab, exactly as it already does for the unbuilt iButton app.
     "wlan",
+    "wifi",
+    "wlan_prepare",
+    "ota_updater",
+    "streaming",
     "nrf24",
     "ble_spam",
+    "ble_detector",
     "findmy",
     "findmy_startup",
     # Applies the custom Device Name at boot. The Momentum app has always
@@ -86,16 +98,34 @@ APPS = [
 
 # Boards without NFC / IR hardware – exclude the corresponding apps
 _board = os.environ.get("FLIPPER_BOARD", "")
-_boards_without_nfc = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
-_boards_without_ir = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
+_boards_without_nfc = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"}
+_boards_without_ir = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"}
+
+# Public release builds leave Dual Boot out of the image entirely. Hiding it in
+# settings is right for a personal build, but a released firmware should not
+# carry an app that reboots the board into other firmware at all -- and the
+# release partition table has no ota_0 for it to target anyway.
+_release_build = os.environ.get("MOMENTUM_RELEASE_BUILD", "") not in ("", "0")
 
 if _board == "lilygo_t_embed_cc1101":
     APPS.append("momentum_app")
+    # Standalone configurable macro controller. The T-Embed can expose it as
+    # either BLE HID or native USB HID; smaller C6 boards lack USB-OTG.
+    APPS.append("macro_pad")
+    # Passive WiFi/BLE/Sub-GHz scanner. It needs the T-Embed's PSRAM and
+    # onboard CC1101, so do not expose it on the smaller C6 targets.
+    APPS.append("wardriving")
+    # U2F speaks FIDO over USB HID, which needs the USB-OTG controller. Only the
+    # ESP32-S3 boards have one; the C6 boards have USB-Serial-JTAG only.
+    APPS.append("u2f")
+    if not _release_build:
+        # Dual Boot validates the dynamic multiboot layout at runtime.
+        APPS.append("dualboot")
 
 # Wolf3D shares Doom's requirements (PSRAM, ST7789 320xN, I2S speaker).
 # Doom läuft ebenfalls nur auf T-Embed (PSRAM + 16 MB Flash) — wird aber als
 # externer FAP gebaut (steht nicht in APPS), Block bleibt unten zur Klarheit.
-_boards_without_wolf3d = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
+_boards_without_wolf3d = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"}
 
 if _board in _boards_without_nfc:
     APPS = [a for a in APPS if a != "nfc"]
@@ -106,7 +136,7 @@ _boards_without_subghz = {"waveshare_c6_1.47"}
 
 # NRF24 plugs into the LORA slot (T-Embed CC1101). Boards without the slot
 # don't have the required pin defines.
-_boards_without_nrf24 = {"waveshare_c6_1.9", "waveshare_c6_1.47"}
+_boards_without_nrf24 = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"}
 
 if _board in _boards_without_ir:
     APPS = [a for a in APPS if a not in ("infrared", "js_infrared")]

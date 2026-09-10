@@ -220,15 +220,23 @@ void* hid_ble_init(BadUsbHidConfig* hid_cfg) {
     ble_hid->profile = bt_profile_start(ble_hid->bt, ble_profile_hid_ext, &hid_cfg->ble);
     if(!ble_hid->profile) {
         FURI_LOG_E(TAG, "Failed to initialize BLE HID backend");
+        /* A failed profile change leaves the radio stack running without an
+         * active profile. Restore both the normal key store and serial profile
+         * so Bluetooth remains usable after this app reports the failure. */
+        bt_keys_storage_set_default_path(ble_hid->bt);
+        if(!bt_profile_restore_default(ble_hid->bt)) {
+            FURI_LOG_E(TAG, "Failed to restore default BLE profile");
+        }
         furi_record_close(RECORD_BT);
         free(ble_hid);
         return NULL;
     }
     FURI_LOG_I(TAG, "hid_ble_init profile started");
 
-    if(bt_is_enabled(ble_hid->bt)) {
-        furi_hal_bt_start_advertising();
-    }
+    // BadUSB explicitly selected the BLE transport, so advertise for the
+    // lifetime of this HID session even if the background Bluetooth toggle is
+    // off. The previous/default profile is restored during deinit.
+    furi_hal_bt_start_advertising();
 
     bt_set_status_changed_callback(ble_hid->bt, hid_ble_connection_status_callback, ble_hid);
     return ble_hid;

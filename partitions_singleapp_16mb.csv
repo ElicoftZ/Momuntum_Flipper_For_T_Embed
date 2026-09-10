@@ -1,0 +1,36 @@
+# Name,   Type, SubType,   Offset,    Size,      Flags
+# ---------------------------------------------------------------------------
+# Dual-boot layout for 16 MB flash boards (LilyGo T-Embed CC1101).
+#
+#   factory = this ESP32 Flipper Zero port
+#   ota_0   = replaceable T-Embed-compatible secondary firmware
+#   otadata = which of the two the bootloader starts (8 KB)
+#
+# otadata is the whole dual-boot mechanism: the ROM bootloader reads it before
+# touching either app. Empty or corrupt means "boot factory", so a wiped or
+# never-written otadata always lands back on this protected firmware. Dual Boot
+# 2.0 selects a validated secondary image only after its install succeeds.
+#
+# nvs keeps the exact offset/size it has always had (0x9000 / 0x6000) so its
+# contents are not shifted. Note the merged flash image still pads over it with
+# 0xFF, so a full merged flash clears settings and BT bonds either way.
+#
+# Bootloader occupies 0x0..0x8000 on the ESP32-S3, the partition table lives at
+# 0x8000 (CONFIG_PARTITION_TABLE_OFFSET); the first partition follows at 0x9000.
+# Partitions must be listed in ascending offset order, so otadata has to come
+# before the apps -- which is why factory starts at 0x20000 rather than 0x10000.
+# App partitions must be 64 KB aligned.
+#
+# Dual Recovery 2.0 gives the protected factory firmware 7 MiB and the
+# replaceable secondary firmware the full 8 MiB requested. Flash overhead plus
+# both app slots leaves 896 KiB for coredump/LittleFS (roughly the final 1 MiB).
+# The secondary firmware reads this shared table at runtime, so any companion
+# build must use the same offsets.
+# ---------------------------------------------------------------------------
+nvs,        data, nvs,       0x9000,    0x6000,
+phy_init,   data, phy,       0xf000,    0x1000,
+otadata,    data, ota,       0x10000,   0x2000,
+factory,    app,  factory,   0x20000,   0x700000,
+ota_0,      app,  ota_0,     0x720000,  0x800000,
+coredump,   data, coredump,  0xf20000,  0x20000,
+spiffs,     data, spiffs,    0xf40000,  0x0c0000,

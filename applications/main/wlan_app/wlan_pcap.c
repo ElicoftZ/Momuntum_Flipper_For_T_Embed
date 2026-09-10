@@ -19,7 +19,7 @@ File* wlan_pcap_open(Storage* storage, const char* path) {
         .version_minor = 4,
         .thiszone = 0,
         .sigfigs = 0,
-        .snaplen = 512,
+        .snaplen = WLAN_PCAP_SNAPLEN,
         .network = 105,
     };
     storage_file_write(file, &header, sizeof(header));

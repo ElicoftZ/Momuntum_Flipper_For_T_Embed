@@ -4,11 +4,23 @@
 #include <applications.h>
 #include <momentum/momentum.h>
 #include <toolbox/name_generator.h>
+#include <asset_installer.h>
 
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <esp_rom_uart.h>
 
 static const char* TAG = "Main";
+
+static bool service_stack_is_psram_safe(const char* appid) {
+    if(!appid) return false;
+
+    /* These event/render services never initiate flash or NVS writes from
+     * their own tasks. Their 16 KiB of stacks needlessly occupied the scarce
+     * internal heap needed by BLE, WiFi SoftAP, and foreground apps. */
+    return strcmp(appid, "input") == 0 || strcmp(appid, "gui") == 0 ||
+           strcmp(appid, "dialogs") == 0;
+}
 
 static void log_internal_registry(
     const char* label,
@@ -138,24 +150,39 @@ void app_main(void) {
     log_registry_snapshot();
 
     for(size_t i = 0; i < FLIPPER_SERVICES_COUNT; i++) {
-        FuriThread* thread = furi_thread_alloc_service(
-            FLIPPER_SERVICES[i].name,
-            FLIPPER_SERVICES[i].stack_size,
-            FLIPPER_SERVICES[i].app,
-            NULL);
+        FuriThread* thread;
+        if(service_stack_is_psram_safe(FLIPPER_SERVICES[i].appid)) {
+            thread = furi_thread_alloc_service_psram(
+                FLIPPER_SERVICES[i].name,
+                FLIPPER_SERVICES[i].stack_size,
+                FLIPPER_SERVICES[i].app,
+                NULL);
+        } else {
+            thread = furi_thread_alloc_service(
+                FLIPPER_SERVICES[i].name,
+                FLIPPER_SERVICES[i].stack_size,
+                FLIPPER_SERVICES[i].app,
+                NULL);
+        }
         furi_thread_set_appid(thread, FLIPPER_SERVICES[i].appid);
         furi_thread_start(thread);
 
         if(FLIPPER_SERVICES[i].appid &&
            strcmp(FLIPPER_SERVICES[i].appid, RECORD_STORAGE) == 0) {
+            // Release images carry the SD content this port adds in an `assets`
+            // partition. Install it before anything reads the card, so a fresh
+            // card is complete by the time settings and asset packs load.
+            // No-op on personal builds, which have no such partition.
+            asset_installer_run();
             // Storage publishes its record after GUI-backed SD status setup. Opening the
             // record here waits for that point and loads settings before desktop starts.
             momentum_settings_load();
             name_generator_set_prefix_after(momentum_settings.file_naming_prefix_after);
-            // Icons and fonts come from the SD card, so this has to wait for
-            // storage too. Runs before desktop starts, so nothing has drawn yet.
-            // The custom device name is handled by the namechanger service.
-            asset_packs_init();
+            /* Do not scan and decode a complete SD asset pack on the boot
+             * thread. On ESP32 this can take seconds and consumes PSRAM while
+             * the desktop is still black; the same pressure makes SD FAPs
+             * launch with an unreliable heap. The selected pack remains on
+             * the card and can be applied by a later settings action. */
         }
 
         furi_delay_ms(10);
@@ -165,7 +192,11 @@ void app_main(void) {
         FLIPPER_ON_SYSTEM_START[i]();
     }
 
-    ESP_LOGI(TAG, "All services started, entering background...");
+    ESP_LOGI(
+        TAG,
+        "All services started: internal free=%u largest=%u; entering background",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 
     // This blocks forever (thread scrubber)
     furi_background();

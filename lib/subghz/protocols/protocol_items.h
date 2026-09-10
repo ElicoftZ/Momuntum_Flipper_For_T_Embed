@@ -65,4 +65,9 @@
 #include "tpms_pmv107j.h"
 #include "allstar_firefly.h"
 #include "nord_ice.h"
+#include "hormann_bisecur.h"
+#include "pocsag.h"
+#include "x10.h"
+#include "holtek_ht6p20b.h"
+#include "agilize_key_pro.h"
 

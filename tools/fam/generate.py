@@ -368,8 +368,10 @@ def generate_ported_cmake(buildset: AppBuildset, project_dir: Path) -> str:
     ported_apps = [
         app
         for app in sorted_unique_apps(buildset.apps)
-        if "/applications/" in getattr(app, "_manifest_path", "").replace("\\", "/")
-        or "/applications_user/" in getattr(app, "_manifest_path", "").replace("\\", "/")
+        if (
+            "/applications/" in getattr(app, "_manifest_path", "").replace("\\", "/")
+            or "/applications_user/" in getattr(app, "_manifest_path", "").replace("\\", "/")
+        )
         and (app.apptype != FlipperAppType.STARTUP or bool(app.sources))
     ]
 

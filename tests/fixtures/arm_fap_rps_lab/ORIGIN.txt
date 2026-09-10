@@ -1,0 +1,12 @@
+Unmodified Flipper application catalog build, retrieved 2026-09-05.
+App: pixel_rps, Rock Paper Scissors 1.0, author Ugur
+Source: https://github.com/xantopren/rock-paper-scissors
+Catalog app ID: 6a704da8a0aa6169b9559b7e
+Catalog version ID: 6a704da8a0aa6169b9559b89
+Catalog build ID: 6a9aded1a0aa6169b95970cf
+SDK: 1.5.0-rc, target f7, API 88.2
+Download: https://catalog.flipperzero.one/api/v0/application/version/6a704da8a0aa6169b9559b89/build/compatible?target=f7&api=88.2
+Bytes: 5412
+SHA-256: 3caee16c0ed537bead531b44ddd98158d424d7d4732ae5aa2fc5e83ac0a651e4
+Its .text, .rodata, relocations and symbol tables match the pinned source-repo
+fixture in ../arm_fap_rps; its manifest and debug link differ. Source is MIT.

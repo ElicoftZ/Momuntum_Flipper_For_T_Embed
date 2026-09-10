@@ -22,8 +22,15 @@ static_assert(offsetof(FuriMutex, container) == 0);
 FuriMutex* furi_mutex_alloc(FuriMutexType type) {
     furi_check(!FURI_IS_IRQ_MODE());
 
-    /* FreeRTOS requires StaticSemaphore_t in internal RAM, not PSRAM */
-    FuriMutex* instance = heap_caps_calloc(1, sizeof(FuriMutex), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    FuriMutex* instance = heap_caps_calloc(
+        1, sizeof(FuriMutex), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S2)
+    if(!instance) {
+        /* Keep creating UI primitives when Wi-Fi/SD have fragmented DRAM. */
+        instance = heap_caps_calloc(1, sizeof(FuriMutex), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+#endif
+    furi_check(instance);
 
     SemaphoreHandle_t hMutex;
 

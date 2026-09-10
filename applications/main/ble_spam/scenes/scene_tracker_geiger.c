@@ -2,20 +2,23 @@
 #include "../ble_tracker_hal.h"
 #include "../views/tracker_geiger_view.h"
 
-#include <esp_log.h>
 #include <furi_hal_speaker.h>
 #include <string.h>
 
-#define TAG "BleTrackerGeiger"
 #define STALE_TIMEOUT_MS 4000
 #define BEEP_DURATION_MS 50
+#define TRACKER_IDLE_PERIOD_MS 1200U
+#define TRACKER_NEAR_RSSI (-84)
+#define TRACKER_CLOSE_RSSI (-45)
+#define TRACKER_MIN_VOLUME 0.35f
+#define TRACKER_GEIGER_EVENT_BEEP 0x400U
 
 static uint32_t period_for_rssi(int8_t rssi) {
     if(rssi > -45) return 80;
     if(rssi > -60) return 160;
     if(rssi > -72) return 300;
     if(rssi > -84) return 600;
-    return 1200;
+    return TRACKER_IDLE_PERIOD_MS;
 }
 
 static float pitch_for_rssi(int8_t rssi) {
@@ -25,29 +28,20 @@ static float pitch_for_rssi(int8_t rssi) {
     return (float)hz;
 }
 
-// Runs in FuriTimer thread. Reads cached state from app, emits beep.
+static float volume_for_rssi(int8_t rssi) {
+    if(rssi <= TRACKER_NEAR_RSSI) return 0.0f;
+    if(rssi >= TRACKER_CLOSE_RSSI) return 1.0f;
+
+    const float proximity =
+        (float)(rssi - TRACKER_NEAR_RSSI) / (float)(TRACKER_CLOSE_RSSI - TRACKER_NEAR_RSSI);
+    return TRACKER_MIN_VOLUME + proximity * (1.0f - TRACKER_MIN_VOLUME);
+}
+
+/* Furi timers run on the timer service thread, which cannot use speaker
+ * ownership acquired by the UI thread. Defer all audio work to the scene. */
 static void tracker_geiger_timer_callback(void* context) {
     BleSpamApp* app = context;
-
-    int8_t rssi = app->tracker_current_rssi;
-    bool stale = app->tracker_current_stale;
-
-    uint32_t period;
-    if(stale) {
-        period = 1200;
-    } else {
-        period = period_for_rssi(rssi);
-        if(furi_hal_speaker_is_mine()) {
-            furi_hal_speaker_start(pitch_for_rssi(rssi), 0.5f);
-            furi_delay_ms(BEEP_DURATION_MS);
-            furi_hal_speaker_stop();
-        }
-    }
-
-    if(period != app->tracker_current_period) {
-        app->tracker_current_period = period;
-        furi_timer_restart(app->tracker_geiger_timer, period);
-    }
+    view_dispatcher_send_custom_event(app->view_dispatcher, TRACKER_GEIGER_EVENT_BEEP);
 }
 
 void ble_spam_scene_tracker_geiger_on_enter(void* context) {
@@ -66,29 +60,42 @@ void ble_spam_scene_tracker_geiger_on_enter(void* context) {
 
     app->tracker_current_rssi = app->tracker_target.rssi;
     app->tracker_current_stale = false;
-    app->tracker_current_period = 1200;
+    app->tracker_current_period = period_for_rssi(app->tracker_current_rssi);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, BleSpamViewTrackerGeiger);
 
     // Re-arm scanner — picker scene stopped it on exit
     ble_tracker_hal_start_scan();
 
-    if(furi_hal_speaker_acquire(1000)) {
-        ESP_LOGI(TAG, "speaker acquired");
-    } else {
-        ESP_LOGW(TAG, "speaker acquire failed");
-    }
-
     app->tracker_geiger_timer =
         furi_timer_alloc(tracker_geiger_timer_callback, FuriTimerTypePeriodic, app);
-    furi_timer_start(app->tracker_geiger_timer, 1200);
+    furi_timer_start(app->tracker_geiger_timer, app->tracker_current_period);
 }
 
 bool ble_spam_scene_tracker_geiger_on_event(void* context, SceneManagerEvent event) {
     BleSpamApp* app = context;
     bool consumed = false;
 
-    if(event.type == SceneManagerEventTypeTick) {
+    if(event.type == SceneManagerEventTypeCustom &&
+        event.event == TRACKER_GEIGER_EVENT_BEEP) {
+        const int8_t rssi = app->tracker_current_rssi;
+        const bool stale = app->tracker_current_stale;
+        const bool near = !stale && (rssi > TRACKER_NEAR_RSSI);
+        const uint32_t period = stale ? TRACKER_IDLE_PERIOD_MS : period_for_rssi(rssi);
+
+        if(near && furi_hal_speaker_acquire(0)) {
+            furi_hal_speaker_start(pitch_for_rssi(rssi), volume_for_rssi(rssi));
+            furi_delay_ms(BEEP_DURATION_MS);
+            furi_hal_speaker_stop();
+            furi_hal_speaker_release();
+        }
+
+        if(period != app->tracker_current_period) {
+            app->tracker_current_period = period;
+            furi_timer_restart(app->tracker_geiger_timer, period);
+        }
+        consumed = true;
+    } else if(event.type == SceneManagerEventTypeTick) {
         uint16_t count;
         TrackerDevice* devices = ble_tracker_hal_get_devices(&count);
 
@@ -127,11 +134,6 @@ void ble_spam_scene_tracker_geiger_on_exit(void* context) {
         furi_timer_stop(app->tracker_geiger_timer);
         furi_timer_free(app->tracker_geiger_timer);
         app->tracker_geiger_timer = NULL;
-    }
-
-    if(furi_hal_speaker_is_mine()) {
-        furi_hal_speaker_stop();
-        furi_hal_speaker_release();
     }
 
     ble_tracker_hal_stop_scan();

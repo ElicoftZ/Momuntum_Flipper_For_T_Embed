@@ -135,6 +135,14 @@ static bool elf_read_string_from_offset(ELFFile* elf, off_t offset, FuriString* 
 }
 
 static bool elf_read_section_name(ELFFile* elf, off_t offset, FuriString* name) {
+    if(elf->section_name_cache) {
+        if((size_t)offset >= elf->section_name_cache_size) return false;
+        const char* start = elf->section_name_cache + offset;
+        const char* end = memchr(start, 0, elf->section_name_cache_size - offset);
+        if(!end) return false;
+        furi_string_set_strn(name, start, end - start);
+        return true;
+    }
     return elf_read_string_from_offset(elf, elf->section_table_strings + offset, name);
 }
 
@@ -143,6 +151,11 @@ static bool elf_read_symbol_name(ELFFile* elf, off_t offset, FuriString* name) {
 }
 
 static bool elf_read_section_header(ELFFile* elf, size_t section_idx, Elf32_Shdr* section_header) {
+    if(section_idx >= elf->sections_count) return false;
+    if(elf->section_cache) {
+        *section_header = elf->section_cache[section_idx];
+        return true;
+    }
     off_t offset = SECTION_OFFSET(elf, section_idx);
     return storage_file_seek(elf->fd, offset, true) &&
            storage_file_read(elf->fd, section_header, sizeof(Elf32_Shdr)) == sizeof(Elf32_Shdr);
@@ -453,10 +466,16 @@ static bool elf_relocate(ELFFile* elf, ELFSection* s) {
         size_t resolved_ok = 0;
         size_t resolved_fail = 0;
         FuriString* symbol_name = furi_string_alloc();
+        uint32_t last_yield = furi_get_tick();
+        const uint32_t time_slice = MAX(furi_ms_to_ticks(5), 1U);
 
         for(size_t relCount = 0; relCount < relEntries; relCount++) {
-            if(relCount % RESOLVER_THREAD_YIELD_STEP == 0) {
+            /* Keep the UI responsive without sleeping once per 30 cheap,
+             * cached relocations. Yield only after using a CPU time slice. */
+            if(relCount % RESOLVER_THREAD_YIELD_STEP == 0 &&
+               (uint32_t)(furi_get_tick() - last_yield) >= time_slice) {
                 furi_delay_tick(1);
+                last_yield = furi_get_tick();
             }
 
             Elf32_Rela* rela = &rela_table[relCount];
@@ -557,16 +576,15 @@ static ELFLoadSectionResult
      * Internal DRAM (0x3FC...) has a different instruction bus mapping
      * that our simple offset conversion doesn't handle. */
     section->data = heap_caps_aligned_alloc(
-        section_header->sh_addralign,
+        MAX(section_header->sh_addralign, sizeof(void*)),
         section_header->sh_size,
-        MALLOC_CAP_SPIRAM);
-    if(!section->data) {
-        /* Fallback to any available memory */
-        section->data = aligned_malloc(section_header->sh_size, section_header->sh_addralign);
-    }
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
     section->data = aligned_malloc(section_header->sh_size, section_header->sh_addralign);
 #endif
+    /* Internal DRAM is not executable through the PSRAM instruction alias.
+     * Also keep allocator/free pairs consistent on the failure path. */
+    if(!section->data) return ELFLoadSectionResultNoMemory;
     section->size = section_header->sh_size;
 
     if(section_header->sh_type == SHT_NOBITS) {
@@ -794,6 +812,19 @@ ELFFile* elf_file_alloc(Storage* storage, const ElfApiInterface* api_interface) 
     return elf;
 }
 
+static void elf_file_free_parse_caches(ELFFile* elf) {
+    free(elf->section_cache);
+    elf->section_cache = NULL;
+    free(elf->section_name_cache);
+    elf->section_name_cache = NULL;
+    elf->section_name_cache_size = 0;
+    free(elf->sym_cache);
+    elf->sym_cache = NULL;
+    free(elf->str_cache);
+    elf->str_cache = NULL;
+    elf->str_cache_size = 0;
+}
+
 void elf_file_free(ELFFile* elf) {
     if(elf->init_array_called) {
         FURI_LOG_W(TAG, "Init array was called, but fini array wasn't");
@@ -821,18 +852,17 @@ void elf_file_free(ELFFile* elf) {
         free(elf->debug_link_info.debug_link);
     }
 
-    if(elf->sym_cache) free(elf->sym_cache);
-    if(elf->str_cache) free(elf->str_cache);
+    elf_file_free_parse_caches(elf);
 
     elf_file_maybe_release_fd(elf);
     free(elf);
 }
 
-bool elf_file_open(ELFFile* elf, const char* path) {
+static bool elf_file_open_internal(ELFFile* elf, const char* path) {
     Elf32_Ehdr h;
     Elf32_Shdr sH;
 
-    FURI_LOG_I(TAG, "Opening ELF file: %s", path);
+    FURI_LOG_D(TAG, "Opening ELF file: %s", path);
 
     if(!storage_file_open(elf->fd, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
         FURI_LOG_E(TAG, "Failed to open file: %s", path);
@@ -850,7 +880,7 @@ bool elf_file_open(ELFFile* elf, const char* path) {
         return false;
     }
 
-    FURI_LOG_I(
+    FURI_LOG_D(
         TAG,
         "ELF header: magic=%02X%c%c%c class=%u data=%u type=%u machine=%u",
         h.e_ident[EI_MAG0],
@@ -862,7 +892,7 @@ bool elf_file_open(ELFFile* elf, const char* path) {
         h.e_type,
         h.e_machine);
 
-    FURI_LOG_I(
+    FURI_LOG_D(
         TAG,
         "ELF: entry=0x%lX shoff=0x%lX shnum=%u shstrndx=%u",
         (unsigned long)h.e_entry,
@@ -873,7 +903,8 @@ bool elf_file_open(ELFFile* elf, const char* path) {
     /* Validate ELF header */
     if(h.e_ident[EI_MAG0] != ELFMAG0 || h.e_ident[EI_MAG1] != ELFMAG1 ||
        h.e_ident[EI_MAG2] != ELFMAG2 || h.e_ident[EI_MAG3] != ELFMAG3) {
-        FURI_LOG_E(TAG, "Invalid ELF magic");
+        FURI_LOG_E(TAG, "Invalid ELF magic in %s: %02X %02X %02X %02X", path,
+            h.e_ident[0], h.e_ident[1], h.e_ident[2], h.e_ident[3]);
         return false;
     }
 
@@ -892,6 +923,13 @@ bool elf_file_open(ELFFile* elf, const char* path) {
         return false;
     }
 
+    if(h.e_shentsize != sizeof(Elf32_Shdr)) return false;
+    if(h.e_machine != EM_XTENSA) {
+        /* Only a recognized ARM ELF may enter the interpreter fallback. */
+        elf->is_arm = h.e_machine == EM_ARM;
+        return false;
+    }
+
     if(h.e_shoff == 0 || h.e_shnum == 0) {
         FURI_LOG_E(TAG, "No section headers (shoff=%lu, shnum=%u)", (unsigned long)h.e_shoff, h.e_shnum);
         return false;
@@ -902,24 +940,50 @@ bool elf_file_open(ELFFile* elf, const char* path) {
         return false;
     }
 
-    off_t shstr_offset = h.e_shoff + h.e_shstrndx * sizeof(sH);
-    FURI_LOG_I(TAG, "Reading section string table header at offset 0x%lX", (unsigned long)shstr_offset);
-
-    if(!storage_file_seek(elf->fd, shstr_offset, true) ||
-       storage_file_read(elf->fd, &sH, sizeof(Elf32_Shdr)) != sizeof(Elf32_Shdr)) {
-        FURI_LOG_E(TAG, "Failed to read section string table header");
+    /* Metadata browsing used to do several synchronous SD requests per
+     * section, for every visible FAP. Read the two small tables in bulk. */
+    const uint64_t file_size = storage_file_size(elf->fd);
+    const size_t table_size = h.e_shnum * sizeof(Elf32_Shdr);
+    if(h.e_shoff > file_size || table_size > file_size - h.e_shoff) return false;
+    elf->section_cache = elf_psram_malloc(table_size);
+    if(!elf->section_cache || !storage_file_seek(elf->fd, h.e_shoff, true) ||
+       storage_file_read(elf->fd, elf->section_cache, table_size) != table_size) {
         return false;
     }
+    sH = elf->section_cache[h.e_shstrndx];
+    if(sH.sh_type != SHT_STRTAB || sH.sh_size == 0 || sH.sh_offset > file_size ||
+       sH.sh_size > file_size - sH.sh_offset) return false;
+    elf->section_name_cache = elf_psram_malloc(sH.sh_size);
+    if(!elf->section_name_cache || !storage_file_seek(elf->fd, sH.sh_offset, true) ||
+       storage_file_read(elf->fd, elf->section_name_cache, sH.sh_size) != sH.sh_size) {
+        return false;
+    }
+    elf->section_name_cache_size = sH.sh_size;
 
-    FURI_LOG_I(TAG, "Section string table: offset=0x%lX size=%lu", (unsigned long)sH.sh_offset, (unsigned long)sH.sh_size);
+    FURI_LOG_D(TAG, "Section string table: offset=0x%lX size=%lu", (unsigned long)sH.sh_offset, (unsigned long)sH.sh_size);
 
     elf->entry = h.e_entry;
     elf->sections_count = h.e_shnum;
     elf->section_table = h.e_shoff;
     elf->section_table_strings = sH.sh_offset;
 
-    FURI_LOG_I(TAG, "ELF file opened OK: %u sections", (unsigned)elf->sections_count);
+    FURI_LOG_D(TAG, "ELF file opened OK: %u sections", (unsigned)elf->sections_count);
     return true;
+}
+
+bool elf_file_open(ELFFile* elf, const char* path) {
+    elf->is_arm = false;
+    bool loaded = elf_file_open_internal(elf, path);
+    if(!loaded) {
+        /* Release the first handle before the ARM reader opens the same path. */
+        elf_file_free_parse_caches(elf);
+        elf_file_maybe_release_fd(elf);
+    }
+    return loaded;
+}
+
+bool elf_file_is_arm(const ELFFile* elf) {
+    return elf->is_arm;
 }
 
 ElfLoadSectionTableResult elf_file_load_section_table(ELFFile* elf) {
@@ -979,7 +1043,7 @@ ElfProcessSectionResult elf_process_section(
     const char* name,
     ElfProcessSection* process_section,
     void* context) {
-    FURI_LOG_I(TAG, "Looking for section '%s' in %u sections", name, (unsigned)elf->sections_count);
+    FURI_LOG_D(TAG, "Looking for section '%s' in %u sections", name, (unsigned)elf->sections_count);
 
     ElfProcessSectionResult result = ElfProcessSectionResultNotFound;
     FuriString* section_name = furi_string_alloc();
@@ -996,7 +1060,7 @@ ElfProcessSectionResult elf_process_section(
         FURI_LOG_D(TAG, "  Section #%u: '%s'", (unsigned)section_idx, furi_string_get_cstr(section_name));
 
         if(furi_string_cmp(section_name, name) == 0) {
-            FURI_LOG_I(TAG, "Found section '%s' at idx %u, offset=0x%lX size=%lu",
+            FURI_LOG_D(TAG, "Found section '%s' at idx %u, offset=0x%lX size=%lu",
                 name, (unsigned)section_idx,
                 (unsigned long)section_header.sh_offset,
                 (unsigned long)section_header.sh_size);
@@ -1009,7 +1073,7 @@ ElfProcessSectionResult elf_process_section(
         FURI_LOG_W(TAG, "Section '%s' not found", name);
     } else {
         if(process_section(elf->fd, section_header.sh_offset, section_header.sh_size, context)) {
-            FURI_LOG_I(TAG, "Section '%s' processed OK", name);
+            FURI_LOG_D(TAG, "Section '%s' processed OK", name);
             result = ElfProcessSectionResultSuccess;
         } else {
             FURI_LOG_E(TAG, "Section '%s' processing failed", name);
@@ -1042,8 +1106,9 @@ ELFFileLoadStatus elf_file_load_sections(ELFFile* elf) {
     if(status == ELFFileLoadStatusSuccess) {
         ELFSection* text_section = elf_file_get_section(elf, ".text");
 
-        if(text_section == NULL) {
-            FURI_LOG_E(TAG, "No .text section found");
+        if(text_section == NULL || !text_section->data ||
+           (size_t)elf->entry >= text_section->size) {
+            FURI_LOG_E(TAG, "No valid entry point in .text section");
             status = ELFFileLoadStatusUnspecifiedError;
         } else {
             elf->entry += (uint32_t)text_section->data;
@@ -1066,6 +1131,7 @@ ELFFileLoadStatus elf_file_load_sections(ELFFile* elf) {
         FURI_LOG_I(TAG, "Total size of loaded sections: %zu", total_size);
     }
 
+    elf_file_free_parse_caches(elf);
     elf_file_maybe_release_fd(elf);
     return status;
 }

@@ -1,5 +1,6 @@
 #include "asset_packs.h"
 
+#include "png_icon.h"
 #include "settings.h"
 
 #include <assets_icons.h>
@@ -8,6 +9,8 @@
 #include <gui/icon_i.h>
 #include <m-list.h>
 #include <storage/storage.h>
+
+#include <esp_heap_caps.h>
 
 #define TAG "AssetPacks"
 
@@ -33,6 +36,11 @@ typedef struct {
 
 static AssetPacks* asset_packs = NULL;
 
+static void* asset_pack_alloc(size_t size) {
+    void* buffer = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return buffer ? buffer : malloc(size);
+}
+
 typedef struct {
     Icon icon;
     uint8_t* frames[];
@@ -45,9 +53,14 @@ typedef struct {
     int32_t frame_count;
 } FURI_PACKED AnimatedIconMetaFile;
 
-static void
-    load_icon_animated(const Icon* original, const char* name, FuriString* path, File* file) {
+static void load_icon_animated(
+    Storage* storage,
+    const Icon* original,
+    const char* name,
+    FuriString* path,
+    File* file) {
     const char* pack = momentum_settings.asset_pack;
+    bool loaded = false;
     furi_string_printf(path, ICONS_FMT "/meta", pack, name);
     if(storage_file_open(file, furi_string_get_cstr(path), FSAM_READ, FSOM_OPEN_EXISTING)) {
         AnimatedIconMetaFile meta;
@@ -55,15 +68,15 @@ static void
         storage_file_close(file);
 
         if(ok && meta.frame_count > 0) {
-            AnimatedIconSwap* swap =
-                malloc(sizeof(AnimatedIconSwap) + (sizeof(uint8_t*) * meta.frame_count));
+            AnimatedIconSwap* swap = asset_pack_alloc(
+                sizeof(AnimatedIconSwap) + (sizeof(uint8_t*) * meta.frame_count));
             int i = 0;
             for(; i < meta.frame_count; i++) {
                 furi_string_printf(path, ICONS_FMT "/frame_%02d.bm", pack, name, i);
                 if(storage_file_open(
                        file, furi_string_get_cstr(path), FSAM_READ, FSOM_OPEN_EXISTING)) {
                     uint64_t frame_size = storage_file_size(file);
-                    swap->frames[i] = malloc(frame_size);
+                    swap->frames[i] = asset_pack_alloc(frame_size);
                     ok = storage_file_read(file, swap->frames[i], frame_size) == frame_size;
                     storage_file_close(file);
                     if(ok) continue;
@@ -87,6 +100,7 @@ static void
                         .original = original,
                         .replaced = &swap->icon,
                     });
+                loaded = true;
             } else {
                 for(; i >= 0; i--) {
                     free(swap->frames[i]);
@@ -96,6 +110,73 @@ static void
         }
     }
     storage_file_close(file);
+    if(loaded) return;
+
+    /* Official asset-pack source trees contain PNG frames plus a text
+     * frame_rate file. Upstream's build normally compiles those into meta/.bm,
+     * but SD bundles for this port do not go through that build step. Decode
+     * the source form directly so selecting such a pack actually changes UI. */
+    uint8_t** frames = calloc(UINT8_MAX, sizeof(uint8_t*));
+    uint8_t frame_count = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+
+    while(frame_count < UINT8_MAX) {
+        furi_string_printf(path, ICONS_FMT "/frame_%02u.png", pack, name, frame_count);
+        if(storage_common_stat(storage, furi_string_get_cstr(path), NULL) != FSE_OK) break;
+
+        uint8_t* bitmap = NULL;
+        size_t bitmap_size = 0;
+        uint32_t frame_width = 0;
+        uint32_t frame_height = 0;
+        if(!momentum_png_icon_load(
+               file,
+               furi_string_get_cstr(path),
+               &bitmap,
+               &bitmap_size,
+               &frame_width,
+               &frame_height) ||
+           !bitmap_size || (frame_count && (frame_width != width || frame_height != height))) {
+            free(bitmap);
+            break;
+        }
+
+        width = frame_width;
+        height = frame_height;
+        frames[frame_count++] = bitmap;
+    }
+
+    uint32_t frame_rate = 0;
+    furi_string_printf(path, ICONS_FMT "/frame_rate", pack, name);
+    if(frame_count &&
+       storage_file_open(file, furi_string_get_cstr(path), FSAM_READ, FSOM_OPEN_EXISTING)) {
+        char value[16] = {0};
+        const size_t read = storage_file_read(file, value, sizeof(value) - 1U);
+        value[read] = '\0';
+        frame_rate = strtoul(value, NULL, 10);
+    }
+    storage_file_close(file);
+
+    if(frame_count && frame_rate > 0U && frame_rate <= UINT8_MAX) {
+        AnimatedIconSwap* swap =
+            asset_pack_alloc(sizeof(AnimatedIconSwap) + (sizeof(uint8_t*) * frame_count));
+        FURI_CONST_ASSIGN(swap->icon.width, width);
+        FURI_CONST_ASSIGN(swap->icon.height, height);
+        FURI_CONST_ASSIGN(swap->icon.frame_count, frame_count);
+        FURI_CONST_ASSIGN(swap->icon.frame_rate, frame_rate);
+        FURI_CONST_ASSIGN_PTR(swap->icon.frames, swap->frames);
+        memcpy(swap->frames, frames, sizeof(uint8_t*) * frame_count);
+
+        IconSwapList_push_back(
+            asset_packs->icons,
+            (IconSwap){
+                .original = original,
+                .replaced = &swap->icon,
+            });
+    } else {
+        for(uint8_t i = 0; i < frame_count; i++) free(frames[i]);
+    }
+    free(frames);
 }
 
 typedef struct {
@@ -111,13 +192,14 @@ typedef struct {
 
 static void
     load_icon_static(const Icon* original, const char* name, FuriString* path, File* file) {
+    bool loaded = false;
     furi_string_printf(path, ICONS_FMT ".bmx", momentum_settings.asset_pack, name);
     if(storage_file_open(file, furi_string_get_cstr(path), FSAM_READ, FSOM_OPEN_EXISTING)) {
         StaticIconBmxHeader header;
         uint64_t file_size = storage_file_size(file);
         if(file_size > sizeof(header)) {
             uint64_t frame_size = file_size - sizeof(header);
-            StaticIconSwap* swap = malloc(sizeof(StaticIconSwap) + frame_size);
+            StaticIconSwap* swap = asset_pack_alloc(sizeof(StaticIconSwap) + frame_size);
 
             if(storage_file_read(file, &header, sizeof(header)) == sizeof(header) &&
                storage_file_read(file, swap->frame, frame_size) == frame_size) {
@@ -134,12 +216,44 @@ static void
                         .original = original,
                         .replaced = &swap->icon,
                     });
+                loaded = true;
             } else {
                 free(swap);
             }
         }
     }
     storage_file_close(file);
+    if(loaded) return;
+
+    furi_string_printf(path, ICONS_FMT ".png", momentum_settings.asset_pack, name);
+    uint8_t* bitmap = NULL;
+    size_t bitmap_size = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    if(momentum_png_icon_load(
+           file,
+           furi_string_get_cstr(path),
+           &bitmap,
+           &bitmap_size,
+           &width,
+           &height)) {
+        StaticIconSwap* swap = asset_pack_alloc(sizeof(StaticIconSwap) + bitmap_size);
+        FURI_CONST_ASSIGN(swap->icon.width, width);
+        FURI_CONST_ASSIGN(swap->icon.height, height);
+        FURI_CONST_ASSIGN(swap->icon.frame_count, 1);
+        FURI_CONST_ASSIGN(swap->icon.frame_rate, 0);
+        FURI_CONST_ASSIGN_PTR(swap->icon.frames, swap->frames);
+        swap->frames[0] = swap->frame;
+        memcpy(swap->frame, bitmap, bitmap_size);
+
+        IconSwapList_push_back(
+            asset_packs->icons,
+            (IconSwap){
+                .original = original,
+                .replaced = &swap->icon,
+            });
+        free(bitmap);
+    }
 }
 
 static void free_icon(const Icon* icon) {
@@ -161,11 +275,11 @@ static void load_font(Font font, const char* name, FuriString* path, File* file)
     furi_string_printf(path, FONTS_FMT, momentum_settings.asset_pack, name);
     if(storage_file_open(file, furi_string_get_cstr(path), FSAM_READ, FSOM_OPEN_EXISTING)) {
         uint64_t size = storage_file_size(file);
-        uint8_t* swap = malloc(size);
+        uint8_t* swap = asset_pack_alloc(size);
 
         if(size > U8G2_FONT_DATA_STRUCT_SIZE && storage_file_read(file, swap, size) == size) {
             asset_packs->fonts[font] = swap;
-            CanvasFontParameters* params = malloc(sizeof(CanvasFontParameters));
+            CanvasFontParameters* params = asset_pack_alloc(sizeof(CanvasFontParameters));
             // See components/u8g2/u8g2_font.c
             params->leading_default = swap[10]; // max_char_height
             params->leading_min = params->leading_default - 2; // good enough
@@ -218,7 +332,7 @@ void asset_packs_init(void) {
            info.flags & FSF_DIRECTORY) {
             for(size_t i = 0; i < ICON_PATHS_COUNT; i++) {
                 if(ICON_PATHS[i].icon->frame_count > 1) {
-                    load_icon_animated(ICON_PATHS[i].icon, ICON_PATHS[i].path, p, f);
+                    load_icon_animated(storage, ICON_PATHS[i].icon, ICON_PATHS[i].path, p, f);
                 } else {
                     load_icon_static(ICON_PATHS[i].icon, ICON_PATHS[i].path, p, f);
                 }

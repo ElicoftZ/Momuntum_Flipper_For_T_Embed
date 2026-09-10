@@ -1,4 +1,5 @@
 #include "wlan_lan_view.h"
+#include <furi.h>
 #include "wlan_view_common.h"
 #include "wlan_view_events.h"
 #include <gui/canvas.h>
@@ -19,9 +20,34 @@ static uint8_t wlan_lan_view_visible_items(const WlanLanViewModel* model) {
 typedef struct {
     View* view;
     ViewDispatcher* view_dispatcher;
+    FuriTimer* scroll_timer;
 } WlanLanViewCtx;
 
 static WlanLanViewCtx s_ctx;
+
+// Advance the marquee offset of the selected item's label and redraw.
+static void wlan_lan_view_scroll_timer_cb(void* ctx) {
+    WlanLanViewCtx* c = ctx;
+    if(!c->view) return;
+    WlanLanViewModel* model = view_get_model(c->view);
+    model->scroll_counter++;
+    view_commit_model(c->view, true);
+}
+
+static void wlan_lan_view_enter_cb(void* ctx) {
+    WlanLanViewCtx* c = ctx;
+    if(c->view) {
+        WlanLanViewModel* model = view_get_model(c->view);
+        model->scroll_counter = 0;
+        view_commit_model(c->view, false);
+    }
+    if(c->scroll_timer) furi_timer_start(c->scroll_timer, 200);
+}
+
+static void wlan_lan_view_exit_cb(void* ctx) {
+    WlanLanViewCtx* c = ctx;
+    if(c->scroll_timer) furi_timer_stop(c->scroll_timer);
+}
 
 static void wlan_lan_view_draw_header(Canvas* canvas, const WlanLanViewModel* model) {
     const char* title = model->header_title[0] ? model->header_title : "LAN";
@@ -143,7 +169,29 @@ static void wlan_lan_view_draw_callback(Canvas* canvas, void* _model) {
             canvas_draw_str(canvas, 3, y + 9, it->label);
             canvas_set_font(canvas, FontSecondary);
         } else {
-            canvas_draw_str(canvas, 3, y + 9, it->label);
+            uint8_t label_x = 3;
+            if(is_device && it->leading_icon) {
+                uint16_t iw = icon_get_width(it->leading_icon);
+                uint16_t ih = icon_get_height(it->leading_icon);
+                canvas_draw_icon(
+                    canvas, 2, y + (LINE_HEIGHT - ih) / 2, it->leading_icon);
+                label_x = (uint8_t)(2 + iw + 3);
+            }
+            if(is_device && !it->label2[0]) {
+                // Single-column rows (SMB browser): truncate long labels, and
+                // marquee-scroll the selected one so the full name is readable.
+                uint8_t right = 120;
+                if(it->value_label[0]) {
+                    uint16_t vw = canvas_string_width(canvas, it->value_label);
+                    right = (uint8_t)(122 - 2 - vw - 3);
+                }
+                uint8_t w = (right > label_x) ? (uint8_t)(right - label_x) : 0;
+                size_t scroll = selected ? model->scroll_counter : 0;
+                elements_scrollable_text_line_str(
+                    canvas, label_x, y + 9, w, it->label, scroll, false, false);
+            } else {
+                canvas_draw_str(canvas, label_x, y + 9, it->label);
+            }
         }
 
         if(is_device) {
@@ -227,6 +275,7 @@ static bool wlan_lan_view_input_callback(InputEvent* event, void* context) {
             s--;
             if(model->items[s].kind != WlanLanItemKindSeparator) {
                 model->selected = s;
+                model->scroll_counter = 0;
                 if(model->selected < model->window_offset) {
                     model->window_offset = model->selected;
                 }
@@ -241,6 +290,7 @@ static bool wlan_lan_view_input_callback(InputEvent* event, void* context) {
             s++;
             if(model->items[s].kind != WlanLanItemKindSeparator) {
                 model->selected = s;
+                model->scroll_counter = 0;
                 uint8_t v = wlan_lan_view_visible_items(model);
                 if(model->selected >= model->window_offset + v) {
                     model->window_offset = (uint8_t)(model->selected - v + 1);
@@ -285,12 +335,21 @@ View* wlan_lan_view_alloc(void) {
 
     s_ctx.view = view;
     s_ctx.view_dispatcher = NULL;
+    s_ctx.scroll_timer =
+        furi_timer_alloc(wlan_lan_view_scroll_timer_cb, FuriTimerTypePeriodic, &s_ctx);
     view_set_context(view, &s_ctx);
+    view_set_enter_callback(view, wlan_lan_view_enter_cb);
+    view_set_exit_callback(view, wlan_lan_view_exit_cb);
 
     return view;
 }
 
 void wlan_lan_view_free(View* view) {
+    if(s_ctx.scroll_timer) {
+        furi_timer_stop(s_ctx.scroll_timer);
+        furi_timer_free(s_ctx.scroll_timer);
+        s_ctx.scroll_timer = NULL;
+    }
     s_ctx.view = NULL;
     s_ctx.view_dispatcher = NULL;
     view_free(view);
@@ -386,6 +445,7 @@ static void wlan_lan_view_add_device_internal(
     const char* col2,
     const char* value_label,
     const Icon* value_icon,
+    const Icon* leading_icon,
     bool is_default,
     bool col1_small,
     uint16_t user_id) {
@@ -401,6 +461,7 @@ static void wlan_lan_view_add_device_internal(
     it->is_default = is_default;
     it->col1_small = col1_small;
     it->value_icon = value_icon;
+    it->leading_icon = leading_icon;
     strncpy(it->label, col1 ? col1 : "", sizeof(it->label) - 1);
     strncpy(it->label2, col2 ? col2 : "", sizeof(it->label2) - 1);
     if(!value_icon && value_label) {
@@ -418,7 +479,7 @@ void wlan_lan_view_add_device(
     bool is_default,
     uint16_t user_id) {
     wlan_lan_view_add_device_internal(
-        view, col1, col2, value_label, value_icon, is_default, false, user_id);
+        view, col1, col2, value_label, value_icon, NULL, is_default, false, user_id);
 }
 
 void wlan_lan_view_add_device_compact(
@@ -430,7 +491,20 @@ void wlan_lan_view_add_device_compact(
     bool is_default,
     uint16_t user_id) {
     wlan_lan_view_add_device_internal(
-        view, col1, col2, value_label, value_icon, is_default, true, user_id);
+        view, col1, col2, value_label, value_icon, NULL, is_default, true, user_id);
+}
+
+void wlan_lan_view_add_device_icon(
+    View* view,
+    const char* col1,
+    const char* col2,
+    const char* value_label,
+    const Icon* value_icon,
+    const Icon* leading_icon,
+    bool is_default,
+    uint16_t user_id) {
+    wlan_lan_view_add_device_internal(
+        view, col1, col2, value_label, value_icon, leading_icon, is_default, false, user_id);
 }
 
 void wlan_lan_view_add_separator(View* view) {

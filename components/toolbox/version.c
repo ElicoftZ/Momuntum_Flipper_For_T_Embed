@@ -1,4 +1,5 @@
 #include "version.h"
+#include "fw_version.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,7 +23,7 @@ static Version firmware_version = {
     .build_date = __DATE__,
     .version = "1.4.3",
     .custom_name = NULL,
-    .firmware_origin = "ESP32 Port",
+    .firmware_origin = "Momentum T-Embed (Sor3nt 2.0.0)",
     .git_origin = "local",
     .target = 32,
     .dirty_flag = true,

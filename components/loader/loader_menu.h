@@ -12,10 +12,24 @@ extern "C" {
  * or FLIPPER_EXTERNAL_APPS, or an absolute path to a .fap or .js on the SD
  * card. A line naming neither is skipped, so a layout saved by a build with
  * more apps still loads here. A missing or unreadable file means the default
- * order. */
+ * order.
+ *
+ * A name prefixed with '-' is an app the user REMOVED from the menu. Recording
+ * those is what lets an app missing from the file entirely be recognised as
+ * new and appended, instead of being silently invisible -- which is how U2F
+ * went missing from a menu that had been customised before U2F existed.
+ *
+ * v1 files have no '-' lines, so reading one keeps its order and re-adds
+ * anything that had been removed. That one-time resurrection is the price of
+ * the old format carrying no record of what it knew about; saving afterwards
+ * writes v2 and removals stick again. Both versions are accepted on read. */
 #define MAINMENU_APPS_PATH       INT_PATH(".mainmenu_apps.txt")
 #define MAINMENU_APPS_HEADER_FMT "MenuAppList Version %lu"
-#define MAINMENU_APPS_VERSION    1UL
+#define MAINMENU_APPS_VERSION    2UL
+/* Oldest layout version this build still understands. */
+#define MAINMENU_APPS_VERSION_MIN 1UL
+/* Marks a known-but-removed entry. */
+#define MAINMENU_REMOVED_PREFIX  '-'
 
 /* Always present in the menu and not editable, so removing every other entry
  * cannot strand the user without a way back to the menu editor. Momentum pins
@@ -25,7 +39,10 @@ extern "C" {
 
 typedef struct LoaderMenu LoaderMenu;
 
-LoaderMenu* loader_menu_alloc(void (*closed_cb)(void*), void* context);
+LoaderMenu* loader_menu_alloc(
+    void (*closed_cb)(void*),
+    void* context,
+    bool start_in_settings);
 
 void loader_menu_free(LoaderMenu* loader_menu);
 

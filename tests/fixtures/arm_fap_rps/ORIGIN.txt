@@ -1,0 +1,3 @@
+https://github.com/xantopren/rock-paper-scissors
+Commit: fffa4ea5233e1c56c18952b357ab34f409a9cf7d
+Unmodified upstream dist/pixel_rps.fap; source included only for test reference.

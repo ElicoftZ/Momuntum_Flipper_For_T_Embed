@@ -1,8 +1,13 @@
 #include "bad_usb_app_i.h"
 #include <furi.h>
 #include <furi_hal.h>
+#include <storage/storage.h>
 #include <toolbox/path.h>
+#include <flipper_format/flipper_format.h>
 
+#define BAD_USB_SETTINGS_PATH           BAD_USB_APP_BASE_FOLDER "/.badusb.settings"
+#define BAD_USB_SETTINGS_FILE_TYPE      "Flipper BadUSB Settings File"
+#define BAD_USB_SETTINGS_VERSION        1
 #define BAD_USB_SETTINGS_DEFAULT_LAYOUT BAD_USB_APP_PATH_LAYOUT_FOLDER "/en-US.kl"
 
 static bool bad_usb_app_custom_event_callback(void* context, uint32_t event) {
@@ -26,9 +31,47 @@ static void bad_usb_app_tick_event_callback(void* context) {
 static void bad_usb_load_settings(BadUsbApp* app) {
     BadUsbHidConfig* hid_cfg = &app->user_hid_cfg;
 
-    furi_string_set(app->keyboard_layout, BAD_USB_SETTINGS_DEFAULT_LAYOUT);
-    app->interface =
-        bad_usb_hid_supports_usb() ? BadUsbHidInterfaceUsb : BadUsbHidInterfaceBle;
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    FlipperFormat* settings = flipper_format_file_alloc(storage);
+    FuriString* value = furi_string_alloc();
+    uint32_t version = 0;
+    uint32_t interface = 0;
+    bool loaded = false;
+
+    if(flipper_format_file_open_existing(settings, BAD_USB_SETTINGS_PATH)) {
+        do {
+            if(!flipper_format_read_header(settings, value, &version)) break;
+            if((strcmp(furi_string_get_cstr(value), BAD_USB_SETTINGS_FILE_TYPE) != 0) ||
+               (version != BAD_USB_SETTINGS_VERSION))
+                break;
+            if(!flipper_format_read_string(settings, "layout", value)) break;
+            if(!flipper_format_read_uint32(settings, "interface", &interface, 1)) break;
+            if(interface > BadUsbHidInterfaceBle) break;
+
+            furi_string_set(app->keyboard_layout, value);
+            app->interface = interface;
+            loaded = true;
+
+            FileInfo layout_info;
+            if((storage_common_stat(
+                    storage, furi_string_get_cstr(app->keyboard_layout), &layout_info) != FSE_OK) ||
+               (layout_info.size != 256)) {
+                furi_string_set(app->keyboard_layout, BAD_USB_SETTINGS_DEFAULT_LAYOUT);
+            }
+        } while(false);
+    }
+
+    flipper_format_free(settings);
+    furi_record_close(RECORD_STORAGE);
+    furi_string_free(value);
+
+    if(!loaded) {
+        furi_string_set(app->keyboard_layout, BAD_USB_SETTINGS_DEFAULT_LAYOUT);
+        app->interface =
+            bad_usb_hid_supports_usb() ? BadUsbHidInterfaceUsb : BadUsbHidInterfaceBle;
+    } else if((app->interface == BadUsbHidInterfaceUsb) && !bad_usb_hid_supports_usb()) {
+        app->interface = BadUsbHidInterfaceBle;
+    }
     hid_cfg->ble.name[0] = '\0';
     memset(hid_cfg->ble.mac, 0, sizeof(hid_cfg->ble.mac));
     hid_cfg->ble.bonding = true;
@@ -40,7 +83,22 @@ static void bad_usb_load_settings(BadUsbApp* app) {
 }
 
 static void bad_usb_save_settings(BadUsbApp* app) {
-    UNUSED(app);
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    FlipperFormat* settings = flipper_format_file_alloc(storage);
+
+    if(flipper_format_file_open_always(settings, BAD_USB_SETTINGS_PATH)) {
+        do {
+            if(!flipper_format_write_header_cstr(
+                   settings, BAD_USB_SETTINGS_FILE_TYPE, BAD_USB_SETTINGS_VERSION))
+                break;
+            if(!flipper_format_write_string(settings, "layout", app->keyboard_layout)) break;
+            const uint32_t interface = app->interface;
+            if(!flipper_format_write_uint32(settings, "interface", &interface, 1)) break;
+        } while(false);
+    }
+
+    flipper_format_free(settings);
+    furi_record_close(RECORD_STORAGE);
 }
 
 void bad_usb_set_interface(BadUsbApp* app, BadUsbHidInterface interface) {

@@ -13,6 +13,7 @@ typedef enum {
     Nrf24JamPresetBle, /* BLE data channels */
     Nrf24JamPresetBleAdv, /* BLE advertising ch 37/38/39 */
     Nrf24JamPresetBluetooth, /* BT classic FHSS 2..80 */
+    Nrf24JamPresetBluetooth2, /* BT classic — exact nRF24_jammer FAP replica (21-ch list, zero-dwell CW) */
     Nrf24JamPresetUsb, /* wireless USB dongles */
     Nrf24JamPresetVideo, /* video / FPV (upper ISM) */
     Nrf24JamPresetRc, /* RC controllers (low channels) */
@@ -59,6 +60,6 @@ uint8_t nrf24_jam_preset_default_strategy(Nrf24JamPreset preset);
 uint8_t nrf24_jam_preset_default_hop(Nrf24JamPreset preset);
 
 /* Live-tuning bounds / step for the dwell time. */
-#define NRF24_JAM_DWELL_MIN_US 100
+#define NRF24_JAM_DWELL_MIN_US 20
 #define NRF24_JAM_DWELL_MAX_US 5000
 #define NRF24_JAM_DWELL_STEP_US 100

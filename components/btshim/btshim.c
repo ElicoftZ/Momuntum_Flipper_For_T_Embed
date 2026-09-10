@@ -17,11 +17,10 @@
 #include <ble_profile/extra_profiles/serial_profile.h>
 #include <rpc/rpc.h>
 #include <esp_log.h>
-#include <esp_bt.h>
 #include <esp_heap_caps.h>
-#include <esp_bt_main.h>
-#include <esp_gap_ble_api.h>
+#include <ble_hid.h>
 #include <ble_serial.h>
+#include <nimble_glue.h>
 
 #define BT_RPC_EVENT_BUFF_SENT    (1UL << 0)
 #define BT_RPC_EVENT_DISCONNECTED (1UL << 1)
@@ -141,7 +140,8 @@ static void bt_storage_callback(const void* message, void* context) {
 /* ---- Allocation ---- */
 
 static Bt* bt_alloc(void) {
-    Bt* bt = malloc(sizeof(Bt));
+    Bt* bt = calloc(1, sizeof(Bt));
+    furi_check(bt);
 
     bt->max_packet_size = BT_DEFAULT_MTU;
     bt->current_profile = NULL;
@@ -449,11 +449,20 @@ static void bt_statusbar_update(Bt* bt) {
 
 /* ---- Profile management ---- */
 
+static void bt_handle_stop_stack(Bt* bt);
+
 static void bt_change_profile(Bt* bt, BtMessage* message) {
     if(furi_hal_bt_is_gatt_gap_supported()) {
         bt_settings_load(&bt->bt_settings);
 
         bt_keys_storage_load(bt->keys_storage);
+
+        /* ESP-IDF has one process-wide NimBLE host. Fully cycle it for every
+         * profile change so the new profile starts with a clean GATT database,
+         * callback registry, and advertising state. */
+        if(bt->current_profile || furi_hal_bt_is_active()) {
+            bt_handle_stop_stack(bt);
+        }
 
         bt->current_profile = furi_hal_bt_change_app(
             message->data.profile.template,
@@ -562,8 +571,13 @@ static void bt_handle_reload_keys_settings(Bt* bt) {
 static void bt_handle_stop_stack(Bt* bt) {
     FURI_LOG_I(TAG, "Stopping BLE stack...");
 
-    if(bt->status == BtStatusOff) {
+    if(!nimble_glue_is_initialized()) {
         FURI_LOG_I(TAG, "BLE stack already off");
+        ble_serial_reset_initialized();
+        ble_hid_reset_initialized();
+        furi_hal_bt_reinit();
+        bt->current_profile = NULL;
+        bt->status = BtStatusOff;
         return;
     }
 
@@ -573,26 +587,13 @@ static void bt_handle_stop_stack(Bt* bt) {
     if(bt->current_profile) {
         bt->current_profile->config->stop(bt->current_profile);
         bt->current_profile = NULL;
+        /* NimBLE profile teardown stops and deinitializes its host task. */
     }
 
-    // Only deinit if stack was actually initialized
-    if(esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) {
-        esp_bluedroid_disable();
-        furi_delay_ms(50);
-        esp_bluedroid_deinit();
-        furi_delay_ms(50);
-    }
-
-    if(esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_disable();
-        furi_delay_ms(50);
-    }
-    if(esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_deinit();
-        furi_delay_ms(50);
-    }
+    nimble_glue_stop();
 
     ble_serial_reset_initialized();
+    ble_hid_reset_initialized();
     furi_hal_bt_reinit(); // clear stale profile pointer in HAL
 
     bt->status = BtStatusOff;
@@ -601,6 +602,17 @@ static void bt_handle_stop_stack(Bt* bt) {
 
 static void bt_handle_start_stack(Bt* bt) {
     FURI_LOG_I(TAG, "Starting BLE stack...");
+
+    /* Idempotent: läuft der Stack bereits (z.B. normaler Boot mit BT an),
+     * nicht doppelt initialisieren — nur Advertising gemäß Settings (re)aktivieren.
+     * Nötig, weil im WiFi-„sticky"-Modell das Lock-Menü „Enable Bluetooth" diesen
+     * Pfad IMMER aufruft, um einen zuvor durch WiFi abgebauten Stack real wieder
+     * hochzufahren. */
+    if(nimble_glue_is_synced() && bt->current_profile) {
+        FURI_LOG_I(TAG, "BLE stack already running");
+        if(bt->bt_settings.enabled) furi_hal_bt_start_advertising();
+        return;
+    }
 
     if(furi_hal_bt_start_radio_stack()) {
         bt_start_application(bt);
@@ -746,6 +758,31 @@ void bt_set_settings(Bt* bt, const BtSettings* settings) {
     api_lock_wait_unlock_and_free(message.lock);
 }
 
+bool bt_set_enabled(Bt* bt, bool enabled) {
+    furi_assert(bt);
+
+    BtSettings settings;
+    bt_get_settings(bt, &settings);
+
+    if(enabled) {
+        /* Starting while the saved preference is still off builds the profile
+         * without advertising. Flip/persist it only after startup succeeded. */
+        bt_start_stack(bt);
+        if(!furi_hal_bt_is_active()) return false;
+
+        settings.enabled = true;
+        bt_set_settings(bt, &settings);
+        return true;
+    }
+
+    /* Stop advertising first, persist the boot preference, then return all
+     * NimBLE/controller allocations to the internal heap. */
+    settings.enabled = false;
+    bt_set_settings(bt, &settings);
+    bt_stop_stack(bt);
+    return !furi_hal_bt_is_active() && !nimble_glue_is_initialized();
+}
+
 void bt_stop_stack(Bt* bt) {
     furi_assert(bt);
     BtMessage message = {
@@ -768,18 +805,48 @@ void bt_start_stack(Bt* bt) {
     api_lock_wait_unlock_and_free(message.lock);
 }
 
+bool bt_refresh_device_name(Bt* bt) {
+    furi_assert(bt);
+    bool result = false;
+    BtMessage message = {
+        .lock = api_lock_alloc_locked(),
+        .type = BtMessageTypeRefreshDeviceName,
+        .result = &result,
+    };
+    furi_check(
+        furi_message_queue_put(bt->message_queue, &message, FuriWaitForever) == FuriStatusOk);
+    api_lock_wait_unlock_and_free(message.lock);
+    return result;
+}
+
 /* ---- Service main loop ---- */
 
 int32_t bt_srv(void* p) {
     UNUSED(p);
     Bt* bt = bt_alloc();
 
-    /* Load settings FIRST to know if BLE should be started */
+    /* RECORD_BT FRÜH anlegen (mit Default-Settings, Stack noch nicht gestartet):
+     * der namechanger-Startup-Hook wartet nur ~1.25s auf RECORD_BT — der
+     * SD-Wait unten würde die Record-Erzeugung sonst zu lange verzögern. */
+    furi_record_create(RECORD_BT, bt);
+
+    /* Auf den SD-Mount warten, BEVOR wir die Settings laden: dieser Service
+     * startet vor StorageSrv (order 45 vs 120), und Runtime-Saves landen in der
+     * SD-Datei (/ext). Läden wir vor dem Mount, bekämen wir nur die stale
+     * NVS-Kopie → BT würde beim Boot ggf. kurz anspringen und dann von WiFi
+     * wieder abgeschaltet. Bounded warten (~5s), dann aus der SD-Datei laden.
+     * Symmetrisch zu wifi_srv, siehe project_global_wifi_toggle. */
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    for(int i = 0; i < 50 && storage_sd_status(storage) != FSE_OK; i++) {
+        furi_delay_ms(100);
+    }
+    furi_record_close(RECORD_STORAGE);
+
     bt_settings_load(&bt->bt_settings);
 
     if(!furi_hal_bt_is_available()) {
         /* Board without BLE radio (e.g. Waveshare C6-1.47): force-disable so the
-         * radio stack (BT controller + Bluedroid, ~100KB heap) is never started,
+         * radio stack (BT controller + NimBLE host) is never started,
          * leaving that RAM for WiFi. The service still runs so RECORD_BT exists
          * and BLE-dependent code degrades gracefully instead of crashing. */
         bt->bt_settings.enabled = false;
@@ -796,8 +863,6 @@ int32_t bt_srv(void* p) {
     } else {
         FURI_LOG_I(TAG, "BT disabled in settings, skipping BLE stack init");
     }
-
-    furi_record_create(RECORD_BT, bt);
 
     FURI_LOG_I(TAG, "BtSrv ready (enabled=%d)", bt->bt_settings.enabled);
 
@@ -846,6 +911,12 @@ int32_t bt_srv(void* p) {
             bt_handle_stop_stack(bt);
         } else if(message.type == BtMessageTypeStartStack) {
             bt_handle_start_stack(bt);
+        } else if(message.type == BtMessageTypeRefreshDeviceName) {
+            bool refreshed = false;
+            if(furi_hal_bt_check_profile_type(bt->current_profile, ble_profile_serial)) {
+                refreshed = ble_profile_serial_refresh_name(bt->current_profile);
+            }
+            if(message.result) *message.result = refreshed;
         }
 
         if(message.lock) api_lock_unlock(message.lock);

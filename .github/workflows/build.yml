@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -55,7 +55,7 @@ jobs:
             libusb-1.0-0 libglib2.0-dev
 
       - name: Cache ESP-IDF
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: idf-cache
         with:
           path: ~/esp/esp-idf
@@ -70,7 +70,7 @@ jobs:
             https://github.com/espressif/esp-idf.git ~/esp/esp-idf
 
       - name: Cache ESP-IDF tools
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: idf-tools-cache
         with:
           path: ~/.espressif
@@ -90,8 +90,7 @@ jobs:
       - name: Build
         run: |
           source ~/esp/esp-idf/export.sh
-          chmod +x ./build.sh
-          ./build.sh --board ${{ matrix.board.script_key }} --build-only
+          bash ./build.sh --board ${{ matrix.board.script_key }} --build-only
 
       - name: Package artifacts
         run: |
@@ -134,7 +133,7 @@ jobs:
           ls -lh "$STAGE" "$STAGE/bootloader" "$STAGE/partition_table"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.board.artifact_name }}
           # Upload from the flat staging dir so the zip has no extra path prefix.

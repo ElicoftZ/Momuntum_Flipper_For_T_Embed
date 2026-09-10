@@ -6,7 +6,7 @@
  *   CW  (clockwise)       -> InputKeyDown  (scroll down / next)
  *   CCW (counter-clockwise) -> InputKeyUp  (scroll up / prev)
  *
- * Encoder button held + rotation:
+ * Encoder button held + rotation (only after INPUT_ENCODER_MODIFIER_GRACE_MS):
  *   CW  -> InputKeyRight  (tab switch / value adjust)
  *   CCW -> InputKeyLeft   (tab switch / value adjust)
  *
@@ -32,6 +32,25 @@
 #define INPUT_LONG_PRESS_MS         500U
 #define INPUT_REPEAT_MS             200U
 
+/* Pushing the encoder shaft mechanically jostles the A/B contacts, which the
+ * quadrature decoder happily reads as a real detent. That would emit Left/Right
+ * and veto the Ok on release (see encoder_button_poll), so a normal click got
+ * swallowed unless it was very short. Rotation therefore only counts as the
+ * Left/Right modifier once the press has been held this long. */
+#define INPUT_ENCODER_MODIFIER_GRACE_MS 80U
+
+/* The shaft is both the knob and the Ok button, so turning it tends to nudge
+ * the switch. A press that lands inside an ongoing turn is such a nudge, not a
+ * deliberate click, and must not emit Ok Short (in Doom that fires the weapon).
+ * Traced: deliberate clicks in the OS follow the last detent by 285 ms or more,
+ * the accidental nudges while turning by ~30-45 ms. */
+#define INPUT_ROTATION_GUARD_MS 150U
+
+/* Leftover quarter-steps from the previous turn stay in the accumulator and let
+ * a single contact wobble complete a detent. Drop them once the encoder has
+ * been still for a while. */
+#define INPUT_ENCODER_ACCUM_DECAY_MS 200U
+
 /* Encoder state — proper quadrature decoder with accumulator.
  * Mechanical encoders bounce; a simple "A changed, check B" approach
  * produces false reverse events. The state-table approach tracks all
@@ -40,6 +59,8 @@
 typedef struct {
     uint8_t ab_state;    // last AB reading (2 bits)
     int8_t  accum;       // accumulated steps (positive = CW)
+    uint32_t last_step_at;   // tick of the last quarter-step (drives accum decay)
+    uint32_t last_detent_at; // tick of the last real detent (drives the rotation guard)
 } EncoderState;
 
 /* Quadrature state transition table: indexed by (old_AB << 2 | new_AB)
@@ -68,6 +89,7 @@ typedef struct {
     bool long_press_sent;
     uint32_t last_repeat_at;
     bool had_encoder_rotation; /* encoder rotated while this button was held */
+    bool rotation_guarded;     /* press landed inside a turn — emit nothing on release */
 } ButtonState;
 
 static EncoderState encoder;
@@ -121,6 +143,7 @@ static void button_init_state(ButtonState* btn, gpio_num_t gpio, bool inverted) 
     btn->long_press_sent = false;
     btn->last_repeat_at = 0;
     btn->had_encoder_rotation = false;
+    btn->rotation_guarded = false;
 }
 
 static void button_poll(
@@ -226,20 +249,29 @@ static void encoder_button_poll(
     btn->debounced_pressed = btn->raw_pressed;
 
     if(btn->debounced_pressed) {
-        /* Press — just record, wait for release or rotation */
+        /* Press — just record, wait for release or rotation. A press that lands
+         * inside an ongoing turn is the shaft being nudged (see
+         * INPUT_ROTATION_GUARD_MS), so arm the guard and stay silent unless the
+         * user actually holds on into the long press. */
+        btn->rotation_guarded =
+            (now - encoder.last_detent_at) < furi_ms_to_ticks(INPUT_ROTATION_GUARD_MS);
         btn->press_started_at = now;
         btn->had_encoder_rotation = false;
         btn->long_press_sent = false;
     } else {
-        if(btn->long_press_sent) {
-            /* End of a long press — emit Release so the consumer can
-             * stop whatever action was tied to the held key. */
+        /* Release. Anything that already emitted an Ok Press — the long press,
+         * or a rotation modifier (see encoder_poll) — must be closed with a
+         * Release so consumers (e.g. the archive browser's ok_held flag) don't
+         * get stuck thinking Ok is still held. A guarded press emitted nothing,
+         * so it stays silent. */
+        if(btn->long_press_sent || btn->had_encoder_rotation) {
             input_publish(pubsub, InputKeyOk, InputTypeRelease, ++(*sequence_counter));
-        } else if(!btn->had_encoder_rotation) {
+        } else if(!btn->rotation_guarded) {
             /* Short press without rotation → emit Ok short */
             input_emit_short(pubsub, InputKeyOk, ++(*sequence_counter));
         }
         btn->had_encoder_rotation = false;
+        btn->rotation_guarded = false;
     }
 }
 
@@ -253,9 +285,68 @@ static void encoder_init(void) {
     bool b = gpio_get_level((gpio_num_t)BOARD_PIN_ENCODER_B);
     encoder.ab_state = (a << 1) | b;
     encoder.accum = 0;
+    encoder.last_step_at = 0;
+    encoder.last_detent_at = 0;
 }
 
-static void encoder_poll(FuriPubSub* pubsub, uint32_t* sequence_counter) {
+/* How a completed detent should be interpreted, based on the encoder button. */
+typedef enum {
+    EncoderRotationScroll,   /* Up/Down — button released, or long press latched */
+    EncoderRotationModifier, /* Left/Right — button settled and held */
+    EncoderRotationJostle,   /* discard — contacts moved by the press itself */
+} EncoderRotationMode;
+
+static EncoderRotationMode encoder_rotation_mode(uint32_t now) {
+    /* Button fully released: plain scrolling. Same once the long press has
+     * latched — Doom walks forward on Ok Long and still wants Up/Down. */
+    if(!encoder_btn.raw_pressed && !encoder_btn.debounced_pressed) return EncoderRotationScroll;
+    if(encoder_btn.long_press_sent) return EncoderRotationScroll;
+
+    /* Press or release still debouncing — the shaft is on its way. */
+    if(encoder_btn.raw_pressed != encoder_btn.debounced_pressed) return EncoderRotationJostle;
+
+    /* Held, but too fresh to be a deliberate turn. */
+    if((now - encoder_btn.press_started_at) < furi_ms_to_ticks(INPUT_ENCODER_MODIFIER_GRACE_MS)) {
+        return EncoderRotationJostle;
+    }
+
+    return EncoderRotationModifier;
+}
+
+static void
+    encoder_emit_rotation(FuriPubSub* pubsub, bool cw, uint32_t now, uint32_t* sequence_counter) {
+    EncoderRotationMode mode = encoder_rotation_mode(now);
+
+    /* Only real turns arm the rotation guard — a jostle is the press itself. */
+    if(mode != EncoderRotationJostle) {
+        encoder.last_detent_at = now;
+    }
+
+    switch(mode) {
+    case EncoderRotationModifier:
+        /* Rotating while the encoder button is held: emit an Ok Press first so
+         * consumers can detect "OK held" (used by the archive browser to block
+         * tab switching while opening the item menu), then the direction event. */
+        input_publish(pubsub, InputKeyOk, InputTypePress, ++(*sequence_counter));
+        input_emit_short(pubsub, cw ? InputKeyRight : InputKeyLeft, ++(*sequence_counter));
+        encoder_btn.had_encoder_rotation = true;
+        break;
+    case EncoderRotationScroll:
+        input_emit_short(pubsub, cw ? InputKeyDown : InputKeyUp, ++(*sequence_counter));
+        break;
+    case EncoderRotationJostle:
+        break;
+    }
+}
+
+static void encoder_poll(FuriPubSub* pubsub, uint32_t now, uint32_t* sequence_counter) {
+    /* Drop leftover quarter-steps once the encoder has been still — otherwise a
+     * half-finished detent from the last turn lets one wobble complete it. */
+    if(encoder.accum != 0 &&
+       (now - encoder.last_step_at) >= furi_ms_to_ticks(INPUT_ENCODER_ACCUM_DECAY_MS)) {
+        encoder.accum = 0;
+    }
+
     bool a = gpio_get_level((gpio_num_t)BOARD_PIN_ENCODER_A);
     bool b = gpio_get_level((gpio_num_t)BOARD_PIN_ENCODER_B);
     uint8_t new_ab = (a << 1) | b;
@@ -269,26 +360,15 @@ static void encoder_poll(FuriPubSub* pubsub, uint32_t* sequence_counter) {
     if(delta == 0) return; // invalid transition (bounce) — ignore
 
     encoder.accum += delta;
+    encoder.last_step_at = now;
 
     /* Emit event only after a full detent */
     if(encoder.accum >= ENCODER_STEPS_PER_DETENT) {
         encoder.accum = 0;
-        bool cw = true;
-        if(encoder_btn.debounced_pressed && !encoder_btn.long_press_sent) {
-            input_emit_short(pubsub, InputKeyRight, ++(*sequence_counter));
-            encoder_btn.had_encoder_rotation = true;
-        } else {
-            input_emit_short(pubsub, cw ? InputKeyDown : InputKeyUp, ++(*sequence_counter));
-        }
+        encoder_emit_rotation(pubsub, true, now, sequence_counter);
     } else if(encoder.accum <= -ENCODER_STEPS_PER_DETENT) {
         encoder.accum = 0;
-        bool cw = false;
-        if(encoder_btn.debounced_pressed && !encoder_btn.long_press_sent) {
-            input_emit_short(pubsub, InputKeyLeft, ++(*sequence_counter));
-            encoder_btn.had_encoder_rotation = true;
-        } else {
-            input_emit_short(pubsub, cw ? InputKeyDown : InputKeyUp, ++(*sequence_counter));
-        }
+        encoder_emit_rotation(pubsub, false, now, sequence_counter);
     }
 }
 
@@ -315,7 +395,7 @@ void target_input_poll(FuriPubSub* pubsub, uint32_t* sequence_counter) {
     uint32_t repeat_ticks = furi_ms_to_ticks(INPUT_REPEAT_MS);
 
     /* Rotary encoder (must poll before buttons to detect held+rotate) */
-    encoder_poll(pubsub, sequence_counter);
+    encoder_poll(pubsub, now, sequence_counter);
 
     /* Encoder button: short=Ok (if no rotation), long-hold emits Ok Long+Release */
     encoder_button_poll(

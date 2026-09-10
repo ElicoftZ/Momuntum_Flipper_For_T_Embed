@@ -2,7 +2,7 @@
  * @file bt_keys_storage.c
  * BLE key storage — ESP32 stub
  *
- * ESP32 Bluedroid handles bonding transparently via NVS.
+ * ESP32 NimBLE handles bonding transparently via NVS.
  * This stub keeps the bt_service API surface intact.
  */
 
@@ -60,7 +60,7 @@ const GapRootSecurityKeys* bt_keys_storage_get_root_keys(BtKeysStorage* instance
 
 bool bt_keys_storage_load(BtKeysStorage* instance) {
     (void)instance;
-    /* No-op: Bluedroid loads bonding data from NVS automatically */
+    /* No-op: NimBLE loads bonding data from NVS automatically */
     return true;
 }
 
@@ -68,7 +68,7 @@ bool bt_keys_storage_update(BtKeysStorage* instance, uint8_t* start_addr, uint32
     (void)instance;
     (void)start_addr;
     (void)size;
-    /* No-op: Bluedroid saves bonding data to NVS automatically */
+    /* No-op: NimBLE saves bonding data to NVS automatically */
     return true;
 }
 

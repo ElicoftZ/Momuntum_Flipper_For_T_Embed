@@ -25,7 +25,15 @@ FuriSemaphore* furi_semaphore_alloc(uint32_t max_count, uint32_t initial_count) 
     furi_check(!FURI_IS_IRQ_MODE());
     furi_check((max_count > 0U) && (initial_count <= max_count));
 
-    FuriSemaphore* instance = heap_caps_calloc(1, sizeof(FuriSemaphore), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    FuriSemaphore* instance = heap_caps_calloc(
+        1, sizeof(FuriSemaphore), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S2)
+    if(!instance) {
+        instance =
+            heap_caps_calloc(1, sizeof(FuriSemaphore), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+#endif
+    furi_check(instance);
 
     SemaphoreHandle_t hSemaphore;
 

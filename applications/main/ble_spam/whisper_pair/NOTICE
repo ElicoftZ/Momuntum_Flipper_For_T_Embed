@@ -1,0 +1,33 @@
+WhisperPair BLE port for the T-Embed Flipper UI
+
+Source: https://github.com/zalexdev/wpair-app
+Author: zalexdev (@ZalexDev)
+Revision: 7f5930ce3be645d5bc2e27df4c6e09f8fca49117
+License: Apache License 2.0 (included as LICENSE)
+
+Adapted source files:
+app/src/main/java/com/zalexdev/whisperpair/Scanner.kt
+app/src/main/java/com/zalexdev/whisperpair/VulnerabilityTester.kt
+
+Modified for this port:
+- Kotlin/Android callbacks replaced with C, NimBLE and a Flipper GUI scene.
+- Receive-only, eight-second inventory; Fast Pair service-data filter or all BLE.
+- Scanner.kt payload heuristics preserved, including its pairing-mode guard.
+  Advertisements are untrusted, potentially stale, and cannot establish patch status.
+- VulnerabilityTester.buildTestRequest ported with ESP hardware random salt.
+- Single selected-device BLE connection and characteristic write, then disconnect.
+- Accepted writes / raw NimBLE error status replace upstream VULNERABLE / PATCHED
+  verdicts. An ATT acknowledgement does not prove protocol acceptance; an error
+  does not prove the device is patched. All vulnerability results are inconclusive.
+- No Bluetooth Classic bonding, account-key persistence, HFP, or remote audio.
+  ESP32-S3 does not support Bluetooth Classic. Its local microphone is unrelated.
+- Bounded discovery waits and cancellable worker; Bluetooth restored on exit.
+
+The UI shows the selected address before a test. Test only accessories you own or
+have permission to assess, with the accessory out of pairing mode. The test writes
+a pairing request and may change the accessory's pairing state or interrupt audio.
+The app does not complete a Classic bond. Check/reconnect the accessory afterward.
+
+Hardware verification remains required. The upstream scanner's model-ID and
+account-filter interpretation is heuristic. This is a partial port of its scanner
+and BLE tester, not a full Android WPair feature port or definitive CVE validator.

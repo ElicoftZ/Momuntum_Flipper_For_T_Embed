@@ -49,6 +49,16 @@ DolphinStats dolphin_stats(Dolphin* dolphin);
  */
 void dolphin_flush(Dolphin* dolphin);
 
+/** Reload persisted Dolphin state into the running service.
+ * Used after a conflict-aware restore so choosing "reboot later" cannot let
+ * stale in-memory XP overwrite the merged value. Thread safe, blocking. */
+void dolphin_reload_state(Dolphin* dolphin);
+
+/** Persist Dolphin state immediately before deep sleep. Elapsed inactivity is
+ * retained by the internal RTC slow counter, not by the calendar clock.
+ * Thread safe, blocking. */
+void dolphin_prepare_for_sleep(Dolphin* dolphin);
+
 void dolphin_upgrade_level(Dolphin* dolphin);
 
 FuriPubSub* dolphin_get_pubsub(Dolphin* dolphin);

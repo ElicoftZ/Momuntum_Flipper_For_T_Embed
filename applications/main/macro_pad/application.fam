@@ -1,0 +1,10 @@
+App(
+    appid="macro_pad",
+    name="Macro Pad",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="macro_pad_app",
+    stack_size=8 * 1024,
+    icon="A_MacroPad_14",
+    order=68,
+    fap_libs=["assets", "ble_profile"],
+)

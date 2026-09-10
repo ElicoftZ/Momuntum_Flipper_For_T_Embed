@@ -72,11 +72,17 @@ void subghz_block_generic_get_preset_name(const char* preset_name, FuriString* p
     furi_string_set(preset_str, preset_name_temp);
 }
 
-SubGhzProtocolStatus subghz_block_generic_serialize(
-    SubGhzBlockGeneric* instance,
+/* The half of serialize that does not touch SubGhzBlockGeneric: header,
+ * frequency, preset and protocol name.
+ *
+ * Split out because POCSAG carries a FuriString message rather than a 64-bit
+ * key, so it has its own PCSGBlockGeneric and cannot call the function below --
+ * but the file header it writes must stay byte-identical. Upstream Momentum
+ * splits it the same way, for the same reason. */
+SubGhzProtocolStatus subghz_block_generic_serialize_common(
+    const char* protocol_name,
     FlipperFormat* flipper_format,
     SubGhzRadioPreset* preset) {
-    furi_check(instance);
     SubGhzProtocolStatus res = SubGhzProtocolStatusError;
     FuriString* temp_str;
     temp_str = furi_string_alloc();
@@ -116,11 +122,28 @@ SubGhzProtocolStatus subghz_block_generic_serialize(
                 break;
             }
         }
-        if(!flipper_format_write_string_cstr(flipper_format, "Protocol", instance->protocol_name)) {
+        if(!flipper_format_write_string_cstr(flipper_format, "Protocol", protocol_name)) {
             FURI_LOG_E(TAG, "Unable to add Protocol");
             res = SubGhzProtocolStatusErrorParserProtocolName;
             break;
         }
+        res = SubGhzProtocolStatusOk;
+    } while(false);
+    furi_string_free(temp_str);
+    return res;
+}
+
+SubGhzProtocolStatus subghz_block_generic_serialize(
+    SubGhzBlockGeneric* instance,
+    FlipperFormat* flipper_format,
+    SubGhzRadioPreset* preset) {
+    furi_check(instance);
+    SubGhzProtocolStatus res =
+        subghz_block_generic_serialize_common(instance->protocol_name, flipper_format, preset);
+    if(res != SubGhzProtocolStatusOk) return res;
+    res = SubGhzProtocolStatusError;
+
+    do {
         uint32_t temp = instance->data_count_bit;
         if(!flipper_format_write_uint32(flipper_format, "Bit", &temp, 1)) {
             FURI_LOG_E(TAG, "Unable to add Bit");
@@ -150,7 +173,6 @@ SubGhzProtocolStatus subghz_block_generic_serialize(
         }
         res = SubGhzProtocolStatusOk;
     } while(false);
-    furi_string_free(temp_str);
     return res;
 }
 

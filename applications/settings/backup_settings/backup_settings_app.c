@@ -115,6 +115,27 @@ static bool backup_copy_one(
     return true;
 }
 
+/** Restore a real file without clobbering a newer local copy. The settings
+ * that can be merged structurally live in NVS below; these legacy files have
+ * no reliable common version/timestamp, so an existing local file wins and a
+ * backup only fills a missing file. */
+static bool backup_restore_file(
+    Storage* storage,
+    const char* from,
+    const char* to,
+    FS_Error* first_error,
+    bool* changed) {
+    if(!storage_file_exists(storage, from)) return false;
+    if(storage_file_exists(storage, to)) {
+        FURI_LOG_I(TAG, "restore: preserving current file %s", to);
+        return true;
+    }
+
+    const bool copied = backup_copy_one(storage, from, to, first_error);
+    if(copied) *changed = true;
+    return copied;
+}
+
 /** @return true when the file already contains exactly this data. */
 static bool backup_file_matches(
     Storage* storage,
@@ -216,8 +237,117 @@ static bool nvs_blob_matches(nvs_handle_t nvs, const char* key, const uint8_t* b
     return same;
 }
 
+/* saved_struct's on-flash header. Keep this local to the backup app: the
+ * public saved_struct API intentionally exposes payloads rather than its NVS
+ * representation, but a conflict-aware restore has to merge two raw blobs
+ * before committing either one. */
+typedef struct {
+    uint8_t magic;
+    uint8_t version;
+    uint8_t checksum;
+    uint8_t flags;
+    uint32_t timestamp;
+} BackupSavedStructHeader;
+
+_Static_assert(sizeof(BackupSavedStructHeader) == 8, "saved_struct header layout changed");
+
+#define BACKUP_DOLPHIN_KEY       "dolphin_state"
+#define BACKUP_DOLPHIN_MAGIC     0xD0
+#define BACKUP_DOLPHIN_VERSION_1 0x01
+#define BACKUP_DOLPHIN_VERSION_2 0x02
+
+static uint8_t backup_blob_checksum(const uint8_t* payload, size_t size) {
+    uint8_t checksum = 0;
+    for(size_t i = 0; i < size; ++i) checksum += payload[i];
+    return checksum;
+}
+
+static bool backup_dolphin_blob_valid(const uint8_t* blob, size_t len) {
+    if(!blob || len != sizeof(BackupSavedStructHeader) + sizeof(DolphinStoreData)) return false;
+
+    BackupSavedStructHeader header;
+    memcpy(&header, blob, sizeof(header));
+    if(header.magic != BACKUP_DOLPHIN_MAGIC ||
+       (header.version != BACKUP_DOLPHIN_VERSION_1 &&
+        header.version != BACKUP_DOLPHIN_VERSION_2)) {
+        return false;
+    }
+
+    const uint8_t* payload = blob + sizeof(header);
+    return header.checksum == backup_blob_checksum(payload, sizeof(DolphinStoreData));
+}
+
+/** Merge monotonic Dolphin progress without rolling the live device backwards.
+ * XP and today's earned/used counters take the larger value. Preferences and
+ * mood remain local, while the newest activity timestamp is retained. */
+static bool backup_merge_dolphin_blob(
+    uint8_t* current_blob,
+    size_t current_len,
+    const uint8_t* backup_blob,
+    size_t backup_len,
+    bool* changed) {
+    if(!backup_dolphin_blob_valid(current_blob, current_len) ||
+       !backup_dolphin_blob_valid(backup_blob, backup_len)) {
+        return false;
+    }
+
+    BackupSavedStructHeader current_header;
+    BackupSavedStructHeader backup_header;
+    DolphinStoreData current;
+    DolphinStoreData backup;
+    memcpy(&current_header, current_blob, sizeof(current_header));
+    memcpy(&backup_header, backup_blob, sizeof(backup_header));
+    memcpy(&current, current_blob + sizeof(current_header), sizeof(current));
+    memcpy(&backup, backup_blob + sizeof(backup_header), sizeof(backup));
+
+    bool did_change = false;
+    if(backup.icounter > current.icounter) {
+        current.icounter = backup.icounter;
+        did_change = true;
+    }
+    for(size_t i = 0; i < DolphinAppMAX; ++i) {
+        if(backup.icounter_daily_limit[i] > current.icounter_daily_limit[i]) {
+            current.icounter_daily_limit[i] = backup.icounter_daily_limit[i];
+            did_change = true;
+        }
+    }
+    if(backup.butthurt_daily_limit > current.butthurt_daily_limit) {
+        current.butthurt_daily_limit = backup.butthurt_daily_limit;
+        did_change = true;
+    }
+    if(backup.timestamp > current.timestamp) {
+        current.timestamp = backup.timestamp;
+        did_change = true;
+    }
+
+    /* v1 and v2 have the same payload; stamp the newer interpretation. */
+    if(backup_header.version > current_header.version) {
+        current_header.version = backup_header.version;
+        did_change = true;
+    }
+    memcpy(current_blob + sizeof(current_header), &current, sizeof(current));
+    current_header.checksum = backup_blob_checksum(
+        current_blob + sizeof(current_header), sizeof(DolphinStoreData));
+    memcpy(current_blob, &current_header, sizeof(current_header));
+
+    *changed = did_change;
+    return true;
+}
+
+static uint8_t* backup_nvs_blob_read(nvs_handle_t nvs, const char* key, size_t* len) {
+    *len = 0;
+    if(nvs_get_blob(nvs, key, NULL, len) != ESP_OK || *len == 0) return NULL;
+
+    uint8_t* blob = malloc(*len);
+    if(!blob || nvs_get_blob(nvs, key, blob, len) != ESP_OK) {
+        free(blob);
+        return NULL;
+    }
+    return blob;
+}
+
 /** Read the blobs under backup/nvs back into the saved_struct namespace. */
-static size_t restore_nvs_all(Storage* storage, FS_Error* first_error) {
+static size_t restore_nvs_all(Storage* storage, FS_Error* first_error, bool* changed) {
     File* dir = storage_file_alloc(storage);
     if(!storage_dir_open(dir, BACKUP_NVS_DIR)) {
         storage_file_free(dir);
@@ -234,6 +364,8 @@ static size_t restore_nvs_all(Storage* storage, FS_Error* first_error) {
 
     size_t count = 0;
     size_t written = 0;
+    size_t merged = 0;
+    size_t preserved = 0;
     size_t unchanged = 0;
     char name[64];
     FileInfo info;
@@ -264,9 +396,50 @@ static size_t restore_nvs_all(Storage* storage, FS_Error* first_error) {
                         if(nvs_blob_matches(nvs, key, blob, (size_t)size)) {
                             count++;
                             unchanged++;
-                        } else if(nvs_set_blob(nvs, key, blob, (size_t)size) == ESP_OK) {
-                            count++;
-                            written++;
+                        } else {
+                            size_t current_len = 0;
+                            uint8_t* current = backup_nvs_blob_read(nvs, key, &current_len);
+
+                            if(!current) {
+                                if(nvs_set_blob(nvs, key, blob, (size_t)size) == ESP_OK) {
+                                    count++;
+                                    written++;
+                                    *changed = true;
+                                } else if(*first_error == FSE_OK) {
+                                    *first_error = FSE_INTERNAL;
+                                }
+                            } else if(strcmp(key, BACKUP_DOLPHIN_KEY) == 0) {
+                                bool dolphin_changed = false;
+                                if(backup_merge_dolphin_blob(
+                                       current,
+                                       current_len,
+                                       blob,
+                                       (size_t)size,
+                                       &dolphin_changed)) {
+                                    if(dolphin_changed &&
+                                       nvs_set_blob(nvs, key, current, current_len) == ESP_OK) {
+                                        merged++;
+                                        *changed = true;
+                                    } else if(!dolphin_changed) {
+                                        unchanged++;
+                                    } else if(*first_error == FSE_OK) {
+                                        *first_error = FSE_INTERNAL;
+                                    }
+                                    count++;
+                                } else {
+                                    /* Unknown/corrupt versions cannot be merged safely. Keep
+                                     * the live copy instead of risking a progress rollback. */
+                                    count++;
+                                    preserved++;
+                                }
+                            } else {
+                                /* Opaque settings have no safe field-level conflict rule.
+                                 * Preserve the current copy; the backup still restores keys
+                                 * that are missing from this device. */
+                                count++;
+                                preserved++;
+                            }
+                            free(current);
                         }
                     }
                     free(blob);
@@ -280,9 +453,15 @@ static size_t restore_nvs_all(Storage* storage, FS_Error* first_error) {
     }
 
     /* Only commit when something actually changed. */
-    if(written > 0) nvs_commit(nvs);
+    if(written > 0 || merged > 0) nvs_commit(nvs);
     nvs_close(nvs);
-    FURI_LOG_I(TAG, "restore: %u written, %u already current", (unsigned)written, (unsigned)unchanged);
+    FURI_LOG_I(
+        TAG,
+        "restore: %u new, %u merged, %u current kept, %u identical",
+        (unsigned)written,
+        (unsigned)merged,
+        (unsigned)preserved,
+        (unsigned)unchanged);
 
     storage_dir_close(dir);
     storage_file_free(dir);
@@ -295,6 +474,7 @@ static void backup_run(Backup* app, bool to_sd) {
 
     size_t copied = 0;
     FS_Error first_error = FSE_OK;
+    bool restore_changed = false;
 
     /* Create it either way. On restore this leaves an obvious, correctly
      * named folder for the user to drop a backup into, instead of failing
@@ -307,12 +487,10 @@ static void backup_run(Backup* app, bool to_sd) {
      * delay timer -- so a backup taken right after leveling up would otherwise
      * capture stale progress. The state itself already rides out in the NVS
      * sweep below (key "dolphin_state" in the saved_struct namespace); this only
-     * makes sure the sweep sees the latest value. Backup direction only. */
-    if(to_sd) {
-        Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
-        dolphin_flush(dolphin);
-        furi_record_close(RECORD_DOLPHIN);
-    }
+     * makes sure both backup and conflict-aware restore see the latest value. */
+    Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+    dolphin_flush(dolphin);
+    furi_record_close(RECORD_DOLPHIN);
 
     for(size_t i = 0; i < BACKUP_FILE_COUNT; i++) {
         char internal[128];
@@ -327,17 +505,30 @@ static void backup_run(Backup* app, bool to_sd) {
         const char* from = to_sd ? internal : sd;
         const char* to = to_sd ? sd : internal;
 
-        if(backup_copy_one(storage, from, to, &first_error)) copied++;
+        if(to_sd) {
+            if(backup_copy_one(storage, from, to, &first_error)) copied++;
+        } else if(backup_restore_file(storage, from, to, &first_error, &restore_changed)) {
+            copied++;
+        }
     }
 
     /* The settings that actually matter live here, not in those files. */
     if(to_sd) {
         copied += backup_nvs_all(storage, &first_error);
     } else {
-        copied += restore_nvs_all(storage, &first_error);
+        copied += restore_nvs_all(storage, &first_error, &restore_changed);
     }
 
     furi_record_close(RECORD_STORAGE);
+
+    /* The result screen permits postponing the full reboot. Refresh Dolphin's
+     * live copy immediately so subsequent deeds build on the merged XP rather
+     * than writing the pre-restore value back over it. */
+    if(!to_sd && restore_changed) {
+        Dolphin* live_dolphin = furi_record_open(RECORD_DOLPHIN);
+        dolphin_reload_state(live_dolphin);
+        furi_record_close(RECORD_DOLPHIN);
+    }
 
     furi_mutex_acquire(app->mutex, FuriWaitForever);
     const bool failed = (first_error != FSE_OK);
@@ -360,12 +551,12 @@ static void backup_run(Backup* app, bool to_sd) {
         snprintf(
             app->message,
             BACKUP_MSG_LEN,
-            to_sd ? "Saved %u files to SD" : "Restored %u files",
+            to_sd ? "Saved %u files to SD" : "Merged %u items",
             (unsigned)copied);
     }
 
     /* Services read their settings once at startup, so a restore is not live. */
-    app->needs_reboot = !to_sd && app->ok;
+    app->needs_reboot = !to_sd && app->ok && restore_changed;
     app->state = BackupStateResult;
     furi_mutex_release(app->mutex);
 }

@@ -1,4 +1,5 @@
 #include "namechanger.h"
+#include <wifi/wlan_hal.h>
 #include <furi_hal.h>
 #include <furi_hal_version.h>
 #include <cli/cli_vcp.h>
@@ -92,12 +93,20 @@ static bool namechanger_init() {
             break;
         }
 
-        // If all checks was good we can set the name
-        version_set_custom_name(NULL, strdup(furi_string_get_cstr(str)));
-        furi_hal_version_set_name(version_get_custom_name(NULL));
-        /* Read back rather than echoing the file: this line claimed success
-         * while the name silently failed to apply. */
-        FURI_LOG_I(TAG, "applied custom name \"%s\"", furi_hal_version_get_name_ptr());
+        // If all checks was good we can set the name.
+        // NB: call furi_hal_version_set_name() directly with the string — it
+        // copies the name into all live fields AND updates the Version custom
+        // name via refresh_names(). Going through version_set_custom_name(NULL,
+        // …) is a no-op (it early-returns on a NULL Version*), which used to
+        // leave the name at the eFuse-derived default.
+        furi_hal_version_set_name(furi_string_get_cstr(str));
+
+        /* Optional shell color (added when NVS persistence moved to SD). Older
+         * files without the field simply keep the default color. */
+        uint32_t color;
+        if(flipper_format_read_uint32(file, "Color", &color, 1)) {
+            furi_hal_version_set_hw_color((FuriHalVersionColor)color);
+        }
 
         res = true;
     } while(false);
@@ -137,8 +146,15 @@ int32_t namechanger_on_system_start(void* p) {
 
         furi_delay_ms(3);
         Bt* bt = furi_record_open(RECORD_BT);
-        if(!bt_profile_restore_default(bt)) {
-            //FURI_LOG_D(TAG, "Failed to touch bluetooth to name change");
+        /* Update GAP and advertising data in place. Cycling the whole NimBLE
+         * host here raced its old host task teardown, made the restart time out,
+         * and removed the BLE status icon on every boot with a custom name. */
+        if(bt_is_enabled(bt) && !wlan_hal_is_user_enabled() && !wlan_hal_is_started()) {
+            if(!bt_refresh_device_name(bt)) {
+                FURI_LOG_W(TAG, "Could not refresh the active BLE profile");
+            }
+        } else {
+            FURI_LOG_I(TAG, "BLE profile refresh deferred while BLE is off or WiFi owns radio");
         }
         furi_record_close(RECORD_BT);
         bt = NULL;

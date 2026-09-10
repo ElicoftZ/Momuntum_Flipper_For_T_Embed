@@ -7,6 +7,7 @@
 #include <loading.h>
 
 #include "loader.h"
+#include "loader_queue.h"
 #include "loader_menu.h"
 #include "loader_applications.h"
 
@@ -29,18 +30,22 @@ struct Loader {
     Gui* gui;
     ViewHolder* view_holder;
     Loading* loading;
+
+    LoaderLaunchQueue launch_queue;
 };
 
 typedef enum {
     LoaderMessageTypeStartByName,
     LoaderMessageTypeAppClosed,
     LoaderMessageTypeShowMenu,
+    LoaderMessageTypeShowSettings,
     LoaderMessageTypeMenuClosed,
     LoaderMessageTypeApplicationsClosed,
     LoaderMessageTypeLock,
     LoaderMessageTypeUnlock,
     LoaderMessageTypeIsLocked,
     LoaderMessageTypeStartByNameDetachedWithGuiError,
+    LoaderMessageTypeEnqueueLaunch,
 } LoaderMessageType;
 
 typedef struct {
@@ -63,6 +68,7 @@ typedef struct {
 
     union {
         LoaderMessageStartByName start;
+        LoaderDeferredLaunchRecord defer_start;
     };
 
     union {

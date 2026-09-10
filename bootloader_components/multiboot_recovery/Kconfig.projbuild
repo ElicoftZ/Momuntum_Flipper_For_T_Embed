@@ -1,0 +1,4 @@
+config MOMENTUM_MULTIBOOT
+    bool "Momentum dynamic firmware partitions"
+    default n
+    depends on IDF_TARGET_ESP32S3

@@ -3,7 +3,7 @@
  * BLE key storage — ESP32 stub
  *
  * On STM32, pairing keys live in NVM SRAM shared between cores.
- * On ESP32, Bluedroid manages bonding transparently via NVS.
+ * On ESP32, NimBLE manages bonding transparently via NVS.
  * This module is kept for bt_service API compatibility.
  */
 

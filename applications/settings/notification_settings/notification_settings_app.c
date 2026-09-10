@@ -705,6 +705,56 @@ static void build_settings_list(NotificationAppSettings* app) {
     app->ui_bg_item = item;
     ui_bg_item_sync(app);
 
+    /* The gradient rows belong to UI Background, so they sit directly under
+     * it rather than at the bottom of the list. They used to be appended
+     * last, which put "Colors" and its per-stop rows several screens away
+     * from the setting they configure. Row indices are computed with
+     * variable_item_list_get_item_count(), not hardcoded, so the block is
+     * safe to move. */
+    /* --- UI Background gradient --- */
+    NotificationSettings* gs = &app->notification->settings;
+
+    uint8_t stops = gs->ui_bg_color_count;
+    if(stops < 1) stops = 1;
+    if(stops > FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) {
+        stops = FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS;
+    }
+
+    item = variable_item_list_add(
+        app->variable_item_list, "Colors",
+        FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS, ui_bg_count_changed, app);
+    variable_item_set_current_value_index(item, stops - 1);
+    variable_item_set_current_value_text(item, ui_bg_count_text[stops - 1]);
+
+    /* One row per active stop. Only shown when blending -- a single color is
+     * just the existing UI Background row. */
+    if(stops >= 2) {
+        /* variable_item_list_add appends, so the next row index is the
+         * current item count. */
+        app->ui_bg_first_stop_row =
+            variable_item_list_get_item_count(app->variable_item_list);
+        for(uint8_t i = 0; i < stops; i++) {
+            item = variable_item_list_add(
+                app->variable_item_list, ui_bg_stop_label[i],
+                UI_COLOR_COUNT + 1, ui_bg_stop_changed, app);
+            ui_bg_stop_item_sync(gs, item, i);
+        }
+
+        item = variable_item_list_add(
+            app->variable_item_list, "Direction", 2, ui_bg_dir_changed, app);
+        variable_item_set_current_value_index(item, gs->ui_bg_horizontal ? 1 : 0);
+        variable_item_set_current_value_text(
+            item, ui_bg_dir_text[gs->ui_bg_horizontal ? 1 : 0]);
+
+        item = variable_item_list_add(
+            app->variable_item_list, "Mix",
+            FuriHalDisplayGradientModeCount, ui_bg_mix_changed, app);
+        uint8_t mix = gs->ui_bg_mix;
+        if(mix >= FuriHalDisplayGradientModeCount) mix = 0;
+        variable_item_set_current_value_index(item, mix);
+        variable_item_set_current_value_text(item, ui_bg_mix_text[mix]);
+    }
+
     /* UI Foreground tint — fills the drawn UI elements themselves: text,
      * icons, borders (default Black). When both UI colors are Spectrum, the
      * foreground hue is offset 180° from the background for legibility. */
@@ -833,49 +883,6 @@ static void build_settings_list(NotificationAppSettings* app) {
         variable_item_set_current_value_text(item, volume_text[value_index]);
     }
 
-    /* --- UI Background gradient --- */
-    NotificationSettings* gs = &app->notification->settings;
-
-    uint8_t stops = gs->ui_bg_color_count;
-    if(stops < 1) stops = 1;
-    if(stops > FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS) {
-        stops = FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS;
-    }
-
-    item = variable_item_list_add(
-        app->variable_item_list, "Colors",
-        FURI_HAL_DISPLAY_GRADIENT_MAX_STOPS, ui_bg_count_changed, app);
-    variable_item_set_current_value_index(item, stops - 1);
-    variable_item_set_current_value_text(item, ui_bg_count_text[stops - 1]);
-
-    /* One row per active stop. Only shown when blending -- a single color is
-     * just the existing UI Background row. */
-    if(stops >= 2) {
-        /* variable_item_list_add appends, so the next row index is the
-         * current item count. */
-        app->ui_bg_first_stop_row =
-            variable_item_list_get_item_count(app->variable_item_list);
-        for(uint8_t i = 0; i < stops; i++) {
-            item = variable_item_list_add(
-                app->variable_item_list, ui_bg_stop_label[i],
-                UI_COLOR_COUNT + 1, ui_bg_stop_changed, app);
-            ui_bg_stop_item_sync(gs, item, i);
-        }
-
-        item = variable_item_list_add(
-            app->variable_item_list, "Direction", 2, ui_bg_dir_changed, app);
-        variable_item_set_current_value_index(item, gs->ui_bg_horizontal ? 1 : 0);
-        variable_item_set_current_value_text(
-            item, ui_bg_dir_text[gs->ui_bg_horizontal ? 1 : 0]);
-
-        item = variable_item_list_add(
-            app->variable_item_list, "Mix",
-            FuriHalDisplayGradientModeCount, ui_bg_mix_changed, app);
-        uint8_t mix = gs->ui_bg_mix;
-        if(mix >= FuriHalDisplayGradientModeCount) mix = 0;
-        variable_item_set_current_value_index(item, mix);
-        variable_item_set_current_value_text(item, ui_bg_mix_text[mix]);
-    }
 }
 
 

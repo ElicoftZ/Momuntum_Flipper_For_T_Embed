@@ -5,6 +5,7 @@
 #include <core/core_defines.h>
 
 #include "rpc_i.h"
+#include "rpc_fap_compat.h"
 
 #define TAG "RpcProperty"
 
@@ -30,7 +31,7 @@ static void
 
     if(!strncmp(key, furi_string_get_cstr(ctx->subkey), furi_string_size(ctx->subkey))) {
         response->content.property_get_response.key = strdup(key);
-        response->content.property_get_response.value = strdup(value);
+        response->content.property_get_response.value = strdup(rpc_fap_compat_value(key, value));
         rpc_send_and_release(session, response);
     }
 

@@ -1,4 +1,24 @@
 #include "furi_string.h"
+
+#ifdef ESP_PLATFORM
+#include <esp_heap_caps.h>
+
+/* UI labels and paths need byte-addressable memory, not scarce DMA/internal
+ * RAM. ESP-IDF's default allocator otherwise puts every small string there.
+ * Apply this to both the string object and mlib's growing character buffer. */
+static void* furi_string_heap_realloc(void* ptr, size_t size) {
+    void* result = heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if(!result && size) result = heap_caps_realloc(ptr, size, MALLOC_CAP_DEFAULT);
+    return result;
+}
+
+#undef M_MEMORY_REALLOC
+#define M_MEMORY_REALLOC(type, ptr, n) \
+    ((n) > SIZE_MAX / sizeof(type) ? NULL : furi_string_heap_realloc((ptr), (n) * sizeof(type)))
+#else
+#define furi_string_heap_realloc(ptr, size) realloc((ptr), (size))
+#endif
+
 #include <m-string.h>
 
 struct FuriString {
@@ -24,19 +44,19 @@ struct FuriString {
 #undef furi_string_cat
 
 FuriString* furi_string_alloc(void) {
-    FuriString* string = malloc(sizeof(FuriString));
+    FuriString* string = furi_string_heap_realloc(NULL, sizeof(FuriString));
     string_init(string->string);
     return string;
 }
 
 FuriString* furi_string_alloc_set(const FuriString* s) {
-    FuriString* string = malloc(sizeof(FuriString)); //-V799
+    FuriString* string = furi_string_heap_realloc(NULL, sizeof(FuriString)); //-V799
     string_init_set(string->string, s->string);
     return string;
 } //-V773
 
 FuriString* furi_string_alloc_set_str(const char cstr[]) {
-    FuriString* string = malloc(sizeof(FuriString)); //-V799
+    FuriString* string = furi_string_heap_realloc(NULL, sizeof(FuriString)); //-V799
     string_init_set(string->string, cstr);
     return string;
 } //-V773
@@ -50,13 +70,13 @@ FuriString* furi_string_alloc_printf(const char format[], ...) {
 }
 
 FuriString* furi_string_alloc_vprintf(const char format[], va_list args) {
-    FuriString* string = malloc(sizeof(FuriString));
+    FuriString* string = furi_string_heap_realloc(NULL, sizeof(FuriString));
     string_init_vprintf(string->string, format, args);
     return string;
 }
 
 FuriString* furi_string_alloc_move(FuriString* s) {
-    FuriString* string = malloc(sizeof(FuriString));
+    FuriString* string = furi_string_heap_realloc(NULL, sizeof(FuriString));
     string_init_move(string->string, s->string);
     free(s);
     return string;

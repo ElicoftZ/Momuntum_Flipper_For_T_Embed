@@ -29,6 +29,7 @@ SDCARD = os.path.join(ROOT, "sdcard")
 INCLUDE_TREES = [
     "apps",           # this port's own .fap apps
     "dolphin/firstboot.bin",  # welcome slideshow
+    "u2f",            # attestation cert + key the U2F app needs to start
 ]
 
 # Created empty so the apps have somewhere to write on a fresh card.
@@ -38,6 +39,7 @@ EMPTY_DIRS = [
     "voice_notes",    # voice_notes recordings
     "backup",         # Backup Settings
     "backup/nvs",
+    "u2f",            # key.u2f and cnt.u2f are written here on first run
 ]
 
 # Never ship these: editor leftovers, OS junk, and the stray duplicate tree.

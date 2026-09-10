@@ -7,7 +7,7 @@ App(
         "gui",
     ],
     stack_size=2 * 1024,
-    icon="A_Plugins_14",
+    icon="A_PowerProfiler_14",
     order=92,
     fap_category="Tools",
 )

@@ -9,6 +9,11 @@
 
 #define TAG "BtSettings"
 
+/* wlan is a FAM-linked application rather than an ESP-IDF component. Keep the
+ * settings app usable in builds without it, while enforcing radio exclusion in
+ * this T-Embed build when the symbol is present. */
+extern bool wlan_hal_set_user_enabled(bool enabled) __attribute__((weak));
+
 typedef enum {
     BtSettingsViewList,
     BtSettingsViewConfirm,
@@ -68,7 +73,17 @@ static void bt_settings_toggle_callback(VariableItem* item) {
     const uint8_t index = variable_item_get_current_value_index(item);
     app->settings.enabled = (index == 1);
     variable_item_set_current_value_text(item, bt_setting_text[index]);
-    bt_set_settings(app->bt, &app->settings);
+
+    if(app->settings.enabled && wlan_hal_set_user_enabled) {
+        /* BLE owns the radio only after persistent WiFi has fully released its
+         * driver and worker allocations. */
+        wlan_hal_set_user_enabled(false);
+    }
+    if(!bt_set_enabled(app->bt, app->settings.enabled)) {
+        app->settings.enabled = false;
+        variable_item_set_current_value_index(item, 0);
+        variable_item_set_current_value_text(item, bt_setting_text[0]);
+    }
 
     FURI_LOG_I(TAG, "Bluetooth toggled: enabled=%d", app->settings.enabled);
 }

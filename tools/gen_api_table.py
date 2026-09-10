@@ -21,7 +21,7 @@ def main():
 
     names = []
     if sys.argv[1] == "-f":
-        with open(sys.argv[2]) as f:
+        with open(sys.argv[2], "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):

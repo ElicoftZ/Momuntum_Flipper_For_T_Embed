@@ -19,6 +19,7 @@
 #include <input.h>
 #include <saved_struct.h>
 #include <storage/storage.h>
+#include <dolphin/dolphin.h>
 #include "notification_app.h"
 #include "notification_messages.h"
 
@@ -34,6 +35,7 @@ typedef enum {
     NotificationLayerMessage,
     InternalLayerMessage,
     SaveSettingsMessage,
+    DisplayDimMessage,
 } NotificationAppMessageType;
 
 typedef struct {
@@ -130,8 +132,8 @@ static void notification_reset_notification_layer(
     }
     app->display_idle_dim = false;
 
-    // display_led_lock is Wake mode: hold the backlight on and never sleep.
-    if(app->settings.display_off_delay_ms > 0 && !app->display_led_lock) {
+    // A display wake lock holds the backlight on and prevents idle sleep.
+    if(app->settings.display_off_delay_ms > 0 && app->display_led_lock_count == 0) {
         furi_timer_start(app->display_timer, furi_ms_to_ticks(notification_dim_delay(app)));
     }
 }
@@ -151,6 +153,10 @@ static void notification_display_sleep_timer(void* context) {
     furi_assert(context);
     NotificationApp* app = context;
 
+    /* A timer callback may already be queued when Wake mode acquires its lock.
+     * Do not let that stale callback dim or shut down the device. */
+    if(app->display_led_lock_count > 0) return;
+
     /* Apps that must keep running hold insomnia; do not sleep under them. */
     if(!furi_hal_power_sleep_available()) {
         furi_timer_start(
@@ -159,6 +165,14 @@ static void notification_display_sleep_timer(void* context) {
     }
 
     app->display_idle_dim = false;
+    /* This is the last high-level point before idle deep sleep. Persist the
+     * Dolphin state; the HAL records sleep duration independently in RTC slow
+     * memory. Special boot modes intentionally omit Dolphin. */
+    if(furi_record_exists(RECORD_DOLPHIN)) {
+        Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+        dolphin_prepare_for_sleep(dolphin);
+        furi_record_close(RECORD_DOLPHIN);
+    }
     /* Only idle sleep resumes; a deliberate power off ends in the same deep
      * sleep and would otherwise be indistinguishable at wake. */
     furi_hal_rtc_arm_resume();
@@ -169,6 +183,8 @@ static void notification_display_sleep_timer(void* context) {
 static void notification_display_timer(void* context) {
     furi_assert(context);
     NotificationApp* app = context;
+
+    if(app->display_led_lock_count > 0) return;
 
     app->display_idle_dim = true;
     /* The backlight is no longer at its normal on level, and
@@ -264,8 +280,10 @@ static void notification_process_notification_message(
             lcd_backlight_is_on = true;
             break;
         case NotificationMessageTypeLedDisplayBacklightEnforceOn:
-            if(!app->display_led_lock) {
-                app->display_led_lock = true;
+            if(app->display_led_lock_count < UINT8_MAX) {
+                const bool first_lock = app->display_led_lock_count == 0;
+                app->display_led_lock_count++;
+                if(!first_lock) break;
                 // Wake mode: cancel any pending dim and sleep.
                 notification_idle_timers_stop(app);
                 notification_apply_internal_display_layer(
@@ -278,8 +296,9 @@ static void notification_process_notification_message(
             }
             break;
         case NotificationMessageTypeLedDisplayBacklightEnforceAuto:
-            if(app->display_led_lock) {
-                app->display_led_lock = false;
+            if(app->display_led_lock_count > 0) {
+                app->display_led_lock_count--;
+                if(app->display_led_lock_count > 0) break;
                 // Leaving Wake mode restarts the idle sequence from now.
                 if(app->settings.display_off_delay_ms > 0) {
                     furi_timer_start(
@@ -902,7 +921,7 @@ static NotificationApp* notification_app_alloc(void) {
     app->display.value[LayerInternal] = 0x00;
     app->display.value[LayerNotification] = 0x00;
     app->display.index = LayerInternal;
-    app->display_led_lock = false;
+    app->display_led_lock_count = 0;
 
     app->event_record = furi_record_open(RECORD_INPUT_EVENTS);
     furi_pubsub_subscribe(app->event_record, input_event_callback, app);
@@ -926,6 +945,23 @@ int32_t notification_srv(void* p) {
 
     furi_record_create(RECORD_NOTIFICATION, app);
 
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    for(int i = 0; i < 50 && storage_sd_status(storage) != FSE_OK; i++) {
+        furi_delay_ms(100);
+    }
+    furi_record_close(RECORD_STORAGE);
+
+    if(notification_load_settings(app)) {
+        notification_apply_led_color(app);
+        notification_apply_ui_color(app);
+        notification_message(app, &sequence_display_backlight_on);
+        if(app->settings.night_shift != 1.0f) {
+            night_shift_timer_start(app);
+        } else {
+            night_shift_timer_stop(app);
+        }
+    }
+
     NotificationAppMessage message;
     while(true) {
         furi_check(furi_message_queue_get(app->queue, &message, FuriWaitForever) == FuriStatusOk);
@@ -939,6 +975,12 @@ int32_t notification_srv(void* p) {
             break;
         case SaveSettingsMessage:
             notification_save_settings(app);
+            break;
+        case DisplayDimMessage:
+            if(app->display_led_lock_count == 0) {
+                notification_idle_timers_stop(app);
+                notification_display_timer(app);
+            }
             break;
         }
 
@@ -961,6 +1003,11 @@ void notification_message_block(NotificationApp* app, const NotificationSequence
     furi_event_flag_wait(
         back_event, NOTIFICATION_EVENT_COMPLETE, FuriFlagWaitAny, FuriWaitForever);
     furi_event_flag_free(back_event);
+}
+
+void notification_display_dim(NotificationApp* app) {
+    furi_assert(app);
+    notification_message_send(app, DisplayDimMessage, &sequence_empty, NULL);
 }
 
 void notification_internal_message(NotificationApp* app, const NotificationSequence* sequence) {

@@ -31,6 +31,9 @@ struct ELFFile {
     size_t sections_count;
     off_t section_table;
     off_t section_table_strings;
+    Elf32_Shdr* section_cache;
+    char* section_name_cache;
+    size_t section_name_cache_size;
 
     size_t symbol_count;
     off_t symbol_table;
@@ -54,6 +57,7 @@ struct ELFFile {
     ELFSection* fini_array;
 
     bool init_array_called;
+    bool is_arm;
 };
 
 #ifdef __cplusplus

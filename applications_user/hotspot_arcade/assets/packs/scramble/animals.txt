@@ -1,0 +1,65 @@
+Pack: Animals
+
+Word: elephant
+---
+Word: giraffe
+---
+Word: kangaroo
+---
+Word: leopard
+---
+Word: octopus
+---
+Word: peacock
+---
+Word: raccoon
+---
+Word: squirrel
+---
+Word: cheetah
+---
+Word: gorilla
+---
+Word: hedgehog
+---
+Word: flamingo
+---
+Word: panther
+---
+Word: walrus
+---
+Word: iguana
+---
+Word: otter
+---
+Word: falcon
+---
+Word: bison
+---
+Word: butterfly
+---
+Word: crocodile
+---
+Word: chameleon
+---
+Word: porcupine
+---
+Word: armadillo
+---
+Word: dolphin
+---
+Word: salamander
+---
+Word: tortoise
+---
+Word: buffalo
+---
+Word: meerkat
+---
+Word: platypus
+---
+Word: seahorse
+---
+Word: pelican
+---
+Word: badger

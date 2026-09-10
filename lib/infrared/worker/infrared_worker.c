@@ -125,6 +125,10 @@ static void infrared_worker_process_timeout(InfraredWorker* instance) {
         instance->signal.decoded = true;
     } else {
         instance->signal.decoded = false;
+
+        if((instance->signal.timings_cnt % 2) == 0) {
+            --instance->signal.timings_cnt;
+        }
     }
     if(instance->rx.received_signal_callback)
         instance->rx.received_signal_callback(
@@ -439,10 +443,8 @@ static bool infrared_worker_tx_fill_buffer(InfraredWorker* instance) {
             status = infrared_encode(instance->infrared_encoder, &timing.duration, &timing.level);
         } else {
             timing.duration = instance->signal.raw.timings[instance->tx.tx_raw_cnt];
-            /* raw always starts with a Mark, then alternates Mark/Space.
-             * On ESP32 the TX HAL emits carrier when level=true, so emit
-             * level=true for even indices (marks) and false for odd (spaces). */
-            timing.level = !(instance->tx.tx_raw_cnt % 2);
+
+            timing.level = (instance->tx.tx_raw_cnt % 2);
             ++instance->tx.tx_raw_cnt;
             if(instance->tx.tx_raw_cnt >= instance->signal.timings_cnt) {
                 instance->tx.tx_raw_cnt = 0;
@@ -495,7 +497,10 @@ static int32_t infrared_worker_tx_thread(void* thread_context) {
     while(running) {
         switch(instance->state) {
         case InfraredWorkerStateStartTx:
-            --repeats_left; /* The first message does not result in TX_MESSAGE_SENT event for some reason */
+            /* A carrier change restarts the HAL without starting a new logical
+             * message. Do not let those restarts underflow the repeat counter,
+             * otherwise a later stop can wait for billions of phantom repeats. */
+            if(repeats_left > 0) --repeats_left;
             instance->tx.need_reinitialization = false;
             const bool new_data_available = infrared_worker_tx_fill_buffer(instance);
             furi_hal_infrared_async_tx_start(instance->tx.frequency, instance->tx.duty_cycle);

@@ -177,8 +177,14 @@ bool desktop_scene_main_on_event(void* context, SceneManagerEvent event) {
             consumed = true;
             break;
         case DesktopMainEventOpenFavoriteOkLong:
-            desktop_scene_main_start_favorite(
-                desktop, &desktop->settings.favorite_apps[FavoriteAppOkLong]);
+            if(desktop->settings.hold_ok_action == DesktopHoldOkActionControlCenter) {
+                scene_manager_next_scene(desktop->scene_manager, DesktopSceneLockMenu);
+            } else if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
+                animation_manager_new_idle_process(desktop->animation_manager);
+            } else {
+                desktop_scene_main_start_favorite(
+                    desktop, &desktop->settings.favorite_apps[FavoriteAppOkLong]);
+            }
             consumed = true;
             break;
 

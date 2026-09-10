@@ -48,6 +48,12 @@ typedef struct {
     uint8_t uid[6];
 } FuriHalVersionState;
 
+/* Persistence lives entirely on the SD card (/ext/dolphin/name.settings, via
+ * the namechanger service). NVS is intentionally NOT used: an nvs_commit()
+ * suspends the whole flash cache, and with task stacks placed PSRAM-first any
+ * stack spill during that window double-faults into a TG1WDT reset with no
+ * panic output. See memory project_psram_stack_nvs_doubleexception. */
+
 static FuriHalVersionState furi_hal_version = {
     .name = "ESP32",
     .device_name = "Furi ESP32",
@@ -55,6 +61,18 @@ static FuriHalVersionState furi_hal_version = {
     .ble_mac = {0},
     .uid = {0},
 };
+
+static FuriHalVersionColor furi_hal_version_shell_color = FuriHalVersionColorUnknown;
+
+/* Refresh the BLE advertisement service UUID so qFlipper mobile picks up the
+ * new shell color while scanning (no reconnect needed). Declared via extern to
+ * keep furi_hal free of a ble_serial dependency — ble_serial itself links
+ * against furi_hal. */
+extern void ble_serial_refresh_advertising(void);
+
+static void furi_hal_version_refresh_ble_advertisement(void) {
+    ble_serial_refresh_advertising();
+}
 
 static void furi_hal_version_refresh_names(const char* name) {
     snprintf(furi_hal_version.name, sizeof(furi_hal_version.name), "%s", name);
@@ -77,9 +95,13 @@ void furi_hal_version_init(void) {
     esp_efuse_mac_get_default(furi_hal_version.uid);
     memcpy(furi_hal_version.ble_mac, furi_hal_version.uid, sizeof(furi_hal_version.uid));
 
-    /* Determine effective name:
-     *   1. If a custom name was already loaded (e.g., from namechanger), use it.
-     *   2. Otherwise derive a stable name from the eFuse MAC. */
+    /* Effective name precedence (no NVS — see the note at the top of the file):
+     *   1. custom name loaded by namechanger (SD /ext/dolphin/name.settings),
+     *   2. stable name derived from the eFuse MAC.
+     * The shell color stays at its default here and is applied later by the
+     * namechanger service once the SD card is up. This runs very early in boot
+     * (before storage), so the SD copy cannot be read yet — namechanger calls
+     * furi_hal_version_set_name()/set_hw_color() once records are available. */
     const char* custom = version_get_custom_name(NULL);
     const char* effective;
     if(custom && custom[0]) {
@@ -147,7 +169,16 @@ uint8_t furi_hal_version_get_hw_body(void) {
 }
 
 FuriHalVersionColor furi_hal_version_get_hw_color(void) {
-    return FuriHalVersionColorUnknown;
+    return furi_hal_version_shell_color;
+}
+
+void furi_hal_version_set_hw_color(FuriHalVersionColor color) {
+    if(color > FuriHalVersionColorTransparent) {
+        color = FuriHalVersionColorUnknown;
+    }
+    furi_hal_version_shell_color = color;
+    /* RAM + BLE only — persistence goes to SD (namechanger), never NVS. */
+    furi_hal_version_refresh_ble_advertisement();
 }
 
 uint8_t furi_hal_version_get_hw_connect(void) {
@@ -191,7 +222,9 @@ const char* furi_hal_version_get_ble_local_device_name_ptr(void) {
 }
 
 void furi_hal_version_set_name(const char* name) {
-    /* Accept NULL or empty string — fall back to the eFuse-derived name. */
+    /* RAM only — persistence is the caller's job (SD via namechanger). Must NOT
+     * touch NVS: this runs on GUI/app threads whose stacks live in PSRAM, and
+     * an nvs_commit() there double-faults (see the note above). */
     if(name && name[0]) {
         furi_hal_version_refresh_names(name);
     } else {

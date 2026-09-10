@@ -1,6 +1,7 @@
 #include "../wlan_app.h"
-#include "../wlan_hal.h"
+#include <wlan_hal.h>
 #include "../wlan_pcap.h"
+#include <wlan_passwords.h>
 #include "../wlan_handshake_parser.h"
 #include <input/input.h>
 #include <gui/elements.h>
@@ -109,6 +110,8 @@ static uint32_t s_hsc_hop_next;
 
 static bool s_hs_running;
 static bool s_use_channel_mode; // wird in on_enter gesetzt
+static bool s_reconnecting;     // reconnecting STA after capture
+static uint16_t s_reconnect_ticks;
 
 // ---------------------------------------------------------------------------
 // Forward decls
@@ -679,6 +682,7 @@ void wlan_app_scene_handshake_on_enter(void* context) {
     s_hsc_grace_until = 0;
     s_hsc_hop_next = 0;
     s_use_channel_mode = app->channel_mode_active;
+    s_reconnecting = false;
     s_hsc_auto_mode = false;
     s_hsc_ok_held = false;
     // Save-Path-Cache an Settings binden.
@@ -716,6 +720,36 @@ void wlan_app_scene_handshake_on_enter(void* context) {
 bool wlan_app_scene_handshake_on_event(void* context, SceneManagerEvent event) {
     WlanApp* app = context;
     bool consumed = false;
+
+    // Reconnect-to-WiFi flow: while it runs, swallow all input and poll for the
+    // STA link to come back, then leave the scene.
+    if(s_reconnecting) {
+        if(event.type == SceneManagerEventTypeTick) {
+            s_reconnect_ticks++;
+            if(wlan_hal_is_connected() || s_reconnect_ticks > 40 /* ~10s */) {
+                s_reconnecting = false;
+                popup_reset(app->popup);
+                scene_manager_previous_scene(app->scene_manager);
+            }
+        }
+        return true;
+    }
+    // Back: if we were connected to a WiFi before capturing (the scene dropped
+    // the STA link for promiscuous mode), reconnect it with a short overlay.
+    if(event.type == SceneManagerEventTypeBack && app->connected) {
+        s_reconnecting = true;
+        s_reconnect_ticks = 0;
+        wlan_hal_set_promiscuous(false, NULL);
+        char pw[WLAN_APP_PASSWORD_MAX] = {0};
+        wlan_password_read(app->connected_ap.ssid, pw, sizeof(pw));
+        wlan_hal_connect(
+            app->connected_ap.ssid, pw, app->connected_ap.bssid,
+            app->connected_ap.channel);
+        popup_reset(app->popup);
+        popup_set_header(app->popup, "Reconnect Wifi...", 64, 30, AlignCenter, AlignCenter);
+        view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewPopup);
+        return true;
+    }
 
     if(event.type == SceneManagerEventTypeCustom) {
         if(s_use_channel_mode) {

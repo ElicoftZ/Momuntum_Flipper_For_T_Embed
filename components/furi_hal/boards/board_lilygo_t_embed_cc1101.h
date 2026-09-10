@@ -18,6 +18,8 @@
 
 /* ---- Board metadata ---- */
 #define BOARD_NAME        "LilyGo T-Embed CC1101"
+/* Kurz-ID = Release-Ordner unter https://sor3nt.github.io/release/<BOARD_ID>/latest */
+#define BOARD_ID          "t-embed"
 #define BOARD_TARGET      "esp32s3"
 
 /* ---- Hardware Button / Encoder Pins ---- */
@@ -52,7 +54,7 @@
 #define BOARD_LCD_GAP_X         0       /* TODO: verify gap on hardware */
 #define BOARD_LCD_GAP_Y         35      /* TODO: verify gap on hardware */
 #define BOARD_LCD_BL_ACTIVE_LOW false   /* Backlight is active-high */
-#define BOARD_LCD_COLOR_ORDER_BGR false /* RGB order with esp_lcd driver */
+#define BOARD_LCD_COLOR_ORDER_BGR 1     /* Panel expects BGR; RGB swaps red and blue */
 
 /* Flipper framebuffer → display color mapping (RGB565, native byte order) */
 #define BOARD_LCD_FG_COLOR      0xA0FD  /* Flipper Orange 0xFDA0 byte-swapped for S3 SPI */
@@ -84,6 +86,7 @@
 #define BOARD_PIN_CC1101_SW0    48      /* RF band switch: see table below */
 /* Band selection: SW1=H SW0=L → 315MHz, SW1=L SW0=H → 868/915MHz, SW1=H SW0=H → 434MHz */
 #define BOARD_CC1101_SPI_SHARED 1       /* CC1101 shares SPI2_HOST with LCD+SD (CS-muxed) */
+#define BOARD_HAS_BUILTIN_CC1101 1      /* Prefer onboard radio; probe external only on request */
 
 /* ---- NRF24L01 (built-in, parallel to CC1101 on the shared SPI bus) ---- */
 /* The T-Embed CC1101 board carries an on-board NRF24L01 that sits on the same

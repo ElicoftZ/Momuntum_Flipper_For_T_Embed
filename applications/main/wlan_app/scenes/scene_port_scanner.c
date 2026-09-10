@@ -1,5 +1,5 @@
 #include "../wlan_app.h"
-#include "../wlan_hal.h"
+#include <wlan_hal.h>
 #include <input/input.h>
 
 #include <esp_log.h>
@@ -288,7 +288,11 @@ static void portscan_start_scan(WlanApp* app, uint32_t ip) {
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewPortscan);
 
     // FuriThread-TLS-Reset (analog wifi_app: pthread_getspecific würde
-    // sonst auf garbage-Pointer dereferencen).
+    // sonst auf garbage-Pointer dereferencen). Save + restore: leaving the
+    // GUI thread's TLS[0] NULL crashes furi_event_loop_run's cleanup on app
+    // exit (furi_thread_get_current() returns NULL -> furi_check in
+    // furi_thread_set_signal_callback).
+    void* saved_tls = pvTaskGetThreadLocalStoragePointer(NULL, 0);
     vTaskSetThreadLocalStoragePointer(NULL, 0, NULL);
 
     s_scanning = true;
@@ -297,6 +301,7 @@ static void portscan_start_scan(WlanApp* app, uint32_t ip) {
     pthread_attr_setstacksize(&attr, 4096);
     int rc = pthread_create(&s_scan_thread, &attr, portscan_thread, app);
     pthread_attr_destroy(&attr);
+    vTaskSetThreadLocalStoragePointer(NULL, 0, saved_tls);
     if(rc == 0) {
         s_thread_running = true;
     } else {
