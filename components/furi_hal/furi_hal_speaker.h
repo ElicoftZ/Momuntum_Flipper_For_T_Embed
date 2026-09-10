@@ -66,6 +66,21 @@ void furi_hal_speaker_set_volume(float volume);
  */
 void furi_hal_speaker_stop(void);
 
+/** Play caller-supplied PCM instead of a generated tone.
+ *
+ * Samples are mono 16-bit at the speaker's own rate (44100 Hz); they are
+ * duplicated to both channels on the way out. Acquire the speaker first,
+ * exactly as for tones.
+ */
+bool furi_hal_speaker_pcm_start(void);
+
+/** Write mono samples. Blocks until they are queued or the timeout expires.
+ * @return samples actually written */
+size_t furi_hal_speaker_pcm_write(const int16_t* mono, size_t samples, uint32_t timeout_ms);
+
+/** Stop PCM playback. */
+void furi_hal_speaker_pcm_stop(void);
+
 /** Mirror a GPIO pin (e.g. CC1101 GDO0) onto the speaker as 1-bit audio.
  *
  * Replaces the STM32 hardware TIM-bridge that wired the demodulator output

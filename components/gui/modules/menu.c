@@ -758,6 +758,16 @@ void menu_set_selected_item(Menu* menu, uint32_t index) {
         true);
 }
 
+uint32_t menu_get_selected_item(Menu* menu) {
+    furi_check(menu);
+
+    uint32_t position = 0;
+    with_view_model(
+        menu->view, MenuModel * model, { position = model->position; }, false);
+
+    return position;
+}
+
 static void menu_set_position(Menu* menu, size_t position) {
     with_view_model(
         menu->view,
@@ -788,19 +798,13 @@ static void menu_process_up(Menu* menu) {
             size_t count = MenuItemArray_size(model->items);
 
             switch(momentum_settings.menu_style) {
-            case MenuStyleWii:
-                if(position % 2 || (position == count - 1 && count % 2)) {
-                    position--;
-                } else {
-                    position++;
-                }
-                break;
-
             default:
-                // Every other style, including the horizontal ones, steps by
-                // one. Upstream leaves those to left/right only, which on a
-                // rotary encoder means plain rotation does nothing at all and
-                // the menu cannot be navigated out of.
+                // Every style, including Wii's two-row grid and the horizontal
+                // ones, steps by one. Upstream leaves those to left/right only,
+                // which on a rotary encoder means plain rotation does nothing at
+                // all and the menu cannot be navigated out of. Wii additionally
+                // had up and down running the same pair-toggle, so rotation
+                // reached the current column's two apps and nothing else.
                 if(position > 0) {
                     position--;
                 } else {
@@ -823,14 +827,6 @@ static void menu_process_down(Menu* menu) {
             size_t count = MenuItemArray_size(model->items);
 
             switch(momentum_settings.menu_style) {
-            case MenuStyleWii:
-                if(position % 2 || (position == count - 1 && count % 2)) {
-                    position--;
-                } else {
-                    position++;
-                }
-                break;
-
             default:
                 // See menu_process_up: rotation has to work in every style.
                 if(position < count - 1) {
@@ -987,4 +983,34 @@ static void menu_process_ok(Menu* menu) {
     if(item && item->callback) {
         item->callback(item->callback_context, item->index);
     }
+}
+
+#include <desktop/desktop.h>
+#include <desktop/desktop_settings.h>
+
+void menu_set_style(MenuStyle style) {
+    if((unsigned)style >= MenuStyleCount) style = MenuStyleList;
+    momentum_settings.menu_style = style;
+    momentum_settings_save();
+}
+
+MenuStyle menu_get_style(void) {
+    return momentum_settings.menu_style;
+}
+
+void lock_screen_set_style(LockScreenStyle style) {
+    if((unsigned)style >= LockScreenStyleCount) style = LockScreenStyleDefault;
+    Desktop* desktop = furi_record_open(RECORD_DESKTOP);
+    DesktopSettings settings;
+    desktop_api_get_settings(desktop, &settings);
+    settings.control_center_style = (uint8_t)style;
+    desktop_api_set_settings(desktop, &settings);
+    furi_record_close(RECORD_DESKTOP);
+}
+
+LockScreenStyle lock_screen_get_style(void) {
+    DesktopSettings settings;
+    desktop_settings_load(&settings);
+    return settings.control_center_style < LockScreenStyleCount ?
+        (LockScreenStyle)settings.control_center_style : LockScreenStyleDefault;
 }

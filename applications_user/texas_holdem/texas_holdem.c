@@ -273,13 +273,15 @@ int32_t texas_holdem_app(void* p) {
             } else {
                 app->show_menu = true;
             }
-        } else if(app->show_menu && event.key == InputKeyLeft) {
+            // Plain wheel rotation emits Up/Down on this board; Left/Right need
+            // encoder-hold+turn, so the action menu was unreachable by rotation.
+        } else if(app->show_menu && (event.key == InputKeyDown || event.key == InputKeyLeft)) {
             if(app->selected_action == 0) {
                 app->selected_action = HoldemActionCount - 1;
             } else {
                 app->selected_action--;
             }
-        } else if(app->show_menu && event.key == InputKeyRight) {
+        } else if(app->show_menu && (event.key == InputKeyUp || event.key == InputKeyRight)) {
             app->selected_action = (app->selected_action + 1) % HoldemActionCount;
         }
 

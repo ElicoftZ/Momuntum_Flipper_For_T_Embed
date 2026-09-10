@@ -86,6 +86,7 @@ struct Desktop {
     ViewStack* locked_view_stack;
 
     ViewPort* lock_icon_viewport;
+    ViewPort* wifi_icon_viewport;
     ViewPort* dummy_mode_icon_viewport;
     ViewPort* clock_viewport;
     ViewPort* stealth_mode_icon_viewport;
@@ -99,6 +100,8 @@ struct Desktop {
     FuriPubSubSubscription* input_events_subscription;
 
     FuriTimer* auto_lock_timer;
+    FuriTimer* qflipper_resume_timer;
+    FuriTimer* qflipper_usj_timer;
     FuriTimer* update_clock_timer;
 
     AnimationManager* animation_manager;
@@ -109,6 +112,8 @@ struct Desktop {
 
     bool in_transition;
     bool app_running;
+    bool applications_browser_open;
+    bool launcher_menu_open;
     bool locked;
 
     /* Mesh-State. Der T-Embed ist immer Master (kein Mode mehr). mesh_pending
@@ -142,9 +147,14 @@ void desktop_lock(Desktop* desktop);
 void desktop_unlock(Desktop* desktop);
 void desktop_set_dummy_mode_state(Desktop* desktop, bool enabled);
 void desktop_set_stealth_mode_state(Desktop* desktop, bool enabled);
+void desktop_set_wifi_icon_state(Desktop* desktop, bool enabled);
 
 /* Mesh-Callback (impl in desktop.c): packt das Event in desktop->mesh_pending
  * und feuert DesktopMeshEventClient{PairRequest,Disconnect} via
  * view_dispatcher_send_custom_event. Aus dem Mesh-Service-Worker-Task sicher
  * aufrufbar (view_dispatcher hat eigene message queue). */
 void desktop_mesh_event_cb(const MeshEventData* ev, void* ctx);
+
+/* Lock-Menue-Zustaende (qFlipper/BT/WiFi-Labels) neu einlesen — auch von
+ * ausserhalb der Scene aufrufbar (Auto-off der qFlipper-Bridge). */
+void desktop_scene_lock_menu_refresh(Desktop* desktop);

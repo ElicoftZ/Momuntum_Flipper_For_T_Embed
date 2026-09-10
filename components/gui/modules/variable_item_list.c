@@ -36,6 +36,7 @@ typedef struct {
     size_t scroll_counter;
     bool locked_message_visible;
     bool editing; // true when user has pressed Ok to edit the selected item's value
+    bool wrap_around;
 } VariableItemListModel;
 
 static uint8_t variable_item_list_items_on_screen(const VariableItemListModel* model) {
@@ -181,6 +182,7 @@ void variable_item_list_set_selected_item(VariableItemList* variable_item_list, 
 
             model->position = position;
             model->window_position = position;
+            model->editing = false;
 
             if(model->window_position > 0) {
                 model->window_position -= 1;
@@ -198,12 +200,32 @@ void variable_item_list_set_selected_item(VariableItemList* variable_item_list, 
         true);
 }
 
+void variable_item_list_set_wrap_around(VariableItemList* variable_item_list, bool enabled) {
+    furi_check(variable_item_list);
+    with_view_model(
+        variable_item_list->view,
+        VariableItemListModel * model,
+        { model->wrap_around = enabled; },
+        false);
+}
+
 uint8_t variable_item_list_get_selected_item_index(VariableItemList* variable_item_list) {
     furi_check(variable_item_list);
     VariableItemListModel* model = view_get_model(variable_item_list->view);
     uint8_t idx = model->position;
     view_commit_model(variable_item_list->view, false);
     return idx;
+}
+
+uint8_t variable_item_list_get_item_count(VariableItemList* variable_item_list) {
+    furi_check(variable_item_list);
+    uint8_t count = 0;
+    with_view_model(
+        variable_item_list->view,
+        VariableItemListModel * model,
+        { count = (uint8_t)VariableItemArray_size(model->items); },
+        false);
+    return count;
 }
 
 void variable_item_list_set_header(VariableItemList* variable_item_list, const char* header) {
@@ -321,7 +343,7 @@ void variable_item_list_process_up(VariableItemList* variable_item_list) {
                        (model->window_position > 0)) {
                         model->window_position--;
                     }
-                } else {
+                } else if(model->wrap_around) {
                     model->position = VariableItemArray_size(model->items) - 1;
                     if(model->position > (items_on_screen - 1)) {
                         model->window_position = model->position - (items_on_screen - 1);
@@ -363,7 +385,7 @@ void variable_item_list_process_down(VariableItemList* variable_item_list) {
                            (VariableItemArray_size(model->items) - items_on_screen)) {
                         model->window_position++;
                     }
-                } else {
+                } else if(model->wrap_around) {
                     model->position = 0;
                     model->window_position = 0;
                 }
@@ -500,6 +522,7 @@ VariableItemList* variable_item_list_alloc(void) {
             model->header = furi_string_alloc();
             model->scroll_counter = 0;
             model->editing = false;
+            model->wrap_around = true;
         },
         true);
     variable_item_list->scroll_timer = furi_timer_alloc(

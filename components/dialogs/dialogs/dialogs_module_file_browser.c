@@ -35,7 +35,8 @@ bool dialogs_app_process_module_file_browser(const DialogsAppMessageDataFileBrow
     Gui* gui = furi_record_open(RECORD_GUI);
 
     DialogsAppFileBrowserContext* file_browser_context =
-        malloc(sizeof(DialogsAppFileBrowserContext));
+        calloc(1, sizeof(DialogsAppFileBrowserContext));
+    furi_check(file_browser_context);
     file_browser_context->lock = api_lock_alloc_locked();
 
     ViewHolder* view_holder = view_holder_alloc();

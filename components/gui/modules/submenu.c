@@ -4,6 +4,7 @@
 #include "../elements.h"
 #include <furi.h>
 #include <m-array.h>
+#include <u8g2_glue.h>
 
 struct Submenu {
     View* view;
@@ -105,9 +106,9 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
         canvas_set_font(canvas, FontPrimary);
         if(model->header_centered) {
             canvas_draw_str_aligned(
-                canvas,
-                canvas_width(canvas) / 2,
-                11,
+                 canvas,
+                 canvas_width(canvas) / 2,
+                 11,
                 AlignCenter,
                 AlignBottom,
                 furi_string_get_cstr(model->header));
@@ -200,9 +201,10 @@ static void submenu_view_draw_callback(Canvas* canvas, void* _model) {
 
         canvas_draw_rframe(canvas, frame_x, frame_y, frame_width, frame_height, 3);
         canvas_draw_rframe(canvas, frame_x + 1, frame_y + 1, frame_width - 2, frame_height - 2, 2);
+        canvas_set_custom_u8g2_font(canvas, u8g2_font_5x7_tr);
         elements_multiline_text_aligned(
             canvas,
-            (model->is_vertical) ? 32 : 84,
+            (model->is_vertical) ? 32 : 92,
             (model->is_vertical) ? 42 : 32,
             AlignCenter,
             AlignCenter,

@@ -7,6 +7,8 @@
 #include "views/receiver.h"
 #include "views/transmitter.h"
 #include "views/subghz_frequency_analyzer.h"
+#include "views/subghz_spectrogram.h"
+#include "views/subghz_spectrum.h"
 #include "views/subghz_read_raw.h"
 #include "views/subghz_jammer.h"
 #include "views/subghz_playlist.h"
@@ -81,6 +83,8 @@ struct SubGhz {
     VariableItemList* variable_item_list;
 
     SubGhzFrequencyAnalyzer* subghz_frequency_analyzer;
+    SubGhzSpectrogram* subghz_spectrogram;
+    SubGhzSpectrum* subghz_spectrum;
     SubGhzReadRAW* subghz_read_raw;
     SubGhzJammer* subghz_jammer;
     SubGhzPlaylist* subghz_playlist;
@@ -153,6 +157,9 @@ bool subghz_is_locked(SubGhz* subghz);
 
 void subghz_rx_key_state_set(SubGhz* subghz, SubGhzRxKeyState state);
 SubGhzRxKeyState subghz_rx_key_state_get(SubGhz* subghz);
+
+/** Allocate the optional Bruteforce subsystem only when its scene is opened. */
+void subghz_ensure_subbrute_allocated(SubGhz* subghz);
 
 extern const NotificationSequence subghz_sequence_rx;
 extern const NotificationSequence subghz_sequence_rx_locked;

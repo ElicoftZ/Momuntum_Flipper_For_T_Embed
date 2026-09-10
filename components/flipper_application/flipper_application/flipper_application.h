@@ -34,8 +34,10 @@ typedef enum {
 
 const char* flipper_application_preload_status_to_string(FlipperApplicationPreloadStatus status);
 const char* flipper_application_load_status_to_string(FlipperApplicationLoadStatus status);
-
 typedef struct FlipperApplication FlipperApplication;
+
+/* Optional ARM load diagnostic, valid until the application is freed. */
+const char* flipper_application_get_load_error(const FlipperApplication* app);
 
 typedef struct {
     const char* name;

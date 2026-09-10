@@ -21,6 +21,12 @@ typedef struct NotificationColorPicker NotificationColorPicker;
  * @param confirmed  true = Save, false = cancelled (Back) */
 typedef void (*NotificationColorPickerCallback)(void* context, uint32_t rgb, bool confirmed);
 
+/** Called on every value change while the picker is open, so the caller can
+ * render a live preview itself. Needed for gradient stops: the picker's own
+ * preview writes fg_color, which the display ignores while a gradient is on.
+ * Optional -- when unset the picker previews via fg_color as before. */
+typedef void (*NotificationColorPickerPreviewCallback)(void* context, uint32_t rgb);
+
 NotificationColorPicker* notification_color_picker_alloc(void);
 
 void notification_color_picker_free(NotificationColorPicker* picker);
@@ -30,6 +36,12 @@ View* notification_color_picker_get_view(NotificationColorPicker* picker);
 void notification_color_picker_set_callback(
     NotificationColorPicker* picker,
     NotificationColorPickerCallback callback,
+    void* context);
+
+/** Install a live-preview callback (pass NULL to restore fg_color preview). */
+void notification_color_picker_set_preview_callback(
+    NotificationColorPicker* picker,
+    NotificationColorPickerPreviewCallback callback,
     void* context);
 
 /** Preload the picker with a starting color (0x00RRGGBB) and push it to the

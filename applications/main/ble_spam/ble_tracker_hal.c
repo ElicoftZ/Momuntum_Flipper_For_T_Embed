@@ -1,10 +1,10 @@
 #include "ble_tracker_hal.h"
 
-#include <esp_bt.h>
-#include <esp_bt_main.h>
-#include <esp_gap_ble_api.h>
 #include <esp_log.h>
 #include <furi.h>
+#include <host/ble_gap.h>
+#include <host/ble_hs.h>
+#include <nimble_glue.h>
 #include <string.h>
 
 #define TAG "BleTracker"
@@ -140,28 +140,17 @@ static bool classify_advert(
 // GAP callback
 // ---------------------------------------------------------------------------
 
-static void tracker_gap_event_handler(
-    esp_gap_ble_cb_event_t event,
-    esp_ble_gap_cb_param_t* param) {
-    switch(event) {
-    case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
-        if(param->scan_param_cmpl.status == ESP_BT_STATUS_SUCCESS) {
-            esp_ble_gap_start_scanning(0); // indefinite
-        }
-        break;
-
-    case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
-        s_scanning = (param->scan_start_cmpl.status == ESP_BT_STATUS_SUCCESS);
-        break;
-
-    case ESP_GAP_BLE_SCAN_RESULT_EVT:
-        if(param->scan_rst.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT) {
+static int tracker_gap_event_handler(struct ble_gap_event* event, void* context) {
+    (void)context;
+    switch(event->type) {
+    case BLE_GAP_EVENT_DISC: {
+            const struct ble_gap_disc_desc* result = &event->disc;
             TrackerKind kind = TrackerKindUnknown;
             char name[24] = "";
             bool match = classify_advert(
-                param->scan_rst.ble_adv,
-                param->scan_rst.adv_data_len,
-                param->scan_rst.scan_rsp_len,
+                result->data,
+                result->length_data,
+                0,
                 &kind,
                 name,
                 sizeof(name));
@@ -170,17 +159,21 @@ static void tracker_gap_event_handler(
             uint32_t now = furi_get_tick();
 
             // Dedup by MAC
+            uint8_t display_addr[6];
+            for(size_t i = 0; i < sizeof(display_addr); i++) {
+                display_addr[i] = result->addr.val[sizeof(display_addr) - 1 - i];
+            }
             int found = -1;
             for(int i = 0; i < s_device_count; i++) {
-                if(memcmp(s_devices[i].addr, param->scan_rst.bda, 6) == 0) {
+                if(memcmp(s_devices[i].addr, display_addr, 6) == 0) {
                     found = i;
                     break;
                 }
             }
             if(found >= 0) {
                 TrackerDevice* d = &s_devices[found];
-                d->rssi = param->scan_rst.rssi;
-                if(param->scan_rst.rssi > d->best_rssi) d->best_rssi = param->scan_rst.rssi;
+                d->rssi = result->rssi;
+                if(result->rssi > d->best_rssi) d->best_rssi = result->rssi;
                 d->last_seen_ms = now;
                 // Upgrade name if PP gave us a model after a generic match
                 if(d->name[0] == '\0' && name[0] != '\0') {
@@ -190,26 +183,27 @@ static void tracker_gap_event_handler(
                 d->kind = kind;
             } else if(s_device_count < TRACKER_MAX_DEVICES) {
                 TrackerDevice* d = &s_devices[s_device_count];
-                memcpy(d->addr, param->scan_rst.bda, 6);
-                d->addr_type = param->scan_rst.ble_addr_type;
+                memcpy(d->addr, display_addr, 6);
+                d->addr_type = result->addr.type;
                 d->kind = kind;
-                d->rssi = param->scan_rst.rssi;
-                d->best_rssi = param->scan_rst.rssi;
+                d->rssi = result->rssi;
+                d->best_rssi = result->rssi;
                 d->last_seen_ms = now;
                 strncpy(d->name, name, sizeof(d->name) - 1);
                 d->name[sizeof(d->name) - 1] = '\0';
                 s_device_count++;
             }
-        }
         break;
+    }
 
-    case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
+    case BLE_GAP_EVENT_DISC_COMPLETE:
         s_scanning = false;
         break;
 
     default:
         break;
     }
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,32 +214,29 @@ bool ble_tracker_hal_start_scan(void) {
     s_device_count = 0;
     memset(s_devices, 0, sizeof(s_devices));
 
-    // Take over GAP callback from whoever had it (e.g. ble_walk_hal)
-    esp_err_t err = esp_ble_gap_register_callback(tracker_gap_event_handler);
-    if(err != ESP_OK) {
-        ESP_LOGE(TAG, "gap register: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    esp_ble_scan_params_t scan_params = {
-        .scan_type = BLE_SCAN_TYPE_PASSIVE,
-        .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
-        .scan_filter_policy = BLE_SCAN_FILTER_ALLOW_ALL,
-        .scan_interval = 0x50, // 50ms
-        .scan_window = 0x30,   // 30ms
+    struct ble_gap_disc_params scan_params = {
+        .passive = 1,
+        .itvl = 0x50,
+        .window = 0x30,
+        .filter_duplicates = 0,
     };
-
-    err = esp_ble_gap_set_scan_params(&scan_params);
-    if(err != ESP_OK) {
-        ESP_LOGE(TAG, "set_scan_params: %s", esp_err_to_name(err));
+    int rc = ble_gap_disc(
+        nimble_glue_own_address_type(),
+        BLE_HS_FOREVER,
+        &scan_params,
+        tracker_gap_event_handler,
+        NULL);
+    if(rc != 0) {
+        ESP_LOGE(TAG, "ble_gap_disc failed, rc=%d", rc);
         return false;
     }
+    s_scanning = true;
     return true;
 }
 
 void ble_tracker_hal_stop_scan(void) {
     if(s_scanning) {
-        esp_ble_gap_stop_scanning();
+        ble_gap_disc_cancel();
         for(int i = 0; i < 20 && s_scanning; i++) {
             furi_delay_ms(5);
         }

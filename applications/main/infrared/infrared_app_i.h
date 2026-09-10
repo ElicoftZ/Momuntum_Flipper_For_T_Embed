@@ -21,6 +21,7 @@
 #include <gui/modules/button_menu.h>
 #include <gui/modules/button_panel.h>
 #include <gui/modules/variable_item_list.h>
+#include <gui/modules/widget.h>
 
 #include <rpc/rpc_app.h>
 #include <storage/storage.h>
@@ -91,6 +92,17 @@ typedef struct {
     int32_t prev_button_index; /**< Previous button index (move source). */
     uint32_t last_transmit_time; /**< Lat time a signal was transmitted. */
     FuriHalInfraredTxPin tx_pin;
+
+    // Native IR jammer configuration/state. Settings are byte-sized so the
+    // GUI and InfraredWorker threads can exchange them atomically.
+    volatile bool jammer_active;
+    volatile uint8_t jammer_frequency_index;
+    volatile uint8_t jammer_mode;
+    volatile uint8_t jammer_intensity;
+    volatile uint8_t jammer_timeout_index;
+    uint32_t jammer_started_at;
+    uint32_t jammer_packet_count;
+    uint32_t jammer_rng;
 } InfraredAppState;
 
 /**
@@ -119,6 +131,7 @@ struct InfraredApp {
     ViewStack* view_stack; /**< Standard view for displaying stacked interfaces. */
     InfraredDebugView* debug_view; /**< Custom view for displaying debug information. */
     InfraredMoveView* move_view; /**< Custom view for rearranging buttons in a remote. */
+    Widget* widget; /**< Standard view for displaying textual information with buttons. */
 
     ButtonPanel* button_panel; /**< Standard view for displaying control panels. */
     Loading* loading; /**< Standard view for informing about long operations. */
@@ -148,6 +161,7 @@ typedef enum {
     InfraredViewDebugView,
     InfraredViewMove,
     InfraredViewLoading,
+    InfraredViewWidget,
 } InfraredView;
 
 /**

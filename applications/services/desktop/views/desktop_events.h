@@ -39,11 +39,22 @@ typedef enum {
     DesktopDebugEventToggleDebugMode,
     DesktopDebugEventExit,
 
-    DesktopLockMenuEventQflipperToggle,
+    DesktopLockMenuEventPcLinkToggle,
     DesktopLockMenuEventUsbStorage,
     DesktopLockMenuEventBluetoothToggle,
+    DesktopLockMenuEventWifiToggle,
+    DesktopLockMenuEventRadioModeToggle,
     DesktopLockMenuEventMeshClients,
     DesktopLockMenuEventWakeToggle,
+    DesktopLockMenuEventDualBoot,
+    DesktopLockMenuEventDarkModeToggle,
+    DesktopLockMenuEventStealthToggle,
+    DesktopLockMenuEventLock,
+    DesktopLockMenuEventOpenSettings,
+    DesktopLockMenuEventOpenMomentum,
+    DesktopLockMenuEventOpenDisplay,
+    DesktopLockMenuEventOpenPower,
+    DesktopLockMenuEventWebFs,
 
     DesktopMeshClientsEventPair,
     DesktopMeshClientsEventRemove,
@@ -84,6 +95,14 @@ typedef enum {
     DesktopMeshEventMasterResult,         /* global: Result vom Buddy → Overlay + Ack */
     DesktopMeshEventOverlayExpire,        /* global: Overlay-Timer abgelaufen → ausblenden */
 
+    /* qFlipper-Bridge auf dem Desktop-Thread starten (wie der Lock-Menue-
+     * Toggle): verzoegert nach einem OTA-Reboot (RTC-Flag) oder auf das
+     * "qflipper"-Kommando von qT-Embed ueber die USB-Serial-JTAG-Konsole. */
+    DesktopGlobalQflipperStart,
+    /* Host hat die qFlipper-Verbindung beendet (Auto-off der Bridge): Bridge
+     * stoppen + Composite abbauen → zurueck zu USB-Serial-JTAG. */
+    DesktopGlobalQflipperStop,
+
     DesktopAnimationEventCheckAnimation,
     DesktopAnimationEventNewIdleAnimation,
     DesktopAnimationEventInteractAnimation,
@@ -102,4 +121,8 @@ typedef enum {
     DesktopGlobalApiUnlock,
     DesktopGlobalSaveSettings,
     DesktopGlobalReloadSettings,
+    DesktopGlobalApplicationsBrowserOpened,
+    DesktopGlobalApplicationsBrowserClosed,
+    DesktopGlobalLauncherMenuOpened,
+    DesktopGlobalLauncherMenuClosed,
 } DesktopEvent;

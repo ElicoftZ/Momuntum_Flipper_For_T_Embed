@@ -8,6 +8,7 @@
 #include <notification/notification_messages.h>
 
 #include <loader/loader.h>
+#include <dolphin/dolphin.h>
 
 #define TAG "Power"
 
@@ -362,8 +363,26 @@ void power_trigger_ui_update(Power* power) {
     view_port_update(power->battery_view_port);
 }
 
+/* Persist the dolphin's XP/level before the device goes away. Earned XP only
+ * sits in RAM until a delayed flush timer fires, so a power off or reboot taken
+ * shortly after earning it dropped the progress entirely. dolphin_flush() writes
+ * synchronously and is a no-op when nothing is dirty, so this costs a queue
+ * round trip and no flash cycle in the common case. */
+static void power_flush_dolphin(void) {
+    Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+    dolphin_flush(dolphin);
+    furi_record_close(RECORD_DOLPHIN);
+}
+
+static void power_prepare_dolphin_for_sleep(void) {
+    Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
+    dolphin_prepare_for_sleep(dolphin);
+    furi_record_close(RECORD_DOLPHIN);
+}
+
 static void power_handle_shutdown(Power* power) {
     UNUSED(power);
+    power_prepare_dolphin_for_sleep();
     furi_hal_power_off();
     /* furi_hal_power_off() should not return (enters deep sleep).
      * If it does, halt as fallback. */
@@ -372,6 +391,11 @@ static void power_handle_shutdown(Power* power) {
 
 static void power_handle_reboot(PowerBootMode mode) {
     if(mode == PowerBootModeNormal) {
+        /* Normal reboots only. dolphin_flush() blocks on the dolphin service
+         * with FuriWaitForever, and a DFU or update reboot has to reach the
+         * updater even if that service is wedged -- losing at most 30 s of XP
+         * is the right trade against failing to start an update. */
+        power_flush_dolphin();
         update_operation_disarm();
     } else if(mode == PowerBootModeDfu) {
         furi_hal_rtc_set_boot_mode(FuriHalRtcBootModeDfu);

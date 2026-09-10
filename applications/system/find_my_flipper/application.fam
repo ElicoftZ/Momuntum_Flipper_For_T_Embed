@@ -4,6 +4,8 @@ App(
     apptype=FlipperAppType.EXTERNAL,
     entry_point="findmy_main",
     requires=["gui"],
+    provides=["findmy_startup"],
+    sources=["*.c*", "!findmy_startup.c", "!findmy_state.c"],
     stack_size=2 * 1024,
     fap_icon="location_icon.png",
     fap_icon_assets="icons",
@@ -16,7 +18,7 @@ App(
 
 App(
     appid="findmy_startup",
-    targets=["f7"],
+    targets=["f7", "f32"],
     apptype=FlipperAppType.STARTUP,
     entry_point="findmy_startup",
     sources=["findmy_startup.c", "findmy_state.c"],

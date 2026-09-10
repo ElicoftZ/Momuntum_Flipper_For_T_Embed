@@ -17,17 +17,24 @@
 #include "wlan_mitm_payloads.h"
 #include "wlan_evil_portal_templates.h"
 #include "wlan_sd_update.h"
+#include "wlan_fw_update.h"
+#include "wlan_webfs.h"
+#include "wlan_smb.h"
+#include "wlan_androidtv.h"
 #include "views/wlan_lan_view.h"
+#include "views/wlan_androidtv_remote_view.h"
 #include "views/wlan_connect_view.h"
 #include "views/wlan_portscan_view.h"
 #include "views/wlan_handshake_view.h"
 #include "views/wlan_handshake_channel_view.h"
 #include "views/wlan_deauther_view.h"
+#include "views/wlan_smart_deauth_view.h"
 #include "views/wlan_sniffer_view.h"
 #include "views/wlan_evil_portal_view.h"
 #include "views/wlan_evil_portal_captured_view.h"
 #include "views/wlan_live_creds_view.h"
 #include "views/wlan_sd_update_view.h"
+#include "views/wlan_fw_update_view.h"
 
 #define WLAN_APP_TAG "WlanApp"
 #define WLAN_APP_MAX_APS 64
@@ -35,6 +42,7 @@
 #define WLAN_APP_SSID_MAX 33
 #define WLAN_APP_PASSWORD_MAX 65
 #define WLAN_APP_HOSTNAME_MAX 32
+#define WLAN_AIRSNITCH_MAX_PEERS 48
 
 typedef enum {
     WlanAppViewSubmenu,
@@ -49,11 +57,15 @@ typedef enum {
     WlanAppViewHandshake,
     WlanAppViewHandshakeChannel,
     WlanAppViewDeauther,
+    WlanAppViewSmartDeauth,
     WlanAppViewSniffer,
     WlanAppViewEvilPortal,
     WlanAppViewEvilPortalCaptured,
     WlanAppViewLiveCreds,
     WlanAppViewSdUpdate,
+    WlanAppViewFwUpdate,
+    WlanAppViewAndroidTvRemote,
+    WlanAppViewProbeSniff,
 } WlanAppView;
 
 typedef struct {
@@ -75,6 +87,15 @@ typedef struct {
     uint16_t throttle_kbps; // 0 = aus
     bool sniff_monitor;     // ARP-MITM + transparenter Forward (Live Creds); exklusiv mit block
 } WlanDeviceRecord;
+
+// AirSnitch: ein vom Gastnetz aus erreichbares Gerät (Client-Isolation-Bypass).
+// mac ist nur für same_subnet-Peers (L2/ARP) bekannt, sonst 0.
+typedef struct {
+    uint32_t ip;            // Network-Byte-Order
+    uint8_t mac[6];         // 0 wenn Fremd-Subnetz (L3)
+    char hostname[WLAN_APP_HOSTNAME_MAX];
+    bool same_subnet;       // true = eigenes Gast-/24 (L2), false = Fremd-Subnetz (L3)
+} WlanAirsnitchPeer;
 
 #define WLAN_APP_MAX_DEAUTH_CLIENTS 16
 
@@ -122,6 +143,7 @@ struct WlanApp {
     View* view_handshake;
     View* view_handshake_channel;
     View* view_deauther;
+    View* view_smart_deauth;
     View* view_sniffer;
     WlanSnifferView* sniffer_view_obj;
     View* view_evil_portal;
@@ -195,6 +217,11 @@ struct WlanApp {
     bool lan_scan_complete;       // true wenn ARP-Scan einmal durchgelaufen ist
     bool lan_force_rescan;        // true → SD-Cache überspringen, echten ARP-Scan erzwingen
 
+    // AirSnitch (Client-Isolation-Test vom Gastnetz aus)
+    char airsnitch_target_ssid[WLAN_APP_SSID_MAX]; // reines Label des gewählten Zielnetzes
+    WlanAirsnitchPeer airsnitch_peers[WLAN_AIRSNITCH_MAX_PEERS];
+    uint8_t airsnitch_peer_count;
+
     // Deauther-/Sniffer-Picker-Scene-State (shared)
     WlanDeauthClient deauth_clients[WLAN_APP_MAX_DEAUTH_CLIENTS];
     uint8_t deauth_client_count;
@@ -228,12 +255,46 @@ struct WlanApp {
 
     WlanNetcut* netcut;
 
-    // Update-SD-Flow: true sobald der User "Update SD" gewählt hat; steuert,
-    // dass scene_ssid_connect nach erfolgreichem Connect zur Update-SD-Scene
-    // statt zum ARP-Scan springt. Wird in scene_update_sd konsumiert.
-    bool update_sd_flow;
+    // SD-Content-Update (Delta-Sync über files.txt). Worker + View werden von
+    // der kombinierten Update-Scene (scene_fw_update) als zweite Phase genutzt.
     WlanSdUpdate* sd_update;
     View* view_sd_update;
+
+    // Kombiniertes Update (Firmware + SD): true sobald der User "Update" gewählt
+    // hat; scene_ssid_connect routet nach erfolgreichem Connect zur Update-Scene.
+    // Wird in scene_fw_update konsumiert.
+    bool fw_update_flow;
+    WlanFwUpdate* fw_update;
+    View* view_fw_update;
+
+    // Web-Filesystem: like fw_update_flow, but routes to the Web-FS info scene
+    // after a successful connect. webfs_ssid/pw hold the Dedicated-AP config.
+    bool webfs_flow;
+    char webfs_ssid[WLAN_WEBFS_SSID_MAX + 1];
+    char webfs_pw[WLAN_WEBFS_PW_MAX + 1];
+
+    // SMB Browser (only shown when connected). smb is lazily allocated on
+    // first use and freed in wlan_app_free.
+    WlanSmb* smb;
+    char smb_server_ip[64];                 // selected server ("a.b.c.d")
+    char smb_server_name[WLAN_APP_HOSTNAME_MAX]; // NetBIOS/host label
+    char smb_user[WLAN_SMB_USER_MAX];
+    char smb_pass[WLAN_SMB_PASS_MAX];
+    char smb_share[WLAN_SMB_SHARE_MAX];     // current share, "" = share list level
+    char smb_path[WLAN_SMB_PATH_MAX];       // current path within the share
+    // Pending download target (set from the browser's long-OK menu).
+    char smb_dl_share[WLAN_SMB_SHARE_MAX];
+    char smb_dl_path[WLAN_SMB_PATH_MAX];
+    char smb_dl_name[WLAN_SMB_NAME_MAX];
+    bool smb_dl_is_dir;
+
+    // Android TV remote (only shown when connected). androidtv is lazily
+    // allocated on first use and freed in wlan_app_free.
+    WlanAndroidTv* androidtv;
+    View* view_androidtv_remote;
+    char androidtv_ip[64]; // selected TV ("a.b.c.d")
+    char androidtv_name[WLAN_ATV_NAME_MAX]; // host/NetBIOS label from the scan
+    char androidtv_pin[8]; // 6-hex PIN entered during pairing
 };
 
 /** Schlüssel der aktuellen Picker-Assoziation: Channel-Key im Channel-Mode,

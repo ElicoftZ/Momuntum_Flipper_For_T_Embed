@@ -1,0 +1,12 @@
+# Dynamic multi-boot: no reserved secondary app slots.
+# Installations occupy aligned gaps from 0x420000 to 0xf20000.
+# Bootloader recovery uses partbackup if a table update is interrupted.
+# Name, Type, SubType, Offset, Size, Flags
+nvs,data,nvs,0x9000,0x6000,
+phy_init,data,phy,0xf000,0x1000,
+otadata,data,ota,0x10000,0x2000,
+partbackup,data,0x40,0x12000,0x1000,
+partpending,data,0x40,0x13000,0x1000,
+factory,app,factory,0x20000,0x400000,
+coredump,data,coredump,0xf20000,0x20000,
+spiffs,data,spiffs,0xf40000,0xc0000,

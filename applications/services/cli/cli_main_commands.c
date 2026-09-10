@@ -49,6 +49,7 @@ void cli_command_info(PipeSide* pipe, FuriString* args, void* context) {
     }
 }
 
+
 void cli_command_uptime(PipeSide* pipe, FuriString* args, void* context) {
     UNUSED(pipe);
     UNUSED(args);

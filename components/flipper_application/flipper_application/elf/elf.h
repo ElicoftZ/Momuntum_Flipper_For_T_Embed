@@ -94,6 +94,7 @@ typedef struct {
 
 /* Legal values for e_machine */
 #define EM_XTENSA 94
+#define EM_ARM    40
 
 /* Special section indices */
 #define SHN_UNDEF 0

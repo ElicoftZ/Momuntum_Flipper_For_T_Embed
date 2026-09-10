@@ -1,0 +1,14 @@
+App(
+    appid="dualboot",
+    name="Dual Boot",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="dualboot_app",
+    requires=[
+        "gui",
+        "storage",
+    ],
+    stack_size=8 * 1024,
+    icon="I_CC_DualBoot_16x16",
+    order=91,
+    fap_category="Tools",
+)

@@ -894,9 +894,50 @@ bool storage_common_exists(Storage* storage, const char* path) {
 
 /* ---- SD Card functions ---- */
 
+/* The folder skeleton a freshly formatted card needs. Apps create their own
+ * folder on first run, but a blank card otherwise offers the user nowhere to
+ * copy files to from a PC, which is the point at which they are most likely to
+ * be populating it. */
+static const char* const storage_sd_default_dirs[] = {
+    "/ext/apps",
+    "/ext/apps_assets",
+    "/ext/apps_data",
+    "/ext/asset_packs",
+    "/ext/badusb",
+    "/ext/dolphin",
+    "/ext/firmware",
+    "/ext/ibutton",
+    "/ext/infrared",
+    "/ext/lfrfid",
+    "/ext/nfc",
+    "/ext/subghz",
+    "/ext/subghz_remote",
+};
+
 FS_Error storage_sd_format(Storage* storage) {
-    (void)storage;
-    return FSE_NOT_IMPLEMENTED;
+    furi_assert(storage);
+    if(!storage->sd_mounted) return FSE_NOT_READY;
+
+    storage_sd_bus_lock();
+    const bool ok = furi_hal_sd_format();
+    storage_sd_bus_unlock();
+
+    if(!ok) return FSE_INTERNAL;
+
+    /* Repopulate the skeleton; the card is empty at exactly this point. */
+    for(size_t i = 0; i < COUNT_OF(storage_sd_default_dirs); i++) {
+        const FS_Error err = storage_common_mkdir(storage, storage_sd_default_dirs[i]);
+        if(err != FSE_OK && err != FSE_EXIST) {
+            FURI_LOG_W(TAG, "Format: cannot create %s (%d)", storage_sd_default_dirs[i], err);
+        }
+    }
+
+    /* Everything that was on the card is gone and the volume was remounted, so
+     * subscribers need to re-read it -- the desktop reloads settings on this. */
+    StorageEvent event = {.type = StorageEventTypeCardMount};
+    furi_pubsub_publish(storage->pubsub, &event);
+
+    return FSE_OK;
 }
 
 FS_Error storage_sd_unmount(Storage* storage) {

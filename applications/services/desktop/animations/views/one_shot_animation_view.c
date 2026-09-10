@@ -62,7 +62,15 @@ static bool one_shot_view_input(InputEvent* event, void* context) {
     view_commit_model(view->view, false);
 
     if(!consumed) {
-        if(event->key == InputKeyRight) {
+        /* OK as well as Right. This is the "level up" screen that follows NEW
+         * MAIL, and it says "press OK" -- but only Right dismissed it, which
+         * this board has no reachable button for. The press then fell through
+         * to the desktop underneath and opened the main menu instead.
+         *
+         * No gating needed here, unlike the bubble animation view: this view
+         * exists only while the level-up is on screen, so consuming OK cannot
+         * take it away from anything else. */
+        if(event->key == InputKeyRight || event->key == InputKeyOk) {
             /* Right button reserved for animation activation, so consume */
             if(event->type == InputTypeShort) {
                 consumed = true;

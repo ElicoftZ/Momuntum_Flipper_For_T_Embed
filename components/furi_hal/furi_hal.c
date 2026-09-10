@@ -8,6 +8,9 @@ static const char* TAG = "FuriHal";
 
 void furi_hal_init_early(void) {
     furi_hal_cortex_init_early();
+    /* Consume a completed deep-sleep marker before services read inactivity.
+     * This uses RTC slow memory only and must run before Dolphin starts. */
+    furi_hal_rtc_init_early();
 
 #ifdef BOARD_PIN_PWR_EN
     /* Power-enable must be set early — powers CC1101, BQ27220 fuel gauge, WS2812 */
@@ -35,6 +38,11 @@ void furi_hal_init_early(void) {
     ESP_LOGI(TAG, "NRF24_CE GPIO%d set LOW (standby)", BOARD_PIN_NRF24_CE);
 #endif
 
+    /* Bring up the backlight and panel before the slower radio, USB, and
+     * storage HAL work so the screen is visible during the rest of boot. */
+    furi_hal_light_init();
+    furi_hal_display_init();
+
     ESP_LOGI(TAG, "Early init complete");
 }
 
@@ -51,12 +59,11 @@ void furi_hal_init(void) {
 
     furi_hal_rtc_init();
     furi_hal_version_init();
+    furi_hal_info_init();
     furi_hal_power_init();
     furi_hal_crypto_init();
     furi_hal_subghz_init();
     furi_hal_usb_init();
-    furi_hal_light_init();
-    furi_hal_display_init();
     furi_hal_speaker_init();
     furi_hal_nfc_init();
     ESP_LOGI(TAG, "Init complete");

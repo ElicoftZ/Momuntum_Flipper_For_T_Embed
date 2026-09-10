@@ -31,6 +31,8 @@ struct BubbleAnimationView {
     FuriTimer* timer;
     BubbleAnimationInteractCallback interact_callback;
     void* interact_callback_context;
+    /* True while a blocking animation is waiting to be dismissed. */
+    bool interact_pending;
 };
 
 static void bubble_animation_activate(BubbleAnimationView* view, bool force);
@@ -132,7 +134,20 @@ static bool bubble_animation_input_callback(InputEvent* event, void* context) {
         bubble_animation_activate(animation_view, false);
     }
 
-    if(event->key == InputKeyRight && event->type == InputTypeShort) {
+    /* Right short is the original gesture; this board has no reachable Right,
+     * so a plain OK stands in -- but only while something is actually waiting
+     * to be claimed.
+     *
+     * The gate is what makes a SHORT press safe here. This view sits ABOVE the
+     * desktop main view in the view stack, so an ungated OK would swallow the
+     * main menu for the rest of the session. With the flag, OK is borrowed for
+     * exactly as long as the blocking animation is on screen and hands itself
+     * straight back afterwards. */
+    const bool interact_key =
+        (event->key == InputKeyRight && event->type == InputTypeShort) ||
+        (event->key == InputKeyOk && event->type == InputTypeShort &&
+         animation_view->interact_pending);
+    if(interact_key) {
         /* Right button reserved for animation activation, so consume */
         consumed = true;
         if(animation_view->interact_callback) {
@@ -315,6 +330,7 @@ BubbleAnimationView* bubble_animation_view_alloc(void) {
     BubbleAnimationView* view = malloc(sizeof(BubbleAnimationView));
     view->view = view_alloc();
     view->interact_callback = NULL;
+    view->interact_pending = false;
     view->timer = furi_timer_alloc(bubble_animation_timer_callback, FuriTimerTypePeriodic, view);
 
     view_allocate_model(view->view, ViewModelTypeLocking, sizeof(BubbleAnimationViewModel));
@@ -410,4 +426,9 @@ View* bubble_animation_get_view(BubbleAnimationView* view) {
     furi_assert(view);
 
     return view->view;
+}
+
+void bubble_animation_view_set_interact_pending(BubbleAnimationView* view, bool pending) {
+    furi_assert(view);
+    view->interact_pending = pending;
 }

@@ -57,6 +57,36 @@ static void subghz_rpc_command_callback(const RpcAppSystemEvent* event, void* co
         rpc_system_app_confirm(subghz->rpc_ctx, false);
     }
 }
+
+void subghz_ensure_subbrute_allocated(SubGhz* subghz) {
+    furi_assert(subghz);
+    if(subghz->subbrute_worker) return;
+
+    const uint32_t started = furi_get_tick();
+    subghz->subbrute_radio_device =
+        subbrute_radio_device_loader_set(NULL, SubGhzRadioDeviceTypeExternalCC1101);
+    subghz->subbrute_device = subbrute_device_alloc(subghz->subbrute_radio_device);
+    subghz->subbrute_worker = subbrute_worker_alloc(subghz->subbrute_radio_device);
+    subghz->subbrute_settings = subbrute_settings_alloc();
+    subbrute_settings_load(subghz->subbrute_settings);
+
+    subghz->subbrute_main_view = subbrute_main_view_alloc();
+    view_dispatcher_add_view(
+        subghz->view_dispatcher,
+        SubGhzViewIdBfMain,
+        subbrute_main_view_get_view(subghz->subbrute_main_view));
+
+    subghz->subbrute_attack_view = subbrute_attack_view_alloc();
+    view_dispatcher_add_view(
+        subghz->view_dispatcher,
+        SubGhzViewIdBfAttack,
+        subbrute_attack_view_get_view(subghz->subbrute_attack_view));
+
+    FURI_LOG_I(
+        TAG,
+        "Bruteforce initialized on demand in %lu ms",
+        (unsigned long)(furi_get_tick() - started));
+}
 /*
 static void subghz_load_custom_presets(SubGhzSetting* setting) {
     furi_assert(setting);
@@ -92,7 +122,10 @@ static void subghz_load_custom_presets(SubGhzSetting* setting) {
 */
 
 SubGhz* subghz_alloc(bool alloc_for_tx_only) {
-    SubGhz* subghz = malloc(sizeof(SubGhz));
+    /* subghz_free() conditionally consumes fields such as rpc_ctx even when
+     * no RPC session was ever opened. Keep every optional pointer/flag at a
+     * deterministic default instead of relying on heap contents. */
+    SubGhz* subghz = calloc(1, sizeof(SubGhz));
 
     subghz->file_path = furi_string_alloc();
     subghz->file_path_tmp = furi_string_alloc();
@@ -194,6 +227,21 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
             subghz->view_dispatcher,
             SubGhzViewIdFrequencyAnalyzer,
             subghz_frequency_analyzer_get_view(subghz->subghz_frequency_analyzer));
+
+        // Full-color RF waterfall. It takes over the native panel only while
+        // its scene is active; normal GUI rendering resumes on exit.
+        subghz->subghz_spectrogram = subghz_spectrogram_alloc(subghz->gui);
+        view_dispatcher_add_view(
+            subghz->view_dispatcher,
+            SubGhzViewIdSpectrogram,
+            subghz_spectrogram_get_view(subghz->subghz_spectrogram));
+
+        // RF Spectrum (swept-RSSI spectrum + waterfall)
+        subghz->subghz_spectrum = subghz_spectrum_alloc();
+        view_dispatcher_add_view(
+            subghz->view_dispatcher,
+            SubGhzViewIdSpectrum,
+            subghz_spectrum_get_view(subghz->subghz_spectrum));
     }
     // Read RAW
     subghz->subghz_read_raw = subghz_read_raw_alloc(alloc_for_tx_only);
@@ -217,25 +265,7 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
             SubGhzViewIdPlaylist,
             subghz_playlist_get_view(subghz->subghz_playlist));
 
-        // SubBrute Bruteforcer
-        subghz->subbrute_radio_device = subbrute_radio_device_loader_set(
-            NULL, SubGhzRadioDeviceTypeExternalCC1101);
-        subghz->subbrute_device = subbrute_device_alloc(subghz->subbrute_radio_device);
-        subghz->subbrute_worker = subbrute_worker_alloc(subghz->subbrute_radio_device);
-        subghz->subbrute_settings = subbrute_settings_alloc();
-        subbrute_settings_load(subghz->subbrute_settings);
-
-        subghz->subbrute_main_view = subbrute_main_view_alloc();
-        view_dispatcher_add_view(
-            subghz->view_dispatcher,
-            SubGhzViewIdBfMain,
-            subbrute_main_view_get_view(subghz->subbrute_main_view));
-
-        subghz->subbrute_attack_view = subbrute_attack_view_alloc();
-        view_dispatcher_add_view(
-            subghz->view_dispatcher,
-            SubGhzViewIdBfAttack,
-            subbrute_attack_view_get_view(subghz->subbrute_attack_view));
+        // Bruteforce is initialized lazily when its scene is first opened.
     }
 
     //init threshold rssi
@@ -252,6 +282,19 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
     subghz->last_settings = subghz_last_settings_alloc();
     //size_t preset_count = subghz_setting_get_preset_count(setting);
     subghz_last_settings_load(subghz->last_settings, 0);
+
+    /* The preset setup below consumes tx_power, so load all receiver settings
+     * before applying it. Previously tx_power came from uninitialised heap
+     * memory and was only assigned after the radio had already used it. */
+    if(!alloc_for_tx_only) {
+        subghz->ignore_filter = subghz->last_settings->ignore_filter;
+        subghz->filter = subghz->last_settings->filter;
+        subghz->tx_power = subghz->last_settings->tx_power;
+    } else {
+        subghz->filter = SubGhzProtocolFlag_Decodable;
+        subghz->ignore_filter = 0x0;
+        subghz->tx_power = 0;
+    }
 
     // Set LED and Amp GPIO control state
     furi_hal_subghz_set_ext_leds_and_amp(subghz->last_settings->leds_and_amp);
@@ -271,16 +314,6 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
     subghz_rx_key_state_set(subghz, SubGhzRxKeyStateIDLE);
 
     subghz->gen_info = malloc(sizeof(GenInfo));
-
-    if(!alloc_for_tx_only) {
-        subghz->ignore_filter = subghz->last_settings->ignore_filter;
-        subghz->filter = subghz->last_settings->filter;
-        subghz->tx_power = subghz->last_settings->tx_power;
-    } else {
-        subghz->filter = SubGhzProtocolFlag_Decodable;
-        subghz->ignore_filter = 0x0;
-        subghz->tx_power = 0;
-    }
 
     subghz_txrx_receiver_set_filter(subghz->txrx, subghz->filter);
     subghz_txrx_set_need_save_callback(subghz->txrx, subghz_save_to_file, subghz);
@@ -354,18 +387,28 @@ void subghz_free(SubGhz* subghz, bool alloc_for_tx_only) {
         // Frequency Analyzer
         view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdFrequencyAnalyzer);
         subghz_frequency_analyzer_free(subghz->subghz_frequency_analyzer);
+
+        // RF Spectrogram
+        view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdSpectrogram);
+        subghz_spectrogram_free(subghz->subghz_spectrogram);
+
+        // RF Spectrum
+        view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdSpectrum);
+        subghz_spectrum_free(subghz->subghz_spectrum);
     }
     if(!alloc_for_tx_only) {
-        // SubBrute Bruteforcer
-        view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdBfMain);
-        subbrute_main_view_free(subghz->subbrute_main_view);
-        view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdBfAttack);
-        subbrute_attack_view_free(subghz->subbrute_attack_view);
+        // SubBrute Bruteforcer (optional/lazy)
+        if(subghz->subbrute_worker) {
+            view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdBfMain);
+            subbrute_main_view_free(subghz->subbrute_main_view);
+            view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdBfAttack);
+            subbrute_attack_view_free(subghz->subbrute_attack_view);
 
-        subbrute_worker_stop(subghz->subbrute_worker);
-        subbrute_worker_free(subghz->subbrute_worker);
-        subbrute_device_free(subghz->subbrute_device);
-        subbrute_settings_free(subghz->subbrute_settings);
+            subbrute_worker_stop(subghz->subbrute_worker);
+            subbrute_worker_free(subghz->subbrute_worker);
+            subbrute_device_free(subghz->subbrute_device);
+            subbrute_settings_free(subghz->subbrute_settings);
+        }
 
         // Jammer
         view_dispatcher_remove_view(subghz->view_dispatcher, SubGhzViewIdJammer);
@@ -489,9 +532,6 @@ int32_t subghz_app(void* p) {
         view_dispatcher_attach_to_gui(
             subghz->view_dispatcher, subghz->gui, ViewDispatcherTypeFullscreen);
         furi_string_set(subghz->file_path, SUBGHZ_APP_FOLDER);
-        if(!subghz_txrx_is_database_loaded(subghz->txrx)) {
-            FURI_LOG_W("SubGhz", "Keystore database not found, rolling code decoding unavailable");
-        }
         scene_manager_next_scene(subghz->scene_manager, SubGhzSceneStart);
     }
 

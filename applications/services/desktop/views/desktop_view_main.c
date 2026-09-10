@@ -79,11 +79,10 @@ bool desktop_main_input_callback(InputEvent* event, void* context) {
             } else if(event->key == InputKeyRight) {
                 main_view->callback(DesktopMainEventOpenFavoriteRightLong, main_view->context);
             } else if(event->key == InputKeyOk) {
-                if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
-                    main_view->callback(DesktopAnimationEventNewIdleAnimation, main_view->context);
-                } else {
-                    main_view->callback(DesktopMainEventOpenFavoriteOkLong, main_view->context);
-                }
+                /* The scene owns the configurable Hold-OK action. Keeping the
+                 * view policy-free also lets Control Center override the debug
+                 * animation shortcut when the user explicitly selects it. */
+                main_view->callback(DesktopMainEventOpenFavoriteOkLong, main_view->context);
             }
         }
     } else {

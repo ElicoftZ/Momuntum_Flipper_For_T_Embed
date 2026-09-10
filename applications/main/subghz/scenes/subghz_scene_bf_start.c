@@ -16,6 +16,7 @@ void subghz_scene_bf_start_on_enter(void* context) {
     FURI_LOG_I(TAG, "subghz_scene_bf_start_on_enter");
 #endif
     SubGhz* subghz = (SubGhz*)context;
+    subghz_ensure_subbrute_allocated(subghz);
     SubBruteMainView* view = subghz->subbrute_main_view;
 
     subbrute_main_view_set_callback(view, subghz_scene_bf_start_callback, subghz);

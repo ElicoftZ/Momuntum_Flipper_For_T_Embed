@@ -1,0 +1,73 @@
+Pack: Time & Space
+
+A: Visit the distant past
+B: Visit the far future
+---
+A: Live on Mars
+B: Live under the ocean
+---
+A: Meet your ancestors
+B: Meet your descendants
+---
+A: Explore deep space
+B: Explore the deep sea
+---
+A: Ride a real dinosaur
+B: Ride a rocket to the moon
+---
+A: Have a robot butler
+B: Have a flying car
+---
+A: Teleport to any year
+B: Teleport to any place
+---
+A: Restart your life from age 10
+B: Fast-forward 10 years
+---
+A: Be famous 300 years ago
+B: Be forgotten but comfortable today
+---
+A: Own a working time machine
+B: Own a working teleporter
+---
+A: Discover a new planet
+B: Discover a new species
+---
+A: Know how the world ends
+B: Know how the world began
+---
+A: Watch the dinosaurs from safety
+B: Watch the first city being built
+---
+A: Send one message to your past self
+B: Get one from your future self
+---
+A: See Earth from orbit once
+B: Walk on another planet once
+---
+A: Know the day you'll be happiest
+B: Know the day you'll be proudest
+---
+A: A week in the year 1500
+B: A week in the year 2500
+---
+A: Live one day twice
+B: Skip one day forever
+---
+A: Meet your great-grandparents
+B: Meet your great-grandchildren
+---
+A: A map of every place
+B: A calendar of every event
+---
+A: Freeze one perfect afternoon
+B: Replay one perfect evening
+---
+A: Travel anywhere with no luggage
+B: Travel with everything, but only by train
+---
+A: Learn how the pyramids were built
+B: Learn what's at the bottom of the ocean
+---
+A: Speak to someone 1000 years ago
+B: Speak to someone 1000 years from now

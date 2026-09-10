@@ -69,7 +69,7 @@ typedef enum {
 BleSerial* ble_serial_alloc(const BleSerialConfig* config);
 void ble_serial_free(BleSerial* serial);
 
-/** Reset initialized flag so stack can be re-initialized after deinit */
+/** Reset cached profile state after the NimBLE host is deinitialized. */
 void ble_serial_reset_initialized(void);
 
 void ble_serial_set_state_callback(BleSerial* serial, BleSerialStateCallback callback, void* context);
@@ -87,8 +87,12 @@ void ble_serial_notify_buffer_is_empty(BleSerial* serial);
 
 bool ble_serial_start_advertising(void);
 void ble_serial_stop_advertising(void);
+void ble_serial_refresh_advertising(void);
 bool ble_serial_is_advertising(void);
 bool ble_serial_is_active(void);
+
+/** Update the active serial profile's GAP and advertising name in place. */
+bool ble_serial_set_device_name(BleSerial* serial, const char* device_name);
 
 bool ble_serial_remove_pairing(void);
 

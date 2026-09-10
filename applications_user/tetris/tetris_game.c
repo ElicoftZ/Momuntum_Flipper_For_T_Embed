@@ -422,10 +422,11 @@ int32_t tetris_game_app(void* context) {
                           event.input.type == InputTypeLong ||
                           event.input.type == InputTypeRepeat) {
                     switch(event.input.key) {
+                    // Plain wheel rotation emits Up/Down on this board; Left/Right
+                    // need encoder-hold+turn, so on their own these were dead keys
+                    // and the piece could not be moved by rotation at all. Alias
+                    // them onto the same horizontal move.
                     case InputKeyUp:
-                        break;
-                    case InputKeyDown:
-                        break;
                     case InputKeyRight:
                         // T-Embed wheel direction is reversed for this app.
                         for(int i = 0; i < 4; i++) {
@@ -433,6 +434,7 @@ int32_t tetris_game_app(void* context) {
                         }
                         break;
 
+                    case InputKeyDown:
                     case InputKeyLeft:
                         // T-Embed wheel direction is reversed for this app.
                         for(int i = 0; i < 4; i++) {

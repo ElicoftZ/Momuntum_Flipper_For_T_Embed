@@ -27,7 +27,7 @@ static const char* TAG = "FuriHalSd";
 #define SD_FATFS_DRIVE "0:"
 #define SD_SPI_HOST    SPI2_HOST
 #define SD_MAX_FREQ    (20 * 1000) /* 20 MHz — conservative for shared bus */
-#define SD_BOUNCE_SECTORS 8 /* 4 KiB persistent DMA bounce buffer */
+#define SD_BOUNCE_SECTORS 2 /* 1 KiB persistent DMA bounce buffer */
 
 static sdmmc_card_t* sd_card = NULL;
 static sdspi_dev_handle_t sd_handle = 0;
@@ -57,6 +57,48 @@ static bool sd_buf_is_dma_capable(const void* buf) {
      * the ESP-IDF SDMMC layer into a per-call temp allocation path that
      * can fail when the DMA heap is fragmented. */
     return !esp_ptr_external_ram(buf);
+}
+
+static esp_err_t sd_read_bounced(BYTE* buff, DWORD sector, UINT count) {
+    if(!sd_ensure_bounce_buf()) return ESP_ERR_NO_MEM;
+
+    const size_t block_size = sd_card->csd.sector_size;
+    UINT remaining = count;
+    DWORD cur_sector = sector;
+    BYTE* cur_dst = buff;
+
+    while(remaining > 0) {
+        UINT chunk = remaining > SD_BOUNCE_SECTORS ? SD_BOUNCE_SECTORS : remaining;
+        esp_err_t err = sdmmc_read_sectors(sd_card, sd_bounce_buf, cur_sector, chunk);
+        if(err != ESP_OK) return err;
+        memcpy(cur_dst, sd_bounce_buf, block_size * chunk);
+        cur_dst += block_size * chunk;
+        cur_sector += chunk;
+        remaining -= chunk;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t sd_write_bounced(const BYTE* buff, DWORD sector, UINT count) {
+    if(!sd_ensure_bounce_buf()) return ESP_ERR_NO_MEM;
+
+    const size_t block_size = sd_card->csd.sector_size;
+    UINT remaining = count;
+    DWORD cur_sector = sector;
+    const BYTE* cur_src = buff;
+
+    while(remaining > 0) {
+        UINT chunk = remaining > SD_BOUNCE_SECTORS ? SD_BOUNCE_SECTORS : remaining;
+        memcpy(sd_bounce_buf, cur_src, block_size * chunk);
+        esp_err_t err = sdmmc_write_sectors(sd_card, sd_bounce_buf, cur_sector, chunk);
+        if(err != ESP_OK) return err;
+        cur_src += block_size * chunk;
+        cur_sector += chunk;
+        remaining -= chunk;
+    }
+
+    return ESP_OK;
 }
 
 static bool sd_host_conflicts_with(const FuriHalSpiBus* bus) {
@@ -386,25 +428,10 @@ static DRESULT sd_fatfs_read(BYTE pdrv, BYTE* buff, DWORD sector, UINT count) {
 
     if(sd_buf_is_dma_capable(buff)) {
         err = sdmmc_read_sectors(sd_card, buff, sector, count);
-    } else if(sd_ensure_bounce_buf()) {
-        /* PSRAM destination: stage through persistent DMA-capable buffer.
-         * This avoids ESP-IDF allocating a per-call temp buffer that fails
-         * once the internal DMA heap is fragmented. */
-        const size_t block_size = sd_card->csd.sector_size;
-        UINT remaining = count;
-        DWORD cur_sector = sector;
-        BYTE* cur_dst = buff;
-        while(remaining > 0) {
-            UINT chunk = remaining > SD_BOUNCE_SECTORS ? SD_BOUNCE_SECTORS : remaining;
-            err = sdmmc_read_sectors(sd_card, sd_bounce_buf, cur_sector, chunk);
-            if(err != ESP_OK) break;
-            memcpy(cur_dst, sd_bounce_buf, block_size * chunk);
-            cur_dst += block_size * chunk;
-            cur_sector += chunk;
-            remaining -= chunk;
-        }
+        if(err == ESP_ERR_NO_MEM) err = sd_read_bounced(buff, sector, count);
     } else {
-        err = ESP_ERR_NO_MEM;
+        /* PSRAM destination: stage through persistent DMA-capable storage. */
+        err = sd_read_bounced(buff, sector, count);
     }
 
     furi_hal_spi_bus_unlock();
@@ -427,22 +454,9 @@ static DRESULT sd_fatfs_write(BYTE pdrv, const BYTE* buff, DWORD sector, UINT co
 
     if(sd_buf_is_dma_capable(buff)) {
         err = sdmmc_write_sectors(sd_card, buff, sector, count);
-    } else if(sd_ensure_bounce_buf()) {
-        const size_t block_size = sd_card->csd.sector_size;
-        UINT remaining = count;
-        DWORD cur_sector = sector;
-        const BYTE* cur_src = buff;
-        while(remaining > 0) {
-            UINT chunk = remaining > SD_BOUNCE_SECTORS ? SD_BOUNCE_SECTORS : remaining;
-            memcpy(sd_bounce_buf, cur_src, block_size * chunk);
-            err = sdmmc_write_sectors(sd_card, sd_bounce_buf, cur_sector, chunk);
-            if(err != ESP_OK) break;
-            cur_src += block_size * chunk;
-            cur_sector += chunk;
-            remaining -= chunk;
-        }
+        if(err == ESP_ERR_NO_MEM) err = sd_write_bounced(buff, sector, count);
     } else {
-        err = ESP_ERR_NO_MEM;
+        err = sd_write_bounced(buff, sector, count);
     }
 
     furi_hal_spi_bus_unlock();
@@ -690,6 +704,56 @@ bool furi_hal_sd_unmount(void) {
 
 bool furi_hal_sd_is_mounted(void) {
     return sd_mounted;
+}
+
+bool furi_hal_sd_format(void) {
+    if(!sd_initialized || sd_card == NULL) {
+        ESP_LOGE(TAG, "Format requested with no card initialized");
+        return false;
+    }
+
+    /* f_mkfs drives the same diskio layer as the mounted volume, so the volume
+     * has to be let go first or it rewrites the FAT under a live FATFS object.
+     * This port registers FatFs directly (ff_diskio_register) rather than going
+     * through the VFS wrapper, which is why esp_vfs_fat_sdcard_format() is not
+     * usable here. */
+    const bool was_mounted = sd_mounted;
+    if(was_mounted) {
+        f_mount(NULL, SD_FATFS_DRIVE, 0);
+        sd_mounted = false;
+    }
+
+    /* FatFs needs a work buffer of at least one sector. */
+    void* work = malloc(FF_MAX_SS);
+    if(work == NULL) {
+        ESP_LOGE(TAG, "Format: cannot allocate %d byte work buffer", (int)FF_MAX_SS);
+        return false;
+    }
+
+    /* Via the project's fatfs.h shim, whose argument order differs from stock
+     * FatFs. FM_FAT|FM_FAT32 lets FatFs pick by capacity (exFAT is not compiled
+     * in); allocation unit 0 = default cluster size for the card. */
+    const FRESULT result = f_mkfs(SD_FATFS_DRIVE, FM_FAT | FM_FAT32, 0, work, FF_MAX_SS);
+    free(work);
+
+    if(result != FR_OK) {
+        ESP_LOGE(TAG, "f_mkfs failed: %d", result);
+        /* Leave the card mounted if it still can be, so a failed format does
+         * not also take the filesystem away. */
+        if(was_mounted && f_mount(&fatfs_object, SD_FATFS_DRIVE, 1) == FR_OK) {
+            sd_mounted = true;
+        }
+        return false;
+    }
+
+    if(f_mount(&fatfs_object, SD_FATFS_DRIVE, 1) != FR_OK) {
+        ESP_LOGE(TAG, "Format succeeded but remount failed");
+        return false;
+    }
+
+    sd_mounted = true;
+    ESP_LOGI(TAG, "SD card formatted and remounted");
+    return true;
 }
 
 bool furi_hal_sd_release_fatfs(void) {

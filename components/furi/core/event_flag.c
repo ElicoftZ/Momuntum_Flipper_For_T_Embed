@@ -23,7 +23,15 @@ static_assert(offsetof(FuriEventFlag, container) == 0);
 FuriEventFlag* furi_event_flag_alloc(void) {
     furi_check(!FURI_IS_IRQ_MODE());
 
-    FuriEventFlag* instance = heap_caps_calloc(1, sizeof(FuriEventFlag), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    FuriEventFlag* instance = heap_caps_calloc(
+        1, sizeof(FuriEventFlag), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S2)
+    if(!instance) {
+        instance =
+            heap_caps_calloc(1, sizeof(FuriEventFlag), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+#endif
+    furi_check(instance);
 
     furi_check(xEventGroupCreateStatic(&instance->container) == (EventGroupHandle_t)instance);
 

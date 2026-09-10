@@ -7,15 +7,15 @@
 
 #define TAG "BleWalk"
 
-static void format_char_label(esp_bt_uuid_t* uuid, char* buf, size_t buf_len) {
+static void format_char_label(BleWalkUuid* uuid, char* buf, size_t buf_len) {
     const char* name = ble_uuid_db_lookup_char(uuid);
     if(name) {
         snprintf(buf, buf_len, "%s", name);
         return;
     }
-    if(uuid->len == ESP_UUID_LEN_16) {
+    if(uuid->len == BLE_WALK_UUID_LEN_16) {
         snprintf(buf, buf_len, "0x%04X", uuid->uuid.uuid16);
-    } else if(uuid->len == ESP_UUID_LEN_128) {
+    } else if(uuid->len == BLE_WALK_UUID_LEN_128) {
         uint8_t* u = uuid->uuid.uuid128;
         snprintf(buf, buf_len, "%02X%02X..%02X%02X", u[15], u[14], u[1], u[0]);
     } else {

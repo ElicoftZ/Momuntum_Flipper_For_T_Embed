@@ -21,7 +21,12 @@ static void view_holder_draw_callback(Canvas* canvas, void* context);
 static void view_holder_input_callback(InputEvent* event, void* context);
 
 ViewHolder* view_holder_alloc(void) {
-    ViewHolder* view_holder = malloc(sizeof(ViewHolder));
+    /* attach/set/free inspect every optional pointer and ongoing_input before
+     * all of them necessarily receive an explicit value. A reused malloc
+     * block made opening a dialog or file browser call through stale pointers
+     * (or fail the gui == NULL check) before its first frame was drawn. */
+    ViewHolder* view_holder = calloc(1, sizeof(ViewHolder));
+    furi_check(view_holder);
 
     view_holder->view_port = view_port_alloc();
     view_port_draw_callback_set(view_holder->view_port, view_holder_draw_callback, view_holder);

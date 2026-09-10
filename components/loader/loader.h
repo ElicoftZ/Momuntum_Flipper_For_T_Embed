@@ -22,6 +22,10 @@ typedef enum {
     LoaderEventTypeApplicationLoadFailed,
     LoaderEventTypeApplicationStopped,
     LoaderEventTypeNoMoreAppsInQueue,
+    LoaderEventTypeApplicationsBrowserOpened,
+    LoaderEventTypeApplicationsBrowserClosed,
+    LoaderEventTypeMenuOpened,
+    LoaderEventTypeMenuClosed,
 } LoaderEventType;
 
 typedef struct {
@@ -43,13 +47,15 @@ bool loader_lock(Loader* instance);
 void loader_unlock(Loader* instance);
 bool loader_is_locked(Loader* instance);
 void loader_show_menu(Loader* instance);
+/** Open the native loader menu directly on its Settings page. */
+void loader_show_settings(Loader* instance);
 FuriPubSub* loader_get_pubsub(Loader* instance);
 
 typedef enum {
     LoaderDeferredLaunchFlagGui = (1 << 0),
 } LoaderDeferredLaunchFlag;
 
-/** Enqueue an app launch (stub on ESP32 — no FAP support) */
+/** Launch after the current app exits, or immediately if the loader is idle. */
 void loader_enqueue_launch(
     Loader* instance,
     const char* name,

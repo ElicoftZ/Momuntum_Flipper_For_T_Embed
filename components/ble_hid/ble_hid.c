@@ -1,24 +1,23 @@
 #include "ble_hid.h"
 
 #include <inttypes.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-#include <esp_bt.h>
-#include <esp_bt_defs.h>
-#include <esp_bt_main.h>
-#include <esp_err.h>
-#include <esp_gap_ble_api.h>
-#include <esp_gatts_api.h>
-#include <esp_hid_common.h>
-#include <esp_hidd.h>
-#include <esp_hidd_gatts.h>
 #include <esp_log.h>
 #include <esp_mac.h>
-#include <nvs_flash.h>
+
+#include <host/ble_gap.h>
+#include <host/ble_gatt.h>
+#include <host/ble_hs.h>
+#include <host/ble_sm.h>
+#include <nimble/ble.h>
+#include <os/os_mbuf.h>
+
+#include <nimble_glue.h>
 
 #define TAG "ble_hid"
 
@@ -26,12 +25,8 @@
 #define BLE_HID_REPORT_ID_MOUSE    2
 #define BLE_HID_REPORT_ID_CONSUMER 3
 #define BLE_HID_SERVICE_UUID       0x1812
-#define BLE_HID_ADV_TYPE_FLAGS     0x01
-#define BLE_HID_ADV_TYPE_UUID16    0x03
-#define BLE_HID_ADV_TYPE_NAME_SHORT 0x08
-#define BLE_HID_ADV_TYPE_NAME_FULL  0x09
-
-#define BLE_HID_KEYBOARD_KEYS_MAX 6
+#define BLE_HID_APPEARANCE_KEYBOARD 0x03c1
+#define BLE_HID_KEYBOARD_KEYS_MAX  6
 
 typedef struct {
     uint8_t modifiers;
@@ -51,7 +46,6 @@ typedef struct {
 } __attribute__((packed)) BleHidConsumerReport;
 
 struct BleHid {
-    esp_hidd_dev_t* dev;
     BleHidConfig config;
     SemaphoreHandle_t mutex;
     BleHidStateCallback state_callback;
@@ -60,36 +54,45 @@ struct BleHid {
     BleHidMouseReport mouse_report;
     BleHidConsumerReport consumer_report;
     uint8_t led_state;
+    uint8_t protocol_mode;
+    uint8_t control_point;
     bool connected;
+    uint16_t conn_handle;
 };
 
-typedef struct {
-    bool initialized;
-    bool gap_registered;
-    bool gatts_registered;
-    bool hidd_started;
-    bool adv_data_pending;
-    bool rand_addr_pending;
-    bool rand_addr_enabled;
-    bool advertising_requested;
-    bool advertising;
+typedef enum {
+    HidAttrInformation = 1,
+    HidAttrReportMap,
+    HidAttrControlPoint,
+    HidAttrProtocolMode,
+    HidAttrKeyboardInput,
+    HidAttrKeyboardOutput,
+    HidAttrMouseInput,
+    HidAttrConsumerInput,
+    HidAttrBootKeyboardInput,
+    HidAttrBootKeyboardOutput,
+    HidAttrBootMouseInput,
+    HidAttrKeyboardInputRef,
+    HidAttrKeyboardOutputRef,
+    HidAttrMouseInputRef,
+    HidAttrConsumerInputRef,
+    HidAttrManufacturer,
+    HidAttrPnpId,
+    HidAttrBatteryLevel,
+} HidAttribute;
+
+static struct {
     SemaphoreHandle_t mutex;
     BleHid* active;
-    esp_ble_adv_params_t adv_params;
-} BleHidGlobalState;
-
-static BleHidGlobalState ble_hid_state = {
-    .mutex = NULL,
-    .adv_params =
-        {
-            .adv_int_min = 0x20,
-            .adv_int_max = 0x30,
-            .adv_type = ADV_TYPE_IND,
-            .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
-            .channel_map = ADV_CHNL_ALL,
-            .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
-        },
-};
+    bool advertising_requested;
+    bool advertising;
+    bool ready;
+    uint16_t keyboard_input_handle;
+    uint16_t mouse_input_handle;
+    uint16_t consumer_input_handle;
+    uint16_t boot_keyboard_input_handle;
+    uint16_t boot_mouse_input_handle;
+} ble_hid_state;
 
 static const uint8_t ble_hid_report_map[] = {
     0x05, 0x01,
@@ -116,10 +119,10 @@ static const uint8_t ble_hid_report_map[] = {
     0x95, BLE_HID_KEYBOARD_KEYS_MAX,
     0x75, 0x08,
     0x15, 0x00,
-    0x25, 0x65,
+    0x26, 0xFF, 0x00,
     0x05, 0x07,
     0x19, 0x00,
-    0x29, 0x65,
+    0x2A, 0xFF, 0x00,
     0x81, 0x00,
     0xC0,
     0x05, 0x01,
@@ -164,66 +167,358 @@ static const uint8_t ble_hid_report_map[] = {
     0xC0,
 };
 
-static esp_hid_raw_report_map_t ble_report_maps[] = {
-    {
-        .data = ble_hid_report_map,
-        .len = sizeof(ble_hid_report_map),
-    },
-};
-
-static esp_hid_device_config_t ble_device_config = {
-    .vendor_id = 0x16C0,
-    .product_id = 0x05DF,
-    .version = 0x0100,
-    .device_name = NULL,
-    .manufacturer_name = "Flipper Devices",
-    .serial_number = "badusb",
-    .report_maps = ble_report_maps,
-    .report_maps_len = 1,
-};
+static const uint8_t hid_information[] = {0x11, 0x01, 0x00, 0x02};
+static const char hid_manufacturer[] = "Flipper Devices";
+static const uint8_t hid_pnp_id[] = {0x02, 0xc0, 0x16, 0xdf, 0x05, 0x00, 0x01};
+static const uint8_t hid_battery_level = 100;
 
 static void ble_hid_lock_global(void) {
-    if(ble_hid_state.mutex) {
-        xSemaphoreTake(ble_hid_state.mutex, portMAX_DELAY);
-    }
+    if(ble_hid_state.mutex) xSemaphoreTake(ble_hid_state.mutex, portMAX_DELAY);
 }
 
 static void ble_hid_unlock_global(void) {
-    if(ble_hid_state.mutex) {
-        xSemaphoreGive(ble_hid_state.mutex);
+    if(ble_hid_state.mutex) xSemaphoreGive(ble_hid_state.mutex);
+}
+
+static void ble_hid_lock(BleHid* hid) {
+    if(hid && hid->mutex) xSemaphoreTake(hid->mutex, portMAX_DELAY);
+}
+
+static void ble_hid_unlock(BleHid* hid) {
+    if(hid && hid->mutex) xSemaphoreGive(hid->mutex);
+}
+
+static int append_value(struct os_mbuf* om, const void* data, size_t size) {
+    return os_mbuf_append(om, data, size) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+}
+
+static int read_or_write_u8(
+    struct ble_gatt_access_ctxt* ctxt,
+    uint8_t* value,
+    bool writable) {
+    if(ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        return append_value(ctxt->om, value, sizeof(*value));
     }
-}
-
-static void ble_hid_lock(BleHid* ble_hid) {
-    if(ble_hid && ble_hid->mutex) {
-        xSemaphoreTake(ble_hid->mutex, portMAX_DELAY);
+    if(writable && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        if(OS_MBUF_PKTLEN(ctxt->om) != 1) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        return ble_hs_mbuf_to_flat(ctxt->om, value, 1, NULL) == 0 ? 0 :
+                                                                    BLE_ATT_ERR_UNLIKELY;
     }
+    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
 }
 
-static void ble_hid_unlock(BleHid* ble_hid) {
-    if(ble_hid && ble_hid->mutex) {
-        xSemaphoreGive(ble_hid->mutex);
+static int ble_hid_access(
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    struct ble_gatt_access_ctxt* ctxt,
+    void* arg) {
+    (void)conn_handle;
+    (void)attr_handle;
+    HidAttribute attribute = (HidAttribute)(uintptr_t)arg;
+
+    ble_hid_lock_global();
+    BleHid* hid = ble_hid_state.active;
+    ble_hid_unlock_global();
+    if(!hid) return BLE_ATT_ERR_UNLIKELY;
+
+    switch(attribute) {
+    case HidAttrInformation:
+        return append_value(ctxt->om, hid_information, sizeof(hid_information));
+    case HidAttrReportMap:
+        return append_value(ctxt->om, ble_hid_report_map, sizeof(ble_hid_report_map));
+    case HidAttrControlPoint:
+        return read_or_write_u8(ctxt, &hid->control_point, true);
+    case HidAttrProtocolMode:
+        return read_or_write_u8(ctxt, &hid->protocol_mode, true);
+    case HidAttrKeyboardInput:
+    case HidAttrBootKeyboardInput:
+        return append_value(ctxt->om, &hid->keyboard_report, sizeof(hid->keyboard_report));
+    case HidAttrMouseInput:
+    case HidAttrBootMouseInput:
+        return append_value(ctxt->om, &hid->mouse_report, sizeof(hid->mouse_report));
+    case HidAttrConsumerInput:
+        return append_value(ctxt->om, &hid->consumer_report, sizeof(hid->consumer_report));
+    case HidAttrKeyboardOutput:
+    case HidAttrBootKeyboardOutput:
+        return read_or_write_u8(ctxt, &hid->led_state, true);
+    case HidAttrKeyboardInputRef: {
+        const uint8_t ref[] = {BLE_HID_REPORT_ID_KEYBOARD, 0x01};
+        return append_value(ctxt->om, ref, sizeof(ref));
     }
-}
-
-static esp_ble_auth_req_t ble_hid_auth_req(bool bonding) {
-    return bonding ? ESP_LE_AUTH_REQ_SC_MITM_BOND : ESP_LE_AUTH_REQ_SC_MITM;
-}
-
-static esp_ble_io_cap_t ble_hid_io_cap(BleHidPairingMode pairing) {
-    switch(pairing) {
-    case BleHidPairingModeDisplayOnly:
-    case BleHidPairingModeInputOnly:
-        return ESP_IO_CAP_OUT;
-    case BleHidPairingModeVerifyYesNo:
+    case HidAttrKeyboardOutputRef: {
+        const uint8_t ref[] = {BLE_HID_REPORT_ID_KEYBOARD, 0x02};
+        return append_value(ctxt->om, ref, sizeof(ref));
+    }
+    case HidAttrMouseInputRef: {
+        const uint8_t ref[] = {BLE_HID_REPORT_ID_MOUSE, 0x01};
+        return append_value(ctxt->om, ref, sizeof(ref));
+    }
+    case HidAttrConsumerInputRef: {
+        const uint8_t ref[] = {BLE_HID_REPORT_ID_CONSUMER, 0x01};
+        return append_value(ctxt->om, ref, sizeof(ref));
+    }
+    case HidAttrManufacturer:
+        return append_value(ctxt->om, hid_manufacturer, sizeof(hid_manufacturer) - 1);
+    case HidAttrPnpId:
+        return append_value(ctxt->om, hid_pnp_id, sizeof(hid_pnp_id));
+    case HidAttrBatteryLevel:
+        return append_value(ctxt->om, &hid_battery_level, sizeof(hid_battery_level));
     default:
-        return ESP_IO_CAP_IO;
+        return BLE_ATT_ERR_UNLIKELY;
     }
 }
 
-static void ble_hid_make_random_static_addr(uint8_t mac[6]) {
-    mac[0] &= 0xFE;
-    mac[0] |= 0xC0;
+#define HID_ARG(value) ((void*)(uintptr_t)(value))
+#define HID_REPORT_REF(value) \
+    (struct ble_gatt_dsc_def[]) { \
+        {.uuid = BLE_UUID16_DECLARE(0x2908), \
+         .att_flags = BLE_ATT_F_READ, \
+         .access_cb = ble_hid_access, \
+         .arg = HID_ARG(value)}, \
+        {0}, \
+    }
+
+static const struct ble_gatt_svc_def ble_hid_services[] = {
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = BLE_UUID16_DECLARE(BLE_HID_SERVICE_UUID),
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {.uuid = BLE_UUID16_DECLARE(0x2a4a),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrInformation),
+             .flags = BLE_GATT_CHR_F_READ},
+            {.uuid = BLE_UUID16_DECLARE(0x2a4b),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrReportMap),
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a4c),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrControlPoint),
+             .flags = BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_WRITE_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a4e),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrProtocolMode),
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE_NO_RSP |
+                      BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_WRITE_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a4d),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrKeyboardInput),
+             .descriptors = HID_REPORT_REF(HidAttrKeyboardInputRef),
+             .val_handle = &ble_hid_state.keyboard_input_handle,
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_READ_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a4d),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrKeyboardOutput),
+             .descriptors = HID_REPORT_REF(HidAttrKeyboardOutputRef),
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE |
+                      BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_READ_ENC |
+                      BLE_GATT_CHR_F_WRITE_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a4d),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrMouseInput),
+             .descriptors = HID_REPORT_REF(HidAttrMouseInputRef),
+             .val_handle = &ble_hid_state.mouse_input_handle,
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_READ_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a4d),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrConsumerInput),
+             .descriptors = HID_REPORT_REF(HidAttrConsumerInputRef),
+             .val_handle = &ble_hid_state.consumer_input_handle,
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_READ_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a22),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrBootKeyboardInput),
+             .val_handle = &ble_hid_state.boot_keyboard_input_handle,
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_READ_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a32),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrBootKeyboardOutput),
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE |
+                      BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_READ_ENC |
+                      BLE_GATT_CHR_F_WRITE_ENC},
+            {.uuid = BLE_UUID16_DECLARE(0x2a33),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrBootMouseInput),
+             .val_handle = &ble_hid_state.boot_mouse_input_handle,
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_READ_ENC},
+            {0},
+        },
+    },
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = BLE_UUID16_DECLARE(0x180a),
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {.uuid = BLE_UUID16_DECLARE(0x2a29),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrManufacturer),
+             .flags = BLE_GATT_CHR_F_READ},
+            {.uuid = BLE_UUID16_DECLARE(0x2a50),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrPnpId),
+             .flags = BLE_GATT_CHR_F_READ},
+            {0},
+        },
+    },
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = BLE_UUID16_DECLARE(0x180f),
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {.uuid = BLE_UUID16_DECLARE(0x2a19),
+             .access_cb = ble_hid_access,
+             .arg = HID_ARG(HidAttrBatteryLevel),
+             .flags = BLE_GATT_CHR_F_READ},
+            {0},
+        },
+    },
+    {0},
+};
+
+static void ble_hid_update_connection(BleHid* hid, bool connected) {
+    ble_hid_lock(hid);
+    hid->connected = connected;
+    BleHidStateCallback callback = hid->state_callback;
+    void* context = hid->state_context;
+    ble_hid_unlock(hid);
+    if(callback) callback(connected, context);
+}
+
+static bool ble_hid_append_adv_field(
+    uint8_t* data,
+    size_t* offset,
+    uint8_t type,
+    const void* value,
+    size_t value_len) {
+    if(*offset + value_len + 2 > BLE_HS_ADV_MAX_SZ) return false;
+    data[*offset] = (uint8_t)value_len + 1;
+    data[*offset + 1] = type;
+    memcpy(data + *offset + 2, value, value_len);
+    *offset += value_len + 2;
+    return true;
+}
+
+static int ble_hid_configure_advertising(const char* name) {
+    uint8_t data[BLE_HS_ADV_MAX_SZ] = {0};
+    size_t offset = 0;
+    const uint8_t flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+    const uint8_t uuid[] = {BLE_HID_SERVICE_UUID & 0xff, BLE_HID_SERVICE_UUID >> 8};
+    const uint8_t appearance[] = {
+        BLE_HID_APPEARANCE_KEYBOARD & 0xff,
+        BLE_HID_APPEARANCE_KEYBOARD >> 8,
+    };
+    ble_hid_append_adv_field(data, &offset, 0x01, &flags, sizeof(flags));
+    ble_hid_append_adv_field(data, &offset, 0x03, uuid, sizeof(uuid));
+    ble_hid_append_adv_field(data, &offset, 0x19, appearance, sizeof(appearance));
+
+    size_t full_len = strlen(name);
+    size_t name_len = full_len;
+    while(name_len > 0 && offset + name_len + 2 > sizeof(data)) name_len--;
+    if(name_len > 0) {
+        ble_hid_append_adv_field(
+            data, &offset, name_len == full_len ? 0x09 : 0x08, name, name_len);
+    }
+    return ble_gap_adv_set_data(data, (int)offset);
+}
+
+static bool ble_hid_try_start_advertising_locked(void);
+
+static int ble_hid_gap_event(struct ble_gap_event* event, void* arg) {
+    (void)arg;
+    ble_hid_lock_global();
+    BleHid* hid = ble_hid_state.active;
+
+    switch(event->type) {
+    case BLE_GAP_EVENT_CONNECT:
+        ble_hid_state.advertising = false;
+        if(event->connect.status == 0 && hid) {
+            hid->conn_handle = event->connect.conn_handle;
+            ble_hid_unlock_global();
+            ble_hid_update_connection(hid, true);
+            ble_gap_security_initiate(event->connect.conn_handle);
+            return 0;
+        }
+        ble_hid_try_start_advertising_locked();
+        break;
+    case BLE_GAP_EVENT_DISCONNECT:
+        if(hid) {
+            hid->conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            ble_hid_unlock_global();
+            ble_hid_update_connection(hid, false);
+            ble_hid_lock_global();
+        }
+        ble_hid_state.advertising = false;
+        ble_hid_try_start_advertising_locked();
+        break;
+    case BLE_GAP_EVENT_ADV_COMPLETE:
+        ble_hid_state.advertising = false;
+        ble_hid_try_start_advertising_locked();
+        break;
+    case BLE_GAP_EVENT_PASSKEY_ACTION: {
+        struct ble_sm_io io = {.action = event->passkey.params.action};
+        if(io.action == BLE_SM_IOACT_DISP || io.action == BLE_SM_IOACT_INPUT) {
+            io.passkey = BLE_HID_PASSKEY_DEFAULT;
+            ESP_LOGI(TAG, "BLE passkey: %06" PRIu32, io.passkey);
+        } else if(io.action == BLE_SM_IOACT_NUMCMP) {
+            io.numcmp_accept = 1;
+            ESP_LOGI(TAG, "BLE numeric comparison accepted: %06" PRIu32,
+                     event->passkey.params.numcmp);
+        }
+        ble_sm_inject_io(event->passkey.conn_handle, &io);
+        break;
+    }
+    case BLE_GAP_EVENT_REPEAT_PAIRING: {
+        struct ble_gap_conn_desc desc;
+        if(ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc) == 0) {
+            ble_store_util_delete_peer(&desc.peer_id_addr);
+        }
+        ble_hid_unlock_global();
+        return BLE_GAP_REPEAT_PAIRING_RETRY;
+    }
+    default:
+        break;
+    }
+
+    ble_hid_unlock_global();
+    return 0;
+}
+
+static bool ble_hid_try_start_advertising_locked(void) {
+    BleHid* hid = ble_hid_state.active;
+    if(!hid || !ble_hid_state.ready || !ble_hid_state.advertising_requested ||
+       ble_hid_state.advertising || hid->connected) {
+        return false;
+    }
+
+    struct ble_gap_adv_params params = {0};
+    params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    params.itvl_min = 0x20;
+    params.itvl_max = 0x30;
+    int rc = ble_gap_adv_start(
+        nimble_glue_own_address_type(),
+        NULL,
+        BLE_HS_FOREVER,
+        &params,
+        ble_hid_gap_event,
+        NULL);
+    if(rc != 0) {
+        ESP_LOGE(TAG, "ble_gap_adv_start failed, rc=%d", rc);
+        return false;
+    }
+    ble_hid_state.advertising = true;
+    return true;
+}
+
+static void ble_hid_on_sync(void* context) {
+    (void)context;
+    ble_hid_lock_global();
+    ble_hid_state.ready = true;
+    ble_hid_try_start_advertising_locked();
+    ble_hid_unlock_global();
+}
+
+static bool ble_hid_has_custom_mac(const BleHidConfig* config) {
+    static const uint8_t zero[6] = {0};
+    return memcmp(config->mac, zero, sizeof(zero)) != 0;
 }
 
 void ble_hid_get_default_mac(uint8_t mac[6]) {
@@ -231,833 +526,315 @@ void ble_hid_get_default_mac(uint8_t mac[6]) {
         memset(mac, 0, 6);
         return;
     }
-
     esp_derive_local_mac(mac, mac);
-    ble_hid_make_random_static_addr(mac);
-}
-
-static bool ble_hid_try_start_advertising_locked(void) {
-    if(!ble_hid_state.active) {
-        ESP_LOGI(TAG, "adv_try skipped: no active profile");
-        return false;
-    }
-
-    if(!ble_hid_state.hidd_started || !ble_hid_state.advertising_requested ||
-       ble_hid_state.adv_data_pending || ble_hid_state.rand_addr_pending ||
-       ble_hid_state.advertising) {
-        ESP_LOGI(
-            TAG,
-            "adv_try blocked: hidd_started=%d requested=%d adv_pending=%d rand_pending=%d advertising=%d",
-            ble_hid_state.hidd_started,
-            ble_hid_state.advertising_requested,
-            ble_hid_state.adv_data_pending,
-            ble_hid_state.rand_addr_pending,
-            ble_hid_state.advertising);
-        return false;
-    }
-
-    ble_hid_state.adv_params.own_addr_type =
-        ble_hid_state.rand_addr_enabled ? BLE_ADDR_TYPE_RANDOM : BLE_ADDR_TYPE_PUBLIC;
-
-    esp_err_t err = esp_ble_gap_start_advertising(&ble_hid_state.adv_params);
-    if(err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ble_gap_start_advertising failed: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    ESP_LOGI(
-        TAG,
-        "adv_start request own_addr_type=%d name=%s",
-        ble_hid_state.adv_params.own_addr_type,
-        ble_hid_state.active->config.device_name);
-    ble_hid_state.advertising = true;
-    return true;
-}
-
-static void ble_hid_update_connection(BleHid* ble_hid, bool connected) {
-    if(!ble_hid) {
-        return;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->connected = connected;
-    BleHidStateCallback callback = ble_hid->state_callback;
-    void* context = ble_hid->state_context;
-    ble_hid_unlock(ble_hid);
-
-    if(callback) {
-        callback(connected, context);
-    }
-}
-
-static void ble_hid_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param) {
-    ble_hid_lock_global();
-
-    switch(event) {
-    case ESP_GAP_BLE_ADV_DATA_RAW_SET_COMPLETE_EVT:
-        ESP_LOGI(
-            TAG,
-            "gap event: ADV_DATA_RAW_SET_COMPLETE status=%d",
-            param->adv_data_raw_cmpl.status);
-        ble_hid_state.adv_data_pending = false;
-        ble_hid_try_start_advertising_locked();
-        break;
-    case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-        ESP_LOGI(TAG, "gap event: ADV_DATA_SET_COMPLETE");
-        ble_hid_state.adv_data_pending = false;
-        ble_hid_try_start_advertising_locked();
-        break;
-    case ESP_GAP_BLE_SET_STATIC_RAND_ADDR_EVT:
-        ESP_LOGI(TAG, "gap event: SET_STATIC_RAND_ADDR");
-        ble_hid_state.rand_addr_pending = false;
-        ble_hid_try_start_advertising_locked();
-        break;
-    case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
-        ESP_LOGI(TAG, "gap event: ADV_START_COMPLETE status=%d", param->adv_start_cmpl.status);
-        if(param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
-            ESP_LOGE(TAG, "advertising start failed: status=%d", param->adv_start_cmpl.status);
-            ble_hid_state.advertising = false;
-        }
-        break;
-    case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
-        ESP_LOGI(TAG, "gap event: ADV_STOP_COMPLETE");
-        ble_hid_state.advertising = false;
-        break;
-    case ESP_GAP_BLE_SEC_REQ_EVT:
-        ESP_LOGI(TAG, "gap event: SEC_REQ");
-        esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
-        break;
-    case ESP_GAP_BLE_NC_REQ_EVT:
-        ESP_LOGI(TAG, "gap event: NC_REQ");
-        esp_ble_confirm_reply(param->ble_security.key_notif.bd_addr, true);
-        break;
-    case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
-        ESP_LOGI(TAG, "BLE passkey: %06" PRIu32, param->ble_security.key_notif.passkey);
-        break;
-    case ESP_GAP_BLE_AUTH_CMPL_EVT:
-        if(param->ble_security.auth_cmpl.success) {
-            ESP_LOGI(TAG, "BLE authentication complete");
-        } else {
-            ESP_LOGW(
-                TAG,
-                "BLE authentication failed: 0x%x",
-                param->ble_security.auth_cmpl.fail_reason);
-        }
-        break;
-    default:
-        break;
-    }
-
-    ble_hid_unlock_global();
-}
-
-static void ble_hid_device_event_handler(
-    void* handler_arg,
-    esp_event_base_t base,
-    int32_t id,
-    void* event_data) {
-    (void)handler_arg;
-    (void)base;
-    esp_hidd_event_t event = (esp_hidd_event_t)id;
-    esp_hidd_event_data_t* data = event_data;
-
-    ble_hid_lock_global();
-    BleHid* ble_hid = ble_hid_state.active;
-    ble_hid_unlock_global();
-
-    if(!ble_hid) {
-        return;
-    }
-
-    switch(event) {
-    case ESP_HIDD_START_EVENT:
-        ESP_LOGI(TAG, "hidd event: START");
-        ble_hid_lock_global();
-        ble_hid_state.hidd_started = true;
-        ble_hid_try_start_advertising_locked();
-        ble_hid_unlock_global();
-        break;
-    case ESP_HIDD_CONNECT_EVENT:
-        ESP_LOGI(TAG, "hidd event: CONNECT");
-        ble_hid_lock_global();
-        ble_hid_state.advertising = false;
-        ble_hid_unlock_global();
-        ble_hid_update_connection(ble_hid, true);
-        break;
-    case ESP_HIDD_DISCONNECT_EVENT:
-        ESP_LOGI(TAG, "hidd event: DISCONNECT");
-        ble_hid_update_connection(ble_hid, false);
-        ble_hid_lock_global();
-        ble_hid_try_start_advertising_locked();
-        ble_hid_unlock_global();
-        break;
-    case ESP_HIDD_OUTPUT_EVENT:
-        if(data && data->output.length > 0 && data->output.data) {
-            ble_hid_lock(ble_hid);
-            ble_hid->led_state = data->output.data[0];
-            ble_hid_unlock(ble_hid);
-        }
-        break;
-    default:
-        break;
-    }
-}
-
-static esp_err_t ble_hid_stack_init_once(void) {
-    esp_err_t err = ESP_OK;
-
-    if(!ble_hid_state.mutex) {
-        ble_hid_state.mutex = xSemaphoreCreateMutex();
-        if(!ble_hid_state.mutex) {
-            return ESP_ERR_NO_MEM;
-        }
-    }
-
-    ble_hid_lock_global();
-    if(ble_hid_state.initialized) {
-        ble_hid_unlock_global();
-        return ESP_OK;
-    }
-
-    ble_hid_unlock_global();
-
-    err = nvs_flash_init();
-    if((err == ESP_ERR_NVS_NO_FREE_PAGES) || (err == ESP_ERR_NVS_NEW_VERSION_FOUND)) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    if(err != ESP_OK) {
-        return err;
-    }
-
-    err = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-    if((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE)) {
-        return err;
-    }
-
-    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    err = esp_bt_controller_init(&bt_cfg);
-    if((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE)) {
-        return err;
-    }
-
-    err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
-    if((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE)) {
-        return err;
-    }
-
-    esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
-    err = esp_bluedroid_init_with_cfg(&bluedroid_cfg);
-    if((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE)) {
-        return err;
-    }
-
-    err = esp_bluedroid_enable();
-    if((err != ESP_OK) && (err != ESP_ERR_INVALID_STATE)) {
-        return err;
-    }
-
-    ble_hid_lock_global();
-
-    if(!ble_hid_state.gap_registered) {
-        err = esp_ble_gap_register_callback(ble_hid_gap_event_handler);
-        if(err != ESP_OK) {
-            ble_hid_unlock_global();
-            return err;
-        }
-        ble_hid_state.gap_registered = true;
-    }
-
-    if(!ble_hid_state.gatts_registered) {
-        err = esp_ble_gatts_register_callback(esp_hidd_gatts_event_handler);
-        if(err != ESP_OK) {
-            ble_hid_unlock_global();
-            return err;
-        }
-        ble_hid_state.gatts_registered = true;
-    }
-
-    ble_hid_state.initialized = true;
-    ble_hid_unlock_global();
-
-    return ESP_OK;
-}
-
-static esp_err_t ble_hid_apply_security_config(const BleHidConfig* config) {
-    esp_ble_auth_req_t auth_req = ble_hid_auth_req(config->bonding);
-    esp_ble_io_cap_t io_cap = ble_hid_io_cap(config->pairing);
-    uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-    uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-    uint8_t key_size = 16;
-    uint32_t passkey = BLE_HID_PASSKEY_DEFAULT;
-
-    esp_err_t err = esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, 1);
-    if(err != ESP_OK) {
-        return err;
-    }
-
-    err = esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io_cap, 1);
-    if(err != ESP_OK) {
-        return err;
-    }
-
-    err = esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, 1);
-    if(err != ESP_OK) {
-        return err;
-    }
-
-    err = esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, 1);
-    if(err != ESP_OK) {
-        return err;
-    }
-
-    err = esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, 1);
-    if(err != ESP_OK) {
-        return err;
-    }
-
-    return esp_ble_gap_set_security_param(
-        ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(passkey));
-}
-
-static bool ble_hid_append_adv_field(
-    uint8_t* raw_adv,
-    size_t* offset,
-    uint8_t type,
-    const void* payload,
-    size_t payload_len) {
-    if(!raw_adv || !offset || ((*offset + payload_len + 2) > ESP_BLE_ADV_DATA_LEN_MAX)) {
-        return false;
-    }
-
-    raw_adv[*offset] = payload_len + 1;
-    raw_adv[*offset + 1] = type;
-    if(payload_len && payload) {
-        memcpy(&raw_adv[*offset + 2], payload, payload_len);
-    }
-    *offset += payload_len + 2;
-
-    return true;
-}
-
-static esp_err_t ble_hid_configure_advertising(const BleHidConfig* config) {
-    const uint8_t adv_flags = ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT;
-    const uint8_t service_uuid[] = {BLE_HID_SERVICE_UUID & 0xFF, BLE_HID_SERVICE_UUID >> 8};
-    const size_t device_name_len = strlen(config->device_name);
-    uint8_t raw_adv[ESP_BLE_ADV_DATA_LEN_MAX] = {0};
-    size_t raw_adv_len = 0;
-    size_t advertised_name_len = device_name_len;
-    uint8_t name_type = BLE_HID_ADV_TYPE_NAME_FULL;
-    esp_err_t err = ESP_OK;
-
-    if(!ble_hid_append_adv_field(&raw_adv[0], &raw_adv_len, BLE_HID_ADV_TYPE_FLAGS, &adv_flags, 1)) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    if(!ble_hid_append_adv_field(
-           &raw_adv[0], &raw_adv_len, BLE_HID_ADV_TYPE_UUID16, service_uuid, sizeof(service_uuid))) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    while(advertised_name_len > 0 &&
-          !ble_hid_append_adv_field(
-              &raw_adv[0],
-              &raw_adv_len,
-              (advertised_name_len == device_name_len) ? BLE_HID_ADV_TYPE_NAME_FULL :
-                                                          BLE_HID_ADV_TYPE_NAME_SHORT,
-              config->device_name,
-              advertised_name_len)) {
-        advertised_name_len--;
-        name_type = BLE_HID_ADV_TYPE_NAME_SHORT;
-    }
-
-    if(advertised_name_len == 0) {
-        ESP_LOGW(TAG, "adv_config omitted device name: no space in raw ADV");
-    }
-
-    ESP_LOGI(
-        TAG,
-        "adv_config name_len=%u adv_name_len=%u uuid=0x%04x name_type=0x%02x raw_len=%u",
-        (unsigned)device_name_len,
-        (unsigned)advertised_name_len,
-        BLE_HID_SERVICE_UUID,
-        name_type,
-        (unsigned)raw_adv_len);
-
-    err = esp_ble_gap_set_device_name(config->device_name);
-    if(err != ESP_OK) {
-        return err;
-    }
-
-    ble_hid_lock_global();
-    ble_hid_state.adv_data_pending = true;
-    ble_hid_unlock_global();
-
-    err = esp_ble_gap_config_adv_data_raw(raw_adv, raw_adv_len);
-    if(err != ESP_OK) {
-        ble_hid_lock_global();
-        ble_hid_state.adv_data_pending = false;
-        ble_hid_unlock_global();
-    }
-
-    return err;
-}
-
-static esp_err_t ble_hid_set_random_address(const BleHidConfig* config) {
-    uint8_t mac[6];
-    memcpy(mac, config->mac, sizeof(mac));
-    ble_hid_make_random_static_addr(mac);
-
-    ble_hid_lock_global();
-    ble_hid_state.rand_addr_pending = true;
-    ble_hid_state.rand_addr_enabled = true;
-    ble_hid_unlock_global();
-
-    return esp_ble_gap_set_rand_addr(mac);
-}
-
-static bool ble_hid_has_custom_mac(const BleHidConfig* config) {
-    static const uint8_t zero_mac[6] = {0};
-    return memcmp(config->mac, zero_mac, sizeof(zero_mac)) != 0;
-}
-
-static bool ble_hid_send_report(BleHid* ble_hid, uint8_t report_id, void* data, size_t length) {
-    if(!ble_hid || !ble_hid->dev) {
-        return false;
-    }
-
-    if(!esp_hidd_dev_connected(ble_hid->dev)) {
-        return false;
-    }
-
-    return esp_hidd_dev_input_set(ble_hid->dev, 0, report_id, data, length) == ESP_OK;
+    mac[0] = (mac[0] & 0x3fU) | 0xc0U;
 }
 
 BleHid* ble_hid_alloc(const BleHidConfig* config) {
-    if(!config) {
-        return NULL;
+    if(!config) return NULL;
+    if(!ble_hid_state.mutex) {
+        ble_hid_state.mutex = xSemaphoreCreateMutex();
+        if(!ble_hid_state.mutex) return NULL;
     }
-
-    esp_err_t err = ble_hid_stack_init_once();
-    if(err != ESP_OK) {
-        ESP_LOGE(TAG, "BLE stack init failed: %s", esp_err_to_name(err));
-        return NULL;
-    }
-
-    BleHid* ble_hid = calloc(1, sizeof(BleHid));
-    if(!ble_hid) {
-        return NULL;
-    }
-
-    ble_hid->mutex = xSemaphoreCreateMutex();
-    if(!ble_hid->mutex) {
-        free(ble_hid);
-        return NULL;
-    }
-
-    memcpy(&ble_hid->config, config, sizeof(ble_hid->config));
-    ESP_LOGI(
-        TAG,
-        "alloc name=%s mac=%02x:%02x:%02x:%02x:%02x:%02x bonding=%d pairing=%d",
-        ble_hid->config.device_name,
-        ble_hid->config.mac[0],
-        ble_hid->config.mac[1],
-        ble_hid->config.mac[2],
-        ble_hid->config.mac[3],
-        ble_hid->config.mac[4],
-        ble_hid->config.mac[5],
-        ble_hid->config.bonding,
-        ble_hid->config.pairing);
-
-    ble_device_config.device_name = ble_hid->config.device_name;
 
     ble_hid_lock_global();
     if(ble_hid_state.active) {
         ble_hid_unlock_global();
-        vSemaphoreDelete(ble_hid->mutex);
-        free(ble_hid);
         return NULL;
     }
-    ble_hid_state.active = ble_hid;
+    ble_hid_unlock_global();
+
+    BleHid* hid = calloc(1, sizeof(BleHid));
+    if(!hid) return NULL;
+    hid->mutex = xSemaphoreCreateMutex();
+    if(!hid->mutex) {
+        free(hid);
+        return NULL;
+    }
+    memcpy(&hid->config, config, sizeof(*config));
+    hid->conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    hid->protocol_mode = 1;
+
+    ble_hid_lock_global();
+    ble_hid_state.active = hid;
     ble_hid_state.advertising = false;
     ble_hid_state.advertising_requested = false;
-    ble_hid_state.adv_data_pending = false;
-    ble_hid_state.hidd_started = false;
-    ble_hid_state.rand_addr_pending = false;
-    ble_hid_state.rand_addr_enabled = false;
+    ble_hid_state.ready = false;
     ble_hid_unlock_global();
 
-    err = ble_hid_apply_security_config(&ble_hid->config);
-    if(err != ESP_OK) {
-        ESP_LOGE(TAG, "BLE security config failed: %s", esp_err_to_name(err));
+    esp_err_t err = nimble_glue_init(config->device_name);
+    if(err != ESP_OK) goto error;
+
+    uint8_t io_cap = config->pairing == BleHidPairingModeVerifyYesNo ?
+                         BLE_HS_IO_DISPLAY_YESNO :
+                         BLE_HS_IO_DISPLAY_ONLY;
+    nimble_glue_configure_security(config->bonding, true, true, io_cap);
+    if(ble_hid_has_custom_mac(config)) {
+        err = nimble_glue_set_random_address(config->mac);
+        if(err != ESP_OK) goto error;
+    }
+
+    int rc = ble_gatts_count_cfg(ble_hid_services);
+    if(rc == 0) rc = ble_gatts_add_svcs(ble_hid_services);
+    if(rc != 0) {
+        ESP_LOGE(TAG, "Failed to register HID services, rc=%d", rc);
         goto error;
     }
 
-    if(ble_hid_has_custom_mac(&ble_hid->config)) {
-        err = ble_hid_set_random_address(&ble_hid->config);
-        if(err != ESP_OK) {
-            ESP_LOGE(TAG, "BLE random address setup failed: %s", esp_err_to_name(err));
-            goto error;
-        }
-    }
-
-    err = ble_hid_configure_advertising(&ble_hid->config);
-    if(err != ESP_OK) {
-        ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(err));
+    err = nimble_glue_start(ble_hid_on_sync, NULL);
+    if(err != ESP_OK) goto error;
+    rc = ble_hid_configure_advertising(config->device_name);
+    if(rc != 0) {
+        ESP_LOGE(TAG, "Failed to configure HID advertising, rc=%d", rc);
         goto error;
     }
 
-    err = esp_hidd_dev_init(
-        &ble_device_config, ESP_HID_TRANSPORT_BLE, ble_hid_device_event_handler, &ble_hid->dev);
-    if(err != ESP_OK) {
-        ESP_LOGE(TAG, "BLE HID init failed: %s", esp_err_to_name(err));
-        goto error;
-    }
-
-    return ble_hid;
+    ESP_LOGI(TAG, "NimBLE HID ready: %s", config->device_name);
+    return hid;
 
 error:
+    nimble_glue_stop();
     ble_hid_lock_global();
-    if(ble_hid_state.active == ble_hid) {
-        ble_hid_state.active = NULL;
-    }
+    if(ble_hid_state.active == hid) ble_hid_state.active = NULL;
+    ble_hid_state.ready = false;
     ble_hid_unlock_global();
-
-    if(ble_hid->mutex) {
-        vSemaphoreDelete(ble_hid->mutex);
-    }
-    free(ble_hid);
+    vSemaphoreDelete(hid->mutex);
+    free(hid);
     return NULL;
 }
 
-void ble_hid_free(BleHid* ble_hid) {
-    if(!ble_hid) {
-        return;
+void ble_hid_free(BleHid* hid) {
+    if(!hid) return;
+    ble_hid_stop_advertising();
+    if(hid->conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        ble_gap_terminate(hid->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
+    nimble_glue_stop();
 
     ble_hid_lock_global();
-    if(ble_hid_state.advertising) {
-        esp_ble_gap_stop_advertising();
-        ble_hid_state.advertising = false;
-    }
-    ble_hid_state.advertising_requested = false;
-    ble_hid_state.hidd_started = false;
-    if(ble_hid_state.active == ble_hid) {
-        ble_hid_state.active = NULL;
-    }
+    if(ble_hid_state.active == hid) ble_hid_state.active = NULL;
+    ble_hid_state.ready = false;
     ble_hid_unlock_global();
-
-    if(ble_hid->dev) {
-        esp_hidd_dev_deinit(ble_hid->dev);
-    }
-
-    if(ble_hid->mutex) {
-        vSemaphoreDelete(ble_hid->mutex);
-    }
-
-    free(ble_hid);
+    vSemaphoreDelete(hid->mutex);
+    free(hid);
 }
 
-void ble_hid_set_state_callback(BleHid* ble_hid, BleHidStateCallback callback, void* context) {
-    if(!ble_hid) {
-        return;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->state_callback = callback;
-    ble_hid->state_context = context;
-    bool connected = ble_hid->connected;
-    ble_hid_unlock(ble_hid);
-
-    if(callback) {
-        callback(connected, context);
-    }
+void ble_hid_set_state_callback(BleHid* hid, BleHidStateCallback callback, void* context) {
+    if(!hid) return;
+    ble_hid_lock(hid);
+    hid->state_callback = callback;
+    hid->state_context = context;
+    bool connected = hid->connected;
+    ble_hid_unlock(hid);
+    if(callback) callback(connected, context);
 }
 
-bool ble_hid_is_connected(BleHid* ble_hid) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    bool connected = ble_hid->connected;
-    ble_hid_unlock(ble_hid);
+bool ble_hid_is_connected(BleHid* hid) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    bool connected = hid->connected;
+    ble_hid_unlock(hid);
     return connected;
 }
 
-bool ble_hid_kb_press(BleHid* ble_hid, uint16_t button) {
-    if(!ble_hid) {
-        return false;
+static bool ble_hid_send_report(BleHid* hid, uint8_t report_id, const void* data, size_t length) {
+    if(!hid || !hid->connected || hid->conn_handle == BLE_HS_CONN_HANDLE_NONE) return false;
+    uint16_t handle = report_id == BLE_HID_REPORT_ID_KEYBOARD ?
+                          ble_hid_state.keyboard_input_handle :
+                      report_id == BLE_HID_REPORT_ID_MOUSE ?
+                          ble_hid_state.mouse_input_handle :
+                          ble_hid_state.consumer_input_handle;
+    if(hid->protocol_mode == 0) {
+        if(report_id == BLE_HID_REPORT_ID_KEYBOARD) handle = ble_hid_state.boot_keyboard_input_handle;
+        if(report_id == BLE_HID_REPORT_ID_MOUSE) handle = ble_hid_state.boot_mouse_input_handle;
     }
+    struct os_mbuf* om = ble_hs_mbuf_from_flat(data, length);
+    if(!om) return false;
+    return ble_gatts_notify_custom(hid->conn_handle, handle, om) == 0;
+}
 
-    ble_hid_lock(ble_hid);
+bool ble_hid_kb_press(BleHid* hid, uint16_t button) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
     for(size_t i = 0; i < BLE_HID_KEYBOARD_KEYS_MAX; i++) {
-        if(ble_hid->keyboard_report.keys[i] == (button & 0xFF)) {
-            break;
-        }
-        if(ble_hid->keyboard_report.keys[i] == 0) {
-            ble_hid->keyboard_report.keys[i] = button & 0xFF;
+        if(hid->keyboard_report.keys[i] == (button & 0xff)) break;
+        if(hid->keyboard_report.keys[i] == 0) {
+            hid->keyboard_report.keys[i] = button & 0xff;
             break;
         }
     }
-    ble_hid->keyboard_report.modifiers |= (button >> 8);
-    bool result = ble_hid_send_report(
-        ble_hid,
-        BLE_HID_REPORT_ID_KEYBOARD,
-        &ble_hid->keyboard_report,
-        sizeof(ble_hid->keyboard_report));
-    ble_hid_unlock(ble_hid);
+    hid->keyboard_report.modifiers |= button >> 8;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_KEYBOARD,
+                                      &hid->keyboard_report, sizeof(hid->keyboard_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_kb_release(BleHid* ble_hid, uint16_t button) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
+bool ble_hid_kb_release(BleHid* hid, uint16_t button) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
     for(size_t i = 0; i < BLE_HID_KEYBOARD_KEYS_MAX; i++) {
-        if(ble_hid->keyboard_report.keys[i] == (button & 0xFF)) {
-            ble_hid->keyboard_report.keys[i] = 0;
+        if(hid->keyboard_report.keys[i] == (button & 0xff)) {
+            hid->keyboard_report.keys[i] = 0;
             break;
         }
     }
-    ble_hid->keyboard_report.modifiers &= ~(button >> 8);
-    bool result = ble_hid_send_report(
-        ble_hid,
-        BLE_HID_REPORT_ID_KEYBOARD,
-        &ble_hid->keyboard_report,
-        sizeof(ble_hid->keyboard_report));
-    ble_hid_unlock(ble_hid);
+    hid->keyboard_report.modifiers &= ~(button >> 8);
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_KEYBOARD,
+                                      &hid->keyboard_report, sizeof(hid->keyboard_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_kb_release_all(BleHid* ble_hid) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    memset(&ble_hid->keyboard_report, 0, sizeof(ble_hid->keyboard_report));
-    bool result = ble_hid_send_report(
-        ble_hid,
-        BLE_HID_REPORT_ID_KEYBOARD,
-        &ble_hid->keyboard_report,
-        sizeof(ble_hid->keyboard_report));
-    ble_hid_unlock(ble_hid);
+bool ble_hid_kb_release_all(BleHid* hid) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    memset(&hid->keyboard_report, 0, sizeof(hid->keyboard_report));
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_KEYBOARD,
+                                      &hid->keyboard_report, sizeof(hid->keyboard_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_mouse_move(BleHid* ble_hid, int8_t dx, int8_t dy) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->mouse_report.x = dx;
-    ble_hid->mouse_report.y = dy;
-    bool result = ble_hid_send_report(
-        ble_hid, BLE_HID_REPORT_ID_MOUSE, &ble_hid->mouse_report, sizeof(ble_hid->mouse_report));
-    ble_hid->mouse_report.x = 0;
-    ble_hid->mouse_report.y = 0;
-    ble_hid_unlock(ble_hid);
+bool ble_hid_mouse_move(BleHid* hid, int8_t dx, int8_t dy) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    hid->mouse_report.x = dx;
+    hid->mouse_report.y = dy;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_MOUSE,
+                                      &hid->mouse_report, sizeof(hid->mouse_report));
+    hid->mouse_report.x = 0;
+    hid->mouse_report.y = 0;
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_mouse_press(BleHid* ble_hid, uint8_t button) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->mouse_report.buttons |= button;
-    bool result = ble_hid_send_report(
-        ble_hid, BLE_HID_REPORT_ID_MOUSE, &ble_hid->mouse_report, sizeof(ble_hid->mouse_report));
-    ble_hid_unlock(ble_hid);
+bool ble_hid_mouse_press(BleHid* hid, uint8_t button) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    hid->mouse_report.buttons |= button;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_MOUSE,
+                                      &hid->mouse_report, sizeof(hid->mouse_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_mouse_release(BleHid* ble_hid, uint8_t button) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->mouse_report.buttons &= ~button;
-    bool result = ble_hid_send_report(
-        ble_hid, BLE_HID_REPORT_ID_MOUSE, &ble_hid->mouse_report, sizeof(ble_hid->mouse_report));
-    ble_hid_unlock(ble_hid);
+bool ble_hid_mouse_release(BleHid* hid, uint8_t button) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    hid->mouse_report.buttons &= ~button;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_MOUSE,
+                                      &hid->mouse_report, sizeof(hid->mouse_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_mouse_release_all(BleHid* ble_hid) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->mouse_report.buttons = 0;
-    ble_hid->mouse_report.x = 0;
-    ble_hid->mouse_report.y = 0;
-    ble_hid->mouse_report.wheel = 0;
-    bool result = ble_hid_send_report(
-        ble_hid, BLE_HID_REPORT_ID_MOUSE, &ble_hid->mouse_report, sizeof(ble_hid->mouse_report));
-    ble_hid_unlock(ble_hid);
+bool ble_hid_mouse_release_all(BleHid* hid) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    memset(&hid->mouse_report, 0, sizeof(hid->mouse_report));
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_MOUSE,
+                                      &hid->mouse_report, sizeof(hid->mouse_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_mouse_scroll(BleHid* ble_hid, int8_t delta) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->mouse_report.wheel = delta;
-    bool result = ble_hid_send_report(
-        ble_hid, BLE_HID_REPORT_ID_MOUSE, &ble_hid->mouse_report, sizeof(ble_hid->mouse_report));
-    ble_hid->mouse_report.wheel = 0;
-    ble_hid_unlock(ble_hid);
+bool ble_hid_mouse_scroll(BleHid* hid, int8_t delta) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    hid->mouse_report.wheel = delta;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_MOUSE,
+                                      &hid->mouse_report, sizeof(hid->mouse_report));
+    hid->mouse_report.wheel = 0;
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_consumer_press(BleHid* ble_hid, uint16_t button) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->consumer_report.key = button;
-    bool result = ble_hid_send_report(
-        ble_hid,
-        BLE_HID_REPORT_ID_CONSUMER,
-        &ble_hid->consumer_report,
-        sizeof(ble_hid->consumer_report));
-    ble_hid_unlock(ble_hid);
+bool ble_hid_consumer_press(BleHid* hid, uint16_t button) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    hid->consumer_report.key = button;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_CONSUMER,
+                                      &hid->consumer_report, sizeof(hid->consumer_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_consumer_release(BleHid* ble_hid, uint16_t button) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    if(ble_hid->consumer_report.key == button) {
-        ble_hid->consumer_report.key = 0;
-    }
-    bool result = ble_hid_send_report(
-        ble_hid,
-        BLE_HID_REPORT_ID_CONSUMER,
-        &ble_hid->consumer_report,
-        sizeof(ble_hid->consumer_report));
-    ble_hid_unlock(ble_hid);
+bool ble_hid_consumer_release(BleHid* hid, uint16_t button) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    if(hid->consumer_report.key == button) hid->consumer_report.key = 0;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_CONSUMER,
+                                      &hid->consumer_report, sizeof(hid->consumer_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-bool ble_hid_consumer_release_all(BleHid* ble_hid) {
-    if(!ble_hid) {
-        return false;
-    }
-
-    ble_hid_lock(ble_hid);
-    ble_hid->consumer_report.key = 0;
-    bool result = ble_hid_send_report(
-        ble_hid,
-        BLE_HID_REPORT_ID_CONSUMER,
-        &ble_hid->consumer_report,
-        sizeof(ble_hid->consumer_report));
-    ble_hid_unlock(ble_hid);
+bool ble_hid_consumer_release_all(BleHid* hid) {
+    if(!hid) return false;
+    ble_hid_lock(hid);
+    hid->consumer_report.key = 0;
+    bool result = ble_hid_send_report(hid, BLE_HID_REPORT_ID_CONSUMER,
+                                      &hid->consumer_report, sizeof(hid->consumer_report));
+    ble_hid_unlock(hid);
     return result;
 }
 
-uint8_t ble_hid_get_led_state(BleHid* ble_hid) {
-    if(!ble_hid) {
-        return 0;
-    }
-
-    ble_hid_lock(ble_hid);
-    uint8_t led_state = ble_hid->led_state;
-    ble_hid_unlock(ble_hid);
-    return led_state;
+uint8_t ble_hid_get_led_state(BleHid* hid) {
+    if(!hid) return 0;
+    ble_hid_lock(hid);
+    uint8_t state = hid->led_state;
+    ble_hid_unlock(hid);
+    return state;
 }
 
 bool ble_hid_start_advertising(void) {
-    bool accepted = false;
-
     ble_hid_lock_global();
-    if(ble_hid_state.active) {
-        ESP_LOGI(TAG, "start_advertising requested");
+    bool accepted = ble_hid_state.active != NULL;
+    if(accepted) {
         ble_hid_state.advertising_requested = true;
         ble_hid_try_start_advertising_locked();
-        accepted = true;
     }
     ble_hid_unlock_global();
-
     return accepted;
 }
 
 void ble_hid_stop_advertising(void) {
     ble_hid_lock_global();
-    ESP_LOGI(TAG, "stop_advertising requested");
     ble_hid_state.advertising_requested = false;
     if(ble_hid_state.advertising) {
-        esp_ble_gap_stop_advertising();
+        ble_gap_adv_stop();
         ble_hid_state.advertising = false;
     }
     ble_hid_unlock_global();
 }
 
 bool ble_hid_is_advertising(void) {
-    bool advertising = false;
-
     ble_hid_lock_global();
-    advertising = ble_hid_state.advertising_requested && ble_hid_state.active != NULL &&
-                  !ble_hid_state.active->connected;
+    bool advertising = ble_hid_state.advertising_requested && ble_hid_state.active &&
+                       !ble_hid_state.active->connected;
     ble_hid_unlock_global();
-
     return advertising;
 }
 
 bool ble_hid_is_active(void) {
-    bool active = false;
-
     ble_hid_lock_global();
-    active = ble_hid_state.active != NULL;
+    bool active = ble_hid_state.active != NULL;
     ble_hid_unlock_global();
-
     return active;
 }
 
+void ble_hid_reset_initialized(void) {
+    if(!ble_hid_state.mutex) return;
+    ble_hid_lock_global();
+    ble_hid_state.ready = false;
+    ble_hid_state.advertising = false;
+    ble_hid_state.advertising_requested = false;
+    ble_hid_state.active = NULL;
+    ble_hid_unlock_global();
+}
+
 bool ble_hid_remove_pairing(void) {
-    if(!ble_hid_state.initialized) {
-        return false;
-    }
-
-    int device_count = esp_ble_get_bond_device_num();
-    if(device_count <= 0) {
-        return true;
-    }
-
-    esp_ble_bond_dev_t* devices = calloc(device_count, sizeof(esp_ble_bond_dev_t));
-    if(!devices) {
-        return false;
-    }
-
-    int requested = device_count;
-    esp_err_t err = esp_ble_get_bond_device_list(&requested, devices);
-    if(err != ESP_OK) {
-        free(devices);
-        return false;
-    }
-
-    bool success = true;
-    for(int i = 0; i < requested; i++) {
-        err = esp_ble_remove_bond_device(devices[i].bd_addr);
-        if(err != ESP_OK) {
-            success = false;
-        }
-    }
-
-    free(devices);
-    return success;
+    return nimble_glue_remove_all_bonds();
 }

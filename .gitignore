@@ -34,3 +34,32 @@ build_host/
 
 # Assembled SD card payload (generated from the Momentum checkout)
 sdcard/
+/tmp/
+build_t_embed_200/
+build_upgrade_200.log
+
+# --- v2 push hygiene: keep build artifacts, caches, logs and dumps out of git ---
+# All ESP-IDF build directories (build_multiboot/, build_ir_verify/, build_t_embed_release/, ...)
+build_*/
+# ccache store
+.ccache/
+# Every log file anywhere
+*.log
+# On-device dumps / merged app images left at the repo root
+/*.bin
+# Local test-flash and release output trees
+latest_tested/
+releases/
+# Root SD payload zips (sdcard.zip, "sdcard (2).zip")
+/sdcard*.zip
+# Generated / variant sdkconfigs (real defaults stay tracked)
+sdkconfig.generated_by_claude_*
+sdkconfig.variant_*
+# Local migration bookkeeping
+migration_*audit.json
+# Gradle/IDE caches from vendored companion apps under applications_user/
+.gradle/
+node_modules/
+*.iml
+.externalNativeBuild/
+.cxx/

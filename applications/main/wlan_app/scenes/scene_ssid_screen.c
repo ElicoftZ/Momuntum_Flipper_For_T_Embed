@@ -31,8 +31,9 @@ void wlan_app_scene_ssid_screen_on_enter(void* context) {
     }
 
     // Header: SSID links, RSSI rechts, beide Baseline y=10.
+    const char* display_name = ap->ssid[0] ? ap->ssid : "Hidden network";
     widget_add_string_element(
-        app->widget, 2, 10, AlignLeft, AlignBottom, FontPrimary, ap->ssid);
+        app->widget, 2, 10, AlignLeft, AlignBottom, FontPrimary, display_name);
 
     char rssi_buf[16];
     snprintf(rssi_buf, sizeof(rssi_buf), "%d dBm", ap->rssi);
@@ -62,8 +63,12 @@ void wlan_app_scene_ssid_screen_on_enter(void* context) {
 
     widget_add_button_element(
         app->widget, GuiButtonTypeLeft, "Attack", ssid_screen_select_cb, app);
-    widget_add_button_element(
-        app->widget, GuiButtonTypeRight, "Connect", ssid_screen_connect_cb, app);
+    /* Connecting requires the real SSID. A hidden scan result only contains
+     * its BSSID/channel, so do not offer a button that can only fail. */
+    if(ap->ssid[0]) {
+        widget_add_button_element(
+            app->widget, GuiButtonTypeRight, "Connect", ssid_screen_connect_cb, app);
+    }
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewWidget);
 }

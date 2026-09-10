@@ -24,6 +24,7 @@
 #include <driver/i2s_std.h>
 #include <driver/gpio.h>
 #include <esp_timer.h>
+#include <esp_heap_caps.h>
 
 #include <math.h>
 #ifndef M_PI
@@ -106,7 +107,14 @@ static void speaker_generate_buffer(void) {
     size_t needed = samples_per_cycle * 2 * sizeof(int16_t); /* stereo */
     if(wave_buffer == NULL || wave_buffer_samples != samples_per_cycle) {
         if(wave_buffer) free(wave_buffer);
-        wave_buffer = malloc(needed);
+        /* I2S copies samples into its internal DMA buffers. */
+        wave_buffer = heap_caps_malloc_prefer(
+            needed, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_DEFAULT);
+        if(!wave_buffer) {
+            wave_buffer_samples = 0;
+            wave_buffer_bytes = 0;
+            return;
+        }
         wave_buffer_samples = samples_per_cycle;
     }
     wave_buffer_bytes = needed;
@@ -176,6 +184,59 @@ static int32_t speaker_writer_thread(void* context) {
     return 0;
 }
 
+/* ---- PCM playback ----
+ *
+ * The tone path generates a sine into wave_buffer and lets the worker
+ * thread push it. Playing a recording needs the opposite: the caller owns
+ * the samples. Parking the worker in Idle leaves the I2S channel free, so
+ * the caller can write straight to it from its own thread.
+ *
+ * Fixed at SPEAKER_SAMPLE_RATE mono in, stereo out. Recording at the same
+ * rate avoids reconfiguring the I2S clock, which the tone path would then
+ * have to put back.
+ */
+#define SPEAKER_PCM_CHUNK 256
+
+bool furi_hal_speaker_pcm_start(void) {
+    if(!i2s_tx_handle) return false;
+    /* Stop the sine so the two are not interleaved on the same channel. */
+    speaker_mode = SpeakerModeIdle;
+    return true;
+}
+
+void furi_hal_speaker_pcm_stop(void) {
+    speaker_mode = SpeakerModeIdle;
+}
+
+size_t furi_hal_speaker_pcm_write(const int16_t* mono, size_t samples, uint32_t timeout_ms) {
+    if(!i2s_tx_handle || !mono || samples == 0) return 0;
+
+    static int16_t stereo[SPEAKER_PCM_CHUNK * 2];
+    size_t done = 0;
+
+    while(done < samples) {
+        size_t n = samples - done;
+        if(n > SPEAKER_PCM_CHUNK) n = SPEAKER_PCM_CHUNK;
+
+        for(size_t i = 0; i < n; i++) {
+            const int16_t v = mono[done + i];
+            stereo[i * 2] = v;
+            stereo[i * 2 + 1] = v;
+        }
+
+        size_t written = 0;
+        if(i2s_channel_write(
+               i2s_tx_handle, stereo, n * 2 * sizeof(int16_t), &written, timeout_ms) !=
+           ESP_OK) {
+            break;
+        }
+        if(written == 0) break;
+        done += written / (2 * sizeof(int16_t));
+    }
+
+    return done;
+}
+
 /* ---- Public API ---- */
 
 void furi_hal_speaker_init(void) {
@@ -212,7 +273,8 @@ void furi_hal_speaker_init(void) {
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(i2s_tx_handle, &std_cfg));
 
     /* Start the writer thread (it idles until speaker_mode != Idle) */
-    speaker_thread = furi_thread_alloc_ex("SpeakerWorker", SPEAKER_THREAD_STACK, speaker_writer_thread, NULL);
+    /* This worker only generates samples and feeds I2S; it never writes NVS. */
+    speaker_thread = furi_thread_alloc_ex_psram("SpeakerWorker", SPEAKER_THREAD_STACK, speaker_writer_thread, NULL);
     speaker_thread_run = true;
     furi_thread_start(speaker_thread);
 

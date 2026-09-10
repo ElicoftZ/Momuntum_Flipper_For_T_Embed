@@ -54,13 +54,15 @@ static bool sd_mount_card_internal(StorageData* storage, bool notify) {
             SDError status = f_mount(sd_data->fs, sd_data->path, 1);
 
             if(status == FR_OK || status == FR_NO_FILESYSTEM) {
-#ifndef FURI_RAM_EXEC
-                FATFS* fs;
-                uint32_t free_clusters;
-
-                status = f_getfree(sd_data->path, &free_clusters, &fs);
-#endif
-
+                /* No f_getfree() here on purpose. Right after a mount FatFs has
+                 * no cached free-cluster count, so f_getfree() walks the entire
+                 * FAT -- megabytes of it on a large card, which over SPI costs
+                 * seconds to a minute of boot and scales with the user's card
+                 * size and cluster size. The count was then discarded: the call
+                 * only served to tell FR_OK from FR_NO_FILESYSTEM, and
+                 * f_mount(.., 1) already reports that itself. Free space is
+                 * still computed on demand by storage_ext_fs_info() for the SD
+                 * Info screen, which is where a pause is acceptable. */
                 if(status == FR_OK || status == FR_NO_FILESYSTEM) {
                     result = true;
                 }
@@ -213,8 +215,22 @@ FS_Error sd_format_card(StorageData* storage) {
     SDData* sd_data = storage->data;
     SDError error;
 
-    work_area = malloc(_MAX_SS);
-    error = f_mkfs(sd_data->path, FM_ANY, 0, work_area, _MAX_SS);
+    /* Work area for f_mkfs; must be at least FF_MAX_SS. A few sectors speed up
+     * FAT32 table creation on large cards without eating much RAM. */
+    const UINT work_area_size = _MAX_SS * 4;
+    work_area = malloc(work_area_size);
+    if(work_area == NULL) {
+        return FSE_INTERNAL;
+    }
+
+    /* Force FAT32 so cards that ship as exFAT (which this firmware cannot mount,
+     * FF_FS_EXFAT=0) become usable Flipper cards. Fall back to FAT/FAT16 only if
+     * the volume is too small for FAT32 (f_mkfs aborts). No FM_SFD -> keep an MBR
+     * partition table for maximum PC/card-reader compatibility. */
+    error = f_mkfs(sd_data->path, FM_FAT32, 0, work_area, work_area_size);
+    if(error == FR_MKFS_ABORTED) {
+        error = f_mkfs(sd_data->path, FM_FAT, 0, work_area, work_area_size);
+    }
     free(work_area);
 
     do {

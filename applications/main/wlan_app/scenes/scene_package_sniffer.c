@@ -1,7 +1,10 @@
 #include "../wlan_app.h"
-#include "../wlan_hal.h"
+#include <wlan_hal.h>
+#include "../wlan_pcap_rec.h"
+#include <furi_hal.h>
 #include <esp_wifi.h>
 #include <string.h>
+#include <stdio.h>
 
 #define SNIFFER_TICK_MS 250
 #define SNIFFER_TICKS_PER_SEC (1000 / SNIFFER_TICK_MS)
@@ -34,6 +37,10 @@ static uint8_t s_filter_bssid[6];
 static uint8_t s_filter_macs[WLAN_APP_MAX_DEAUTH_CLIENTS][6];
 static volatile uint8_t s_filter_mac_count = 0;
 
+// PCAP-Capture: aktiv, solange in eine Datei geschrieben wird.
+static volatile bool s_pcap_capture;
+static char s_pcap_path[112];
+
 static bool sniff_match_unicast(const uint8_t* mac) {
     uint8_t n = s_filter_mac_count;
     for(uint8_t i = 0; i < n; i++) {
@@ -52,48 +59,48 @@ static void sniff_promisc_cb(void* buf, wifi_promiscuous_pkt_type_t type) {
     if(type != WIFI_PKT_DATA && type != WIFI_PKT_MGMT) return;
 
     SnifFilterMode mode = s_filter_mode;
+    bool matched = false;
+
     if(mode == SnifFilterAll) {
-        s_received++;
-        return;
-    }
+        matched = true;
+    } else if(len >= 24) {
+        // Mgmt/Data: Header-Filter braucht volle 24 Byte (addr1..addr3).
+        const uint8_t* p = pkt->payload;
+        uint16_t fc = p[0] | (p[1] << 8);
+        uint8_t to_ds = (fc & 0x0100) >> 8;
+        uint8_t from_ds = (fc & 0x0200) >> 9;
 
-    // Mgmt/Data: Header-Filter braucht volle 24 Byte (addr1..addr3).
-    if(len < 24) return;
+        const uint8_t* addr1 = &p[4];
+        const uint8_t* addr2 = &p[10];
+        const uint8_t* addr3 = &p[16];
 
-    const uint8_t* p = pkt->payload;
-    uint16_t fc = p[0] | (p[1] << 8);
-    uint8_t to_ds = (fc & 0x0100) >> 8;
-    uint8_t from_ds = (fc & 0x0200) >> 9;
+        const uint8_t* bssid = NULL;
+        const uint8_t* sta_a = NULL; // mögliche STA-Adresse 1
+        const uint8_t* sta_b = NULL; // mögliche STA-Adresse 2
+        if(to_ds && !from_ds) {
+            bssid = addr1; sta_a = addr2; sta_b = NULL;
+        } else if(!to_ds && from_ds) {
+            bssid = addr2; sta_a = addr1; sta_b = NULL;
+        } else if(!to_ds && !from_ds) {
+            bssid = addr3; sta_a = addr1; sta_b = addr2;
+        } // WDS (to_ds && from_ds) → matched bleibt false
 
-    const uint8_t* addr1 = &p[4];
-    const uint8_t* addr2 = &p[10];
-    const uint8_t* addr3 = &p[16];
-
-    const uint8_t* bssid;
-    const uint8_t* sta_a; // mögliche STA-Adresse 1
-    const uint8_t* sta_b; // mögliche STA-Adresse 2
-    if(to_ds && !from_ds) {
-        bssid = addr1; sta_a = addr2; sta_b = NULL;
-    } else if(!to_ds && from_ds) {
-        bssid = addr2; sta_a = addr1; sta_b = NULL;
-    } else if(!to_ds && !from_ds) {
-        bssid = addr3; sta_a = addr1; sta_b = addr2;
-    } else {
-        return; // WDS — ignorieren
-    }
-
-    if(mode == SnifFilterBssid) {
-        if(memcmp(bssid, s_filter_bssid, 6) == 0) s_received++;
-        return;
-    }
-    if(mode == SnifFilterUnicastSet) {
-        if(memcmp(bssid, s_filter_bssid, 6) != 0) return;
-        if(sniff_match_unicast(sta_a)) {
-            s_received++;
-            return;
+        if(bssid) {
+            if(mode == SnifFilterBssid) {
+                matched = (memcmp(bssid, s_filter_bssid, 6) == 0);
+            } else if(mode == SnifFilterUnicastSet) {
+                if(memcmp(bssid, s_filter_bssid, 6) == 0) {
+                    matched = sniff_match_unicast(sta_a) ||
+                              (sta_b && sniff_match_unicast(sta_b));
+                }
+            }
         }
-        if(sta_b && sniff_match_unicast(sta_b)) s_received++;
     }
+
+    if(!matched) return;
+
+    s_received++;
+    if(s_pcap_capture) wlan_pcap_rec_frame(pkt->payload, (uint16_t)len);
 }
 
 static void sniff_apply_filter(WlanApp* app) {
@@ -161,6 +168,31 @@ static void sniff_stop(void) {
     wlan_hal_set_promiscuous(false, NULL);
 }
 
+// PCAP-Capture starten: Dateiname aus RTC-Datum + Channel, dann Writer hoch.
+static void sniff_pcap_begin(WlanApp* app, uint8_t channel) {
+    DateTime dt;
+    furi_hal_rtc_get_datetime(&dt);
+    snprintf(
+        s_pcap_path, sizeof(s_pcap_path),
+        "/ext/wifi/sniffer/%04u%02u%02u_%02u%02u%02u_ch%u.pcap",
+        (unsigned)dt.year, (unsigned)dt.month, (unsigned)dt.day,
+        (unsigned)dt.hour, (unsigned)dt.minute, (unsigned)dt.second,
+        (unsigned)channel);
+
+    s_pcap_capture = wlan_pcap_rec_start(s_pcap_path);
+    wlan_sniffer_view_set_saving(app->sniffer_view_obj, s_pcap_capture);
+    wlan_sniffer_view_set_saved(app->sniffer_view_obj, 0, 0);
+}
+
+// PCAP-Capture beenden. MUSS nach sniff_stop() laufen (Promiscuous erst aus).
+static void sniff_pcap_end(WlanApp* app) {
+    if(s_pcap_capture) {
+        wlan_pcap_rec_stop();
+        s_pcap_capture = false;
+    }
+    if(app) wlan_sniffer_view_set_saving(app->sniffer_view_obj, false);
+}
+
 static void sniffer_view_action_cb(WlanSnifferViewAction action, void* ctx) {
     WlanApp* app = ctx;
     uint32_t event = 0;
@@ -187,9 +219,11 @@ void wlan_app_scene_package_sniffer_on_enter(void* context) {
     s_sniff_tick = 0;
     s_received = 0;
     s_elapsed_sec = 0;
+    s_pcap_capture = false;
 
     wlan_sniffer_view_reset_counters(app->sniffer_view_obj);
     wlan_sniffer_view_set_running(app->sniffer_view_obj, false);
+    wlan_sniffer_view_set_saving(app->sniffer_view_obj, false);
     wlan_sniffer_view_set_channel_mode(app->sniffer_view_obj, app->channel_mode_active);
 
     if(app->channel_mode_active) {
@@ -236,6 +270,7 @@ bool wlan_app_scene_package_sniffer_on_event(void* context, SceneManagerEvent ev
                 if(sniff_start(app)) {
                     s_sniff_running = true;
                     wlan_sniffer_view_set_running(app->sniffer_view_obj, true);
+                    sniff_pcap_begin(app, sniff_pick_channel(app));
                 }
                 // sniff_start kann scheitern (z.B. SSID-Mode ohne Target) —
                 // running bleibt false, View ebenfalls.
@@ -243,6 +278,7 @@ bool wlan_app_scene_package_sniffer_on_event(void* context, SceneManagerEvent ev
                 s_sniff_running = false;
                 wlan_sniffer_view_set_running(app->sniffer_view_obj, false);
                 sniff_stop();
+                sniff_pcap_end(app);
             }
             consumed = true;
         } else if(event.event == SnifferEventTargets) {
@@ -250,6 +286,7 @@ bool wlan_app_scene_package_sniffer_on_event(void* context, SceneManagerEvent ev
             s_sniff_running = false;
             wlan_sniffer_view_set_running(app->sniffer_view_obj, false);
             sniff_stop();
+            sniff_pcap_end(app);
             scene_manager_next_scene(app->scene_manager, WlanAppSceneClientPicker);
             consumed = true;
         } else if(event.event == SnifferEventChannelDown) {
@@ -274,6 +311,10 @@ bool wlan_app_scene_package_sniffer_on_event(void* context, SceneManagerEvent ev
         if(s_sniff_tick % SNIFFER_TICKS_PER_SEC == 0) s_elapsed_sec++;
         wlan_sniffer_view_set_received(app->sniffer_view_obj, s_received);
         wlan_sniffer_view_set_elapsed(app->sniffer_view_obj, s_elapsed_sec);
+        if(s_pcap_capture) {
+            wlan_sniffer_view_set_saved(
+                app->sniffer_view_obj, wlan_pcap_rec_frames(), wlan_pcap_rec_drops());
+        }
     }
 
     return consumed;
@@ -282,6 +323,7 @@ bool wlan_app_scene_package_sniffer_on_event(void* context, SceneManagerEvent ev
 void wlan_app_scene_package_sniffer_on_exit(void* context) {
     WlanApp* app = context;
     sniff_stop();
+    sniff_pcap_end(app);
     wlan_sniffer_view_set_action_callback(app->sniffer_view_obj, NULL, NULL);
     wlan_sniffer_view_set_running(app->sniffer_view_obj, false);
     wlan_sniffer_view_set_channel_mode(app->sniffer_view_obj, false);

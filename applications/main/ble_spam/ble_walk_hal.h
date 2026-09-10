@@ -2,8 +2,21 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <esp_gap_ble_api.h>
-#include <esp_gattc_api.h>
+
+#define BLE_WALK_UUID_LEN_16  2
+#define BLE_WALK_UUID_LEN_32  4
+#define BLE_WALK_UUID_LEN_128 16
+
+typedef uint8_t BleWalkAddress[6];
+
+typedef struct {
+    uint16_t len;
+    union {
+        uint16_t uuid16;
+        uint32_t uuid32;
+        uint8_t uuid128[BLE_WALK_UUID_LEN_128];
+    } uuid;
+} BleWalkUuid;
 
 #define BLE_WALK_MAX_DEVICES    32
 #define BLE_WALK_MAX_SERVICES   16
@@ -11,8 +24,8 @@
 #define BLE_WALK_MAX_VALUE_LEN  128
 
 typedef struct {
-    esp_bd_addr_t addr;
-    esp_ble_addr_type_t addr_type;
+    BleWalkAddress addr;
+    uint8_t addr_type;
     int8_t rssi;
     char name[32];
     uint8_t adv_data[31];
@@ -22,13 +35,13 @@ typedef struct {
 } BleWalkDevice;
 
 typedef struct {
-    esp_bt_uuid_t uuid;
+    BleWalkUuid uuid;
     uint16_t start_handle;
     uint16_t end_handle;
 } BleWalkService;
 
 typedef struct {
-    esp_bt_uuid_t uuid;
+    BleWalkUuid uuid;
     uint16_t handle;
     uint8_t properties;
 } BleWalkChar;
@@ -39,6 +52,8 @@ void ble_walk_hal_stop(void);
 
 // Scanning
 bool ble_walk_hal_start_scan(void);
+/* Fresh, receive-only scan for the WhisperPair inventory. */
+bool ble_walk_hal_start_passive_scan(bool fast_pair_only);
 void ble_walk_hal_stop_scan(void);
 bool ble_walk_hal_is_scanning(void);
 BleWalkDevice* ble_walk_hal_get_devices(uint16_t* count);
@@ -64,3 +79,5 @@ uint8_t* ble_walk_hal_get_read_value(uint16_t* len);
 uint8_t ble_walk_hal_get_read_status(void);
 
 bool ble_walk_hal_write_char(uint16_t handle, const uint8_t* data, uint16_t len);
+bool ble_walk_hal_write_ready(void);
+int ble_walk_hal_get_write_status(void);

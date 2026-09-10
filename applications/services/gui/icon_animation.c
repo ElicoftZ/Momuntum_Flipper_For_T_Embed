@@ -6,7 +6,7 @@
 IconAnimation* icon_animation_alloc(const Icon* icon) {
     furi_check(icon);
 
-    IconAnimation* instance = malloc(sizeof(IconAnimation));
+    IconAnimation* instance = calloc(1, sizeof(IconAnimation));
     instance->icon = icon;
     instance->timer =
         furi_timer_alloc(icon_animation_timer_callback, FuriTimerTypePeriodic, instance);
@@ -70,9 +70,14 @@ uint8_t icon_animation_get_height(const IconAnimation* instance) {
 void icon_animation_start(IconAnimation* instance) {
     furi_check(instance);
 
+    if(instance->icon->frame_count <= 1 || instance->icon->frame_rate == 0) {
+        instance->frame = 0;
+        instance->animating = false;
+        return;
+    }
+
     if(!instance->animating) {
         instance->animating = true;
-        furi_assert(instance->icon->frame_rate);
         furi_check(
             furi_timer_start(
                 instance->timer,
@@ -86,8 +91,8 @@ void icon_animation_stop(IconAnimation* instance) {
     if(instance->animating) {
         instance->animating = false;
         furi_timer_stop(instance->timer);
-        instance->frame = 0;
     }
+    instance->frame = 0;
 }
 
 bool icon_animation_is_last_frame(const IconAnimation* instance) {

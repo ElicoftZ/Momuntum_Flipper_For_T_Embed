@@ -12,7 +12,7 @@ typedef enum {
     DolphinAppNfc,
     DolphinAppIr,
     DolphinAppIbutton,
-    DolphinAppBadusb,
+    DolphinAppBadUsb,
     DolphinAppPlugin,
     DolphinAppMAX,
 } DolphinApp;
@@ -55,9 +55,12 @@ typedef enum {
     DolphinDeedU2fAuthorized,
     DolphinDeedGpioUartBridge,
 
+    // Values set to 0 to handle deeds in loader not by individual apps
     DolphinDeedPluginStart,
     DolphinDeedPluginGameStart,
     DolphinDeedPluginGameWin,
+    // Only for pentesting apps, yielded by loader
+    DolphinDeedPluginInternalStart,
 
     DolphinDeedMAX,
 

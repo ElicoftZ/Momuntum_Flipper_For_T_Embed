@@ -26,6 +26,7 @@ typedef struct {
     size_t text_buffer_size;
     size_t minimum_length;
     bool clear_default_text;
+    bool auto_capitalize;
 
     bool cursor_select;
     size_t cursor_pos;
@@ -46,7 +47,7 @@ typedef struct {
 static const uint8_t keyboard_origin_x = 1;
 static const uint8_t keyboard_origin_y = 29;
 static const uint8_t keyboard_row_count = 3;
-static const uint8_t keyboard_count = 2;
+static const uint8_t keyboard_count = 3;
 
 #define ENTER_KEY           '\r'
 #define BACKSPACE_KEY       '\b'
@@ -145,6 +146,37 @@ static const TextInputKey symbol_keyboard_keys_row_3[] = {
     {'9', 120, 32},
 };
 
+static const TextInputKey symbol2_keyboard_keys_row_1[] = {
+    {'"', 1, 8},
+    {'/', 19, 8},
+    {'\\', 37, 8},
+    {'|', 55, 8},
+    {'0', 91, 8},
+    {'1', 100, 8},
+    {'2', 110, 8},
+    {'3', 120, 8},
+};
+
+static const TextInputKey symbol2_keyboard_keys_row_2[] = {
+    {'<', 1, 20},
+    {'>', 19, 20},
+    {':', 37, 20},
+    {BACKSPACE_KEY, 82, 12},
+    {'4', 100, 20},
+    {'5', 110, 20},
+    {'6', 120, 20},
+};
+
+static const TextInputKey symbol2_keyboard_keys_row_3[] = {
+    {SWITCH_KEYBOARD_KEY, 0, 23},
+    {'?', 19, 32},
+    {'*', 37, 32},
+    {ENTER_KEY, 74, 23},
+    {'7', 100, 32},
+    {'8', 110, 32},
+    {'9', 120, 32},
+};
+
 static const Keyboard letters_keyboard = {
     .rows = {keyboard_keys_row_1, keyboard_keys_row_2, keyboard_keys_row_3},
     .row_sizes =
@@ -166,9 +198,22 @@ static const Keyboard symbol_keyboard = {
     .keyboard_index = 1,
 };
 
+static const Keyboard symbol2_keyboard = {
+    .rows =
+        {symbol2_keyboard_keys_row_1,
+         symbol2_keyboard_keys_row_2,
+         symbol2_keyboard_keys_row_3},
+    .row_sizes =
+        {COUNT_OF(symbol2_keyboard_keys_row_1),
+         COUNT_OF(symbol2_keyboard_keys_row_2),
+         COUNT_OF(symbol2_keyboard_keys_row_3)},
+    .keyboard_index = 2,
+};
+
 static const Keyboard* keyboards[] = {
     &letters_keyboard,
     &symbol_keyboard,
+    &symbol2_keyboard,
 };
 
 static const Keyboard* get_keyboard(const TextInputModel* model) {
@@ -240,6 +285,8 @@ static void text_input_view_draw_callback(Canvas* canvas, void* _model) {
     char buf[text_length + 1];
     if(model->text_buffer) {
         strlcpy(buf, model->text_buffer, sizeof(buf));
+    } else {
+        buf[0] = '\0';
     }
     char* str = buf;
 
@@ -278,8 +325,8 @@ static void text_input_view_draw_callback(Canvas* canvas, void* _model) {
 
     canvas_set_font(canvas, FontKeyboard);
 
-    bool symbols_active = model->selected_keyboard == symbol_keyboard.keyboard_index;
-    bool uppercase = (model->clear_default_text || text_length == 0) && !symbols_active;
+    bool symbols_active = model->selected_keyboard != letters_keyboard.keyboard_index;
+    bool uppercase = model->auto_capitalize && (model->clear_default_text || text_length == 0) && !symbols_active;
     for(uint8_t row = 0; row < keyboard_row_count; row++) {
         const uint8_t column_count = get_row_size(model, row);
         const TextInputKey* keys = get_row(model, row);
@@ -427,8 +474,9 @@ static void text_input_handle_ok(TextInput* text_input, TextInputModel* model, I
                 text_length = 0;
             }
             if(text_length < (model->text_buffer_size - 1)) {
-                bool symbols_active = model->selected_keyboard == symbol_keyboard.keyboard_index;
-                if(!symbols_active && shift != (text_length == 0)) {
+                bool symbols_active = model->selected_keyboard != letters_keyboard.keyboard_index;
+                const bool capitalize = model->auto_capitalize && text_length == 0;
+                if(!symbols_active && (shift != capitalize)) {
                     selected = char_to_uppercase(selected);
                 }
                 if(model->clear_default_text) {
@@ -607,6 +655,7 @@ void text_input_reset(TextInput* text_input) {
             model->selected_keyboard = 0;
             model->minimum_length = 1;
             model->clear_default_text = false;
+            model->auto_capitalize = true;
             model->cursor_pos = 0;
             model->cursor_select = false;
             model->text_buffer = NULL;
@@ -661,6 +710,15 @@ void text_input_set_minimum_length(TextInput* text_input, size_t minimum_length)
         text_input->view,
         TextInputModel * model,
         { model->minimum_length = minimum_length; },
+        true);
+}
+
+void text_input_set_auto_capitalize(TextInput* text_input, bool enabled) {
+    furi_check(text_input);
+    with_view_model(
+        text_input->view,
+        TextInputModel * model,
+        { model->auto_capitalize = enabled; },
         true);
 }
 

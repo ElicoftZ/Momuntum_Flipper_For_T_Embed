@@ -8,10 +8,9 @@
  *
  * Installing the TinyUSB composite switches the ESP32-S3 internal USB PHY from
  * USB-Serial-JTAG to USB-OTG, which kills the serial/JTAG bridge esptool uses
- * for flashing. So we only do it on demand. stop() leaves the composite
- * installed (like USB-Storage) and only detaches the RPC bridge — this
- * esp_tinyusb build can't cleanly reinstall after an uninstall, so the
- * composite stays up until reboot.
+ * for flashing. So we only do it on demand. stop() detaches the RPC bridge;
+ * restore_native_serial() then performs a complete same-boot TinyUSB teardown
+ * and returns the PHY to USB-Serial-JTAG without rebooting the device.
  */
 
 #include "qflipper_bridge.h"
@@ -62,6 +61,7 @@ typedef struct {
     bool connected;       /* DTR state */
     bool session_open;    /* RPC session active */
     bool rpc_mode;        /* false = CLI handshake, true = piping protobuf */
+    bool auto_off_armed;  /* host was connected and dropped DTR — grace period running */
     volatile bool exiting; /* stop() requested — bail out of any blocking loop */
 
     /* CLI handshake line buffer (qFlipper sends "start_rpc_session\r") */
@@ -74,6 +74,8 @@ typedef struct {
 
 /* Single-instance background bridge. */
 static UsbRpcSrv* s_bridge = NULL;
+static QflipperBridgeAutoOffCallback s_auto_off_cb = NULL;
+static void* s_auto_off_ctx = NULL;
 
 #if QFLIPPER_HAVE_COMPOSITE
 
@@ -85,6 +87,7 @@ static UsbRpcSrv* s_bridge = NULL;
  * ───────────────────────────────────────────────────────────────────── */
 
 static void usb_rpc_post_event(UsbRpcSrv* srv, UsbRpcEvent ev) {
+    if(!srv || srv->exiting) return;
     furi_message_queue_put(srv->event_q, &ev, 0);
 }
 
@@ -253,7 +256,20 @@ static void qflipper_cli_rx(UsbRpcSrv* srv) {
 static void qflipper_bridge_run(UsbRpcSrv* srv) {
     UsbRpcEvent ev;
     while(true) {
-        if(furi_message_queue_get(srv->event_q, &ev, FuriWaitForever) != FuriStatusOk) {
+        /* While the host is gone after a session, wait with a timeout: if nothing
+         * happens within the grace period, ask the desktop to leave qFlipper mode. */
+        uint32_t wait = srv->auto_off_armed ? furi_ms_to_ticks(QFLIPPER_BRIDGE_AUTO_OFF_MS) :
+                                              FuriWaitForever;
+        FuriStatus st = furi_message_queue_get(srv->event_q, &ev, wait);
+        if(st == FuriStatusErrorTimeout) {
+            if(srv->auto_off_armed && !srv->connected && !srv->exiting) {
+                srv->auto_off_armed = false;
+                FURI_LOG_I(TAG, "host gone for %u ms — leaving qFlipper mode", (unsigned)QFLIPPER_BRIDGE_AUTO_OFF_MS);
+                if(s_auto_off_cb) s_auto_off_cb(s_auto_off_ctx);
+            }
+            continue;
+        }
+        if(st != FuriStatusOk) {
             continue;
         }
 
@@ -262,6 +278,7 @@ static void qflipper_bridge_run(UsbRpcSrv* srv) {
             return;
 
         case UsbRpcEventConnected:
+            srv->auto_off_armed = false;
             if(srv->connected) break;
             srv->connected = true;
             srv->rpc_mode = false;
@@ -275,6 +292,7 @@ static void qflipper_bridge_run(UsbRpcSrv* srv) {
             srv->connected = false;
             srv->rpc_mode = false;
             srv->cli_len = 0;
+            srv->auto_off_armed = true;
             FURI_LOG_I(TAG, "DTR down — closing RPC session");
             usb_rpc_session_close(srv);
             break;
@@ -321,6 +339,7 @@ bool qflipper_bridge_start(void) {
     srv->connected = false;
     srv->session_open = false;
     srv->rpc_mode = false;
+    srv->auto_off_armed = false;
     srv->exiting = false;
     srv->cli_len = 0;
 
@@ -328,7 +347,7 @@ bool qflipper_bridge_start(void) {
 
     /* Install the composite as a real Flipper Zero (0483:5740). Idempotent if
      * another consumer (USB-Storage) already installed it. */
-    if(!furi_hal_usb_composite_install(0, 0, NULL, NULL)) {
+    if(!furi_hal_usb_composite_install(0, 0, NULL, NULL, false)) {
         FURI_LOG_E(TAG, "composite_install failed");
         furi_record_close(RECORD_RPC);
         furi_message_queue_free(srv->event_q);
@@ -363,12 +382,8 @@ void qflipper_bridge_stop(void) {
     furi_thread_join(srv->thread);
     furi_thread_free(srv->thread);
 
-    /* Detach the RPC bridge but LEAVE the composite installed — exactly like
-     * USB-Storage, which only toggles its MSC function. The esp_tinyusb build
-     * here can't cleanly reinstall after furi_hal_usb_composite_uninstall()
-     * (tusb_teardown is a no-op), so uninstalling here would break the next
-     * Enable. The composite stays up until reboot; re-enabling just reattaches
-     * the CDC callbacks. */
+    /* Detach the RPC bridge. The composite is deliberately left running here
+     * because USB-Storage can reuse it; restore_native_serial() owns teardown. */
     furi_hal_cdc_set_callbacks(USB_RPC_CDC_ITF, NULL, NULL);
     usb_rpc_session_close(srv);
     furi_record_close(RECORD_RPC);
@@ -380,4 +395,32 @@ void qflipper_bridge_stop(void) {
 
 bool qflipper_bridge_is_active(void) {
     return s_bridge != NULL;
+}
+
+QflipperBridgePcLinkMode qflipper_bridge_pc_link_mode(void) {
+#if QFLIPPER_HAVE_COMPOSITE
+    if(s_bridge) return QflipperBridgePcLinkQflipper;
+    if(furi_hal_usb_composite_is_installed()) return QflipperBridgePcLinkCompositeIdle;
+#endif
+    return QflipperBridgePcLinkNativeSerial;
+}
+
+bool qflipper_bridge_restore_native_serial(void) {
+#if !QFLIPPER_HAVE_COMPOSITE
+    return false;
+#else
+    if(!furi_hal_usb_composite_is_installed()) return true;
+
+    /* Stop producers and join the RPC worker before the TinyUSB task, CDC
+     * wrapper and PHY disappear underneath it. The composite teardown now
+     * deinitializes every same-boot allocation, so no restart is needed. */
+    qflipper_bridge_stop();
+    FURI_LOG_I(TAG, "restoring native USB Serial/JTAG without reboot");
+    return furi_hal_usb_composite_uninstall();
+#endif
+}
+
+void qflipper_bridge_set_auto_off_callback(QflipperBridgeAutoOffCallback callback, void* context) {
+    s_auto_off_cb = callback;
+    s_auto_off_ctx = context;
 }

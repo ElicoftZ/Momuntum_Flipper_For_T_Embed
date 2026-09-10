@@ -60,4 +60,30 @@ typedef enum {
     WlanAppCustomEventUpdateSdStart = 200,
     WlanAppCustomEventUpdateSdCancel = 201,
     WlanAppCustomEventUpdateSdFinished = 202,
+
+    WlanAppCustomEventSmartDeauthToggle = 210,
+    WlanAppCustomEventSmartDeauthChannelUp = 211,
+    WlanAppCustomEventSmartDeauthChannelDown = 212,
+
+    WlanAppCustomEventAirSnitchProbeDone = 220,
+
+    WlanAppCustomEventWebFsSelectWifi = 230,
+    WlanAppCustomEventWebFsDedicatedAp = 231,
+    WlanAppCustomEventWebFsApSsid = 232,
+    WlanAppCustomEventWebFsApPassword = 233,
+    WlanAppCustomEventWebFsApStart = 234,
+    WlanAppCustomEventWebFsInputDone = 235,
+    WlanAppCustomEventWebFsStop = 236,
+
+    WlanAppCustomEventSmbInputDone = 240,
+    WlanAppCustomEventSmbRetry = 241,
+
+    WlanAppCustomEventFwUpdateStart = 250,
+    WlanAppCustomEventFwUpdateCancel = 251,
+    WlanAppCustomEventFwUpdateInstall = 252,
+    WlanAppCustomEventFwUpdateFinished = 253,
+    WlanAppCustomEventFwUpdateSkip = 254,
+
+    WlanAppCustomEventAndroidTvPinDone = 260,
+    WlanAppCustomEventAndroidTvRetry = 261,
 } WlanAppCustomEvent;

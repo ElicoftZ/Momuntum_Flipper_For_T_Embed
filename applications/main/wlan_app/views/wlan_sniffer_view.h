@@ -26,6 +26,9 @@ void wlan_sniffer_view_set_channel(WlanSnifferView* v, uint8_t channel);
 void wlan_sniffer_view_set_received(WlanSnifferView* v, uint32_t count);
 void wlan_sniffer_view_set_elapsed(WlanSnifferView* v, uint32_t sec);
 void wlan_sniffer_view_set_running(WlanSnifferView* v, bool running);
+// PCAP-Recording-Status: saving = wird in eine Datei geschrieben.
+void wlan_sniffer_view_set_saving(WlanSnifferView* v, bool saving);
+void wlan_sniffer_view_set_saved(WlanSnifferView* v, uint32_t saved, uint32_t drops);
 void wlan_sniffer_view_reset_counters(WlanSnifferView* v);
 void wlan_sniffer_view_set_action_callback(
     WlanSnifferView* v, WlanSnifferViewActionCb cb, void* ctx);

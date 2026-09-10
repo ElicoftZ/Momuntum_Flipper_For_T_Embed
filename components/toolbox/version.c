@@ -1,4 +1,5 @@
 #include "version.h"
+#include "fw_version.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,7 +23,7 @@ static Version firmware_version = {
     .build_date = __DATE__,
     .version = "1.4.3",
     .custom_name = NULL,
-    .firmware_origin = "ESP32 Port",
+    .firmware_origin = "Momentum T-Embed (Sor3nt 2.0.0)",
     .git_origin = "local",
     .target = 32,
     .dirty_flag = true,
@@ -63,7 +64,13 @@ const char* version_get_custom_name(const Version* v) {
 }
 
 void version_set_custom_name(Version* v, const char* name) {
-    if(!v) return;
+    /* NULL means "the global Version", exactly as it does in
+     * version_get_custom_name() above. This used to return instead, so the two
+     * disagreed: namechanger set the name with NULL (silently discarded), then
+     * read it back with NULL (which DID resolve to the global one) and applied
+     * that -- re-applying the MAC-derived default it was trying to replace. The
+     * custom device name could therefore never survive a reboot. */
+    if(!v) v = (Version*)version_get();
     v->custom_name = name;
 }
 

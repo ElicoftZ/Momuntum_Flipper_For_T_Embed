@@ -1,0 +1,12 @@
+App(
+    appid="backup_settings",
+    name="Backup Settings",
+    apptype=FlipperAppType.SETTINGS,
+    entry_point="backup_settings_app",
+    requires=[
+        "gui",
+        "storage",
+    ],
+    stack_size=2 * 1024,
+    order=95,
+)

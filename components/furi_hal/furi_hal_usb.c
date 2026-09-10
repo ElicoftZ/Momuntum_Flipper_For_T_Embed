@@ -1,5 +1,7 @@
 #include "furi_hal_usb.h"
 #include "furi_hal_usb_hid_backend.h"
+#include "furi_hal_usb_hid_u2f.h"
+#include "furi_hal_usb_tinyusb_composite.h"
 
 #include <stddef.h>
 
@@ -17,6 +19,15 @@ FuriHalUsbInterface usb_ccid = {.name = "ccid"};
 void furi_hal_usb_init(void) {
     furi_hal_usb_current = NULL;
     furi_hal_usb_locked = false;
+    furi_hal_hid_u2f_init();
+
+    /* The internal USB PHY mux is an RTC-domain setting that survives a soft
+     * reset. If a prior boot's on-demand composite (qFlipper / USB-Storage)
+     * left it routed to the OTG controller, a normal reboot would keep
+     * USB-Serial-JTAG disconnected and esptool couldn't flash without the
+     * manual BOOT+RESET dance. Force the mux back to USJ here at boot; the
+     * on-demand composite installs re-route to OTG when actually needed. */
+    furi_hal_usb_composite_restore_serial_jtag();
 }
 
 bool furi_hal_usb_set_config(FuriHalUsbInterface* new_if, void* ctx) {
@@ -31,8 +42,19 @@ bool furi_hal_usb_set_config(FuriHalUsbInterface* new_if, void* ctx) {
         furi_hal_usb_hid_backend_stop();
     }
 
+    if(prev == &usb_hid_u2f && new_if != &usb_hid_u2f) {
+        furi_hal_hid_u2f_stop();
+    }
+
     if(new_if == &usb_hid) {
         if(!furi_hal_usb_hid_backend_start((const FuriHalUsbHidConfig*)ctx)) {
+            furi_hal_usb_current = prev;
+            return false;
+        }
+    }
+
+    if(new_if == &usb_hid_u2f) {
+        if(!furi_hal_hid_u2f_start()) {
             furi_hal_usb_current = prev;
             return false;
         }
@@ -65,6 +87,9 @@ bool furi_hal_usb_is_locked(void) {
 void furi_hal_usb_disable(void) {
     if(furi_hal_usb_current == &usb_hid) {
         furi_hal_usb_hid_backend_stop();
+    }
+    if(furi_hal_usb_current == &usb_hid_u2f) {
+        furi_hal_hid_u2f_stop();
     }
 }
 

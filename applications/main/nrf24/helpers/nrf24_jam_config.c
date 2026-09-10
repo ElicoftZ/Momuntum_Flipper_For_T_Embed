@@ -8,7 +8,7 @@
 
 #define NRF24_JAM_CFG_PATH    INT_PATH(".nrf24jam.cfg")
 #define NRF24_JAM_CFG_MAGIC   (0x4E) /* 'N' — unused by other settings */
-#define NRF24_JAM_CFG_VERSION (4) /* v4: Protocol config split per preset, was 3 */
+#define NRF24_JAM_CFG_VERSION (7) /* v7: added BT Classic 2 preset (FAP replica) → preset count changed */
 
 /* Persisted blob: WiFi/Activity get one slot each, while the Protocol source
  * keeps a separate slot per preset (each protocol has its own optimal strategy:
@@ -156,28 +156,31 @@ const char* nrf24_jam_strategy_label_long(uint8_t strategy) {
 const char* nrf24_jam_pa_label(uint8_t pa) {
     switch(pa) {
     case Nrf24Pa_Min:
-        return "MIN";
+        return "V.Low";
     case Nrf24Pa_Low:
-        return "LOW";
+        return "Low";
     case Nrf24Pa_High:
-        return "HIGH";
+        return "Med";
     case Nrf24Pa_Max:
-        return "MAX";
+        return "High";
     default:
         return "?";
     }
 }
 
+/* Relative strength labels for the 4 fixed chip steps (Min=-18 .. Max=0 dBm).
+ * Absolute dBm is intentionally not shown: the real output depends on the
+ * installed module's fixed PA gain, which the firmware cannot know. */
 const char* nrf24_jam_pa_label_long(uint8_t pa) {
     switch(pa) {
     case Nrf24Pa_Min:
-        return "MIN -18dBm";
+        return "Very Low";
     case Nrf24Pa_Low:
-        return "LOW -12dBm";
+        return "Low";
     case Nrf24Pa_High:
-        return "HIGH -6dBm";
+        return "Medium";
     case Nrf24Pa_Max:
-        return "MAX 0dBm";
+        return "High";
     default:
         return "?";
     }

@@ -29,7 +29,19 @@ FuriStreamBuffer* furi_stream_buffer_alloc(size_t size, size_t trigger_level) {
     // Actual FreeRTOS usable buffer size seems to be one less
     const size_t buffer_size = size + 1;
 
-    FuriStreamBuffer* stream_buffer = calloc(1, sizeof(FuriStreamBuffer) + buffer_size);
+    size_t allocation_size = sizeof(FuriStreamBuffer) + buffer_size;
+    FuriStreamBuffer* stream_buffer = calloc(1, allocation_size);
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S2)
+    if(!stream_buffer) {
+        stream_buffer = heap_caps_calloc(1, allocation_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+#endif
+    /* Without this, an out-of-memory here derefs NULL to compute the two
+     * arguments below and surfaces inside FreeRTOS as
+     * "assert failed: xStreamBufferGenericCreateStatic (pxStaticStreamBuffer)",
+     * which names neither this allocation nor its caller. Fail here instead,
+     * where the size and the calling thread are still visible. */
+    furi_check(stream_buffer, "stream buffer alloc failed");
     StreamBufferHandle_t hStreamBuffer = xStreamBufferCreateStatic(
         buffer_size, trigger_level, stream_buffer->buffer, &stream_buffer->container);
 

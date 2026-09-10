@@ -3,8 +3,19 @@ App(
     name="WiFi",
     apptype=FlipperAppType.MENUEXTERNAL,
     entry_point="wlan_app",
+    requires=["wifi"],
     stack_size=8 * 1024,
-    icon="A_Sub1ghz_14",
+    icon="A_Wifi_14",
     order=67,
     fap_libs=["assets"],
+)
+
+App(
+    appid="wlan_prepare",
+    apptype=FlipperAppType.STARTUP,
+    entry_point="wlan_hal_prepare_radio_memory",
+    # Run after storage (saved switch/SSID) and Bluetooth, but before any
+    # foreground app further fragments the DMA-capable internal heap.
+    requires=["bt"],
+    order=50,
 )

@@ -90,6 +90,10 @@ typedef const NotificationMessage* NotificationSequence[];
 void notification_message(NotificationApp* app, const NotificationSequence* sequence);
 void notification_message_block(NotificationApp* app, const NotificationSequence* sequence);
 
+/** Immediately enter the normal dim idle stage and arm the configured sleep
+ *  timer. Wake-mode locks are respected. */
+void notification_display_dim(NotificationApp* app);
+
 /**
  * @brief Send internal (apply to permanent layer) notification message. Think twice before use.
  *

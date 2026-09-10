@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/** Stop btshim, init BLE controller + Bluedroid for raw advertising.
+/** Stop btshim, init NimBLE for raw advertising.
  *  @return true on success */
 bool ble_spam_hal_start(void);
 

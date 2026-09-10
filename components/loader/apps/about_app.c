@@ -1,5 +1,6 @@
 #include <furi.h>
 #include <gui.h>
+#include <toolbox/fw_version.h>
 #include <view_dispatcher.h>
 #include <widget.h>
 
@@ -40,8 +41,8 @@ int32_t about_app(void* p) {
         AlignCenter,
         AlignTop,
         FontSecondary,
-        "Lily T-Embed\n"
-        "FW: 1.1.6 - Sor3nt Stuff");
+        "T-Embed CC1101\n"
+        "FW: " FURI_ESP32_VERSION_FULL);
 
     View* widget_view = widget_get_view(app->widget);
     view_set_previous_callback(widget_view, about_app_exit);

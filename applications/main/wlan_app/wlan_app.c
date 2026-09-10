@@ -1,8 +1,11 @@
 #include "wlan_app.h"
 #include "wlan_html_inject.h"
 #include "wlan_cred_sniff.h"
-#include "wlan_hal.h"
+#include "wlan_pcap_rec.h"
+#include <wlan_hal.h>
 #include "wlan_netcut.h"
+#include <wifi.h>
+#include <wlan_passwords.h>
 
 #include <esp_heap_caps.h> /* TEMP: heap diagnostics for the C6 OOM crash */
 
@@ -25,7 +28,19 @@ static void wlan_app_tick_event_callback(void* context) {
 }
 
 static WlanApp* wlan_app_alloc(void) {
-    WlanApp* app = malloc(sizeof(WlanApp));
+    wlan_pcap_rec_prepare();
+    if(!wlan_hal_prepare_foreground_session()) {
+        FURI_LOG_W(WLAN_APP_TAG, "WPA authentication memory reserve unavailable");
+    }
+    /* Start the already-reserved driver before allocating the app's many GUI
+     * objects. Starting it afterwards made first launch depend on heap layout:
+     * another app could fragment internal RAM enough for esp_wifi_start() to
+     * starve the I2C/power tasks and panic, while a fresh reboot happened to
+     * work. */
+    if(!wlan_hal_start()) {
+        FURI_LOG_E(WLAN_APP_TAG, "WiFi could not start before app allocation");
+    }
+    WlanApp* app = calloc(1, sizeof(WlanApp));
 
     app->gui = furi_record_open(RECORD_GUI);
     app->scene_manager = scene_manager_alloc(&wlan_app_scene_handlers, app);
@@ -82,6 +97,11 @@ static WlanApp* wlan_app_alloc(void) {
     view_set_context(app->view_deauther, app->view_dispatcher);
     view_dispatcher_add_view(app->view_dispatcher, WlanAppViewDeauther, app->view_deauther);
 
+    app->view_smart_deauth = wlan_smart_deauth_view_alloc();
+    view_set_context(app->view_smart_deauth, app->view_dispatcher);
+    view_dispatcher_add_view(
+        app->view_dispatcher, WlanAppViewSmartDeauth, app->view_smart_deauth);
+
     app->sniffer_view_obj = wlan_sniffer_view_alloc();
     app->view_sniffer = wlan_sniffer_view_get_view(app->sniffer_view_obj);
     view_dispatcher_add_view(app->view_dispatcher, WlanAppViewSniffer, app->view_sniffer);
@@ -103,6 +123,14 @@ static WlanApp* wlan_app_alloc(void) {
     app->view_sd_update = wlan_sd_update_view_alloc();
     view_set_context(app->view_sd_update, app->view_dispatcher);
     view_dispatcher_add_view(app->view_dispatcher, WlanAppViewSdUpdate, app->view_sd_update);
+
+    app->view_fw_update = wlan_fw_update_view_alloc();
+    view_set_context(app->view_fw_update, app->view_dispatcher);
+    view_dispatcher_add_view(app->view_dispatcher, WlanAppViewFwUpdate, app->view_fw_update);
+
+    app->view_androidtv_remote = wlan_androidtv_remote_view_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, WlanAppViewAndroidTvRemote, app->view_androidtv_remote);
 
 
     app->ap_records = malloc(sizeof(WlanApRecord) * WLAN_APP_MAX_APS);
@@ -133,11 +161,49 @@ static WlanApp* wlan_app_alloc(void) {
     memset(&app->target_ap, 0, sizeof(app->target_ap));
     memset(app->password_input, 0, sizeof(app->password_input));
 
+    /* Globales WiFi bleibt über App-Grenzen verbunden. Ist die STA bereits
+     * verbunden (z.B. beim erneuten Öffnen der App), den UI-Zustand aus der
+     * laufenden Verbindung rekonstruieren, statt „Select Wifi" zu zeigen. */
+    wifi_ap_record_t cur_ap;
+    if(wlan_hal_is_connected() && wlan_hal_get_connected_ap(&cur_ap)) {
+        app->connected = true;
+        strncpy(
+            app->connected_ap.ssid,
+            (const char*)cur_ap.ssid,
+            sizeof(app->connected_ap.ssid) - 1);
+        memcpy(app->connected_ap.bssid, cur_ap.bssid, 6);
+        app->connected_ap.rssi = cur_ap.rssi;
+        app->connected_ap.channel = cur_ap.primary;
+        app->connected_ap.authmode = cur_ap.authmode;
+        app->connected_ap.is_open = (cur_ap.authmode == WIFI_AUTH_OPEN);
+        app->connected_ap.has_password = wlan_password_exists(app->connected_ap.ssid);
+    }
+
     app->attack_block_internet = false;
     app->attack_throttle = WlanAppThrottleOff;
 
-    app->update_sd_flow = false;
     app->sd_update = wlan_sd_update_alloc();
+    app->fw_update = wlan_fw_update_alloc();
+    // FW-Marker /ext/.fw_version auf die laufende Version (FURI_ESP32_VERSION)
+    // ziehen — schreibt nur, wenn er fehlt oder abweicht.
+    wlan_fw_update_sync_marker();
+
+    // SMB Browser: lazily allocated on first use (allocates PSRAM buffers +
+    // a worker task), freed in wlan_app_free.
+    app->smb = NULL;
+    app->smb_server_ip[0] = '\0';
+    app->smb_server_name[0] = '\0';
+    app->smb_user[0] = '\0';
+    app->smb_pass[0] = '\0';
+    app->smb_share[0] = '\0';
+    app->smb_path[0] = '\0';
+
+    // Android TV remote: lazily allocated on first use (allocates PSRAM buffers
+    // + a worker task with an internal-DRAM stack), freed in wlan_app_free.
+    app->androidtv = NULL;
+    app->androidtv_ip[0] = '\0';
+    app->androidtv_name[0] = '\0';
+    app->androidtv_pin[0] = '\0';
 
     app->text_buf = furi_string_alloc();
     app->netcut = wlan_netcut_alloc();
@@ -165,6 +231,7 @@ static WlanApp* wlan_app_alloc(void) {
 }
 
 static void wlan_app_free(WlanApp* app) {
+    wlan_pcap_rec_release();
     // Aktive ARP-Spoofs beenden + Restore-Frames senden (deinstalliert auch den
     // L2-Hook, der den Cred-Sniffer referenziert), dann erst cred_sniff freigeben.
     if(app->netcut) {
@@ -179,7 +246,10 @@ static void wlan_app_free(WlanApp* app) {
         wlan_sd_update_free(app->sd_update);
         app->sd_update = NULL;
     }
-    wlan_hal_stop();
+    if(app->fw_update) wlan_fw_update_free(app->fw_update);
+    if(app->smb) wlan_smb_free(app->smb);
+    if(app->androidtv) wlan_androidtv_free(app->androidtv);
+    wlan_hal_finish_foreground_session();
 
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewSubmenu);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewWidget);
@@ -193,11 +263,14 @@ static void wlan_app_free(WlanApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewHandshake);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewHandshakeChannel);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewDeauther);
+    view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewSmartDeauth);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewSniffer);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewEvilPortal);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewEvilPortalCaptured);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewLiveCreds);
     view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewSdUpdate);
+    view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewFwUpdate);
+    view_dispatcher_remove_view(app->view_dispatcher, WlanAppViewAndroidTvRemote);
 
     submenu_free(app->submenu);
     widget_free(app->widget);
@@ -211,11 +284,14 @@ static void wlan_app_free(WlanApp* app) {
     wlan_handshake_view_free(app->view_handshake);
     wlan_handshake_channel_view_free(app->view_handshake_channel);
     wlan_deauther_view_free(app->view_deauther);
+    wlan_smart_deauth_view_free(app->view_smart_deauth);
     wlan_sniffer_view_free(app->sniffer_view_obj);
     wlan_evil_portal_view_free(app->evil_portal_view_obj);
     wlan_evil_portal_captured_view_free(app->evil_portal_captured_view_obj);
     wlan_live_creds_view_free(app->live_creds_view_obj);
     wlan_sd_update_view_free(app->view_sd_update);
+    wlan_fw_update_view_free(app->view_fw_update);
+    wlan_androidtv_remote_view_free(app->view_androidtv_remote);
 
     scene_manager_free(app->scene_manager);
     view_dispatcher_free(app->view_dispatcher);
@@ -230,9 +306,33 @@ static void wlan_app_free(WlanApp* app) {
 }
 
 int32_t wlan_app(void* args) {
-    UNUSED(args);
     WlanApp* app = wlan_app_alloc();
-    scene_manager_next_scene(app->scene_manager, WlanAppSceneMain);
+
+    // Launch arg "webfs" (e.g. from the desktop lock menu) opens the
+    // Web-Filesystem flow directly: info scene if already connected, else the
+    // Select Wifi / Dedicated AP menu.
+    const char* arg = args;
+    if(arg && strcmp(arg, "webfs") == 0) {
+        if(wlan_hal_is_connected()) {
+            scene_manager_set_scene_state(app->scene_manager, WlanAppSceneWebFsInfo, 0 /* STA */);
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneWebFsInfo);
+        } else {
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneWebFsMenu);
+        }
+    } else if(arg && strcmp(arg, "update") == 0) {
+        // "Update Firmware" aus dem Settings-Menü: kombiniertes Update (FW + SD)
+        // direkt öffnen. Bereits verbunden → direkt zur Update-Scene, sonst erst
+        // Connect-Flow (fw_update_flow routet nach Erfolg zur Update-Scene).
+        app->fw_update_flow = true;
+        if(wlan_hal_is_connected()) {
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneFwUpdate);
+        } else {
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneConnect);
+        }
+    } else {
+        scene_manager_next_scene(app->scene_manager, WlanAppSceneMain);
+    }
+
     view_dispatcher_run(app->view_dispatcher);
     wlan_app_free(app);
     return 0;

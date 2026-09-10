@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "dolphin_deed.h"
@@ -8,6 +9,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* XP threshold for each level-up, ascending. DOLPHIN_LEVEL_COUNT thresholds
+ * mean DOLPHIN_LEVEL_COUNT + 1 levels: the last one is the cap. */
+extern const uint32_t DOLPHIN_LEVELS[];
+extern const size_t DOLPHIN_LEVEL_COUNT;
 
 typedef enum {
     DolphinFlagHappyMode = 1,
@@ -38,8 +44,6 @@ void dolphin_state_save(DolphinState* dolphin_state);
 void dolphin_state_load(DolphinState* dolphin_state);
 
 void dolphin_state_clear_limits(DolphinState* dolphin_state);
-
-uint64_t dolphin_state_timestamp(void);
 
 void dolphin_state_on_deed(DolphinState* dolphin_state, DolphinDeed deed);
 

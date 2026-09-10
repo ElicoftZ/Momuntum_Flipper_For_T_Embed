@@ -24,8 +24,6 @@ static void subghz_txrx_radio_device_power_off(SubGhzTxRx* instance) {
 
 SubGhzTxRx* subghz_txrx_alloc(void) {
     SubGhzTxRx* instance = malloc(sizeof(SubGhzTxRx));
-    bool system_keystore_loaded = false;
-    bool user_keystore_loaded = false;
 
     instance->setting = subghz_setting_alloc();
     subghz_setting_load(instance->setting, EXT_PATH("subghz/assets/setting_user"));
@@ -43,13 +41,8 @@ SubGhzTxRx* subghz_txrx_alloc(void) {
     instance->fff_data = flipper_format_string_alloc();
 
     instance->environment = subghz_environment_alloc();
-    user_keystore_loaded =
-        subghz_environment_load_keystore(instance->environment, SUBGHZ_KEYSTORE_DIR_USER_NAME);
-    if(!user_keystore_loaded) {
-        system_keystore_loaded =
-            subghz_environment_load_keystore(instance->environment, SUBGHZ_KEYSTORE_DIR_NAME);
-    }
-    instance->is_database_loaded = system_keystore_loaded || user_keystore_loaded;
+    instance->is_database_loaded = false;
+    instance->database_load_attempted = false;
     subghz_environment_set_alutech_at_4n_rainbow_table_file_name(
         instance->environment, SUBGHZ_ALUTECH_AT_4N_DIR_NAME);
     subghz_environment_set_nice_flor_s_rainbow_table_file_name(
@@ -64,11 +57,17 @@ SubGhzTxRx* subghz_txrx_alloc(void) {
         instance->worker, (SubGhzWorkerPairCallback)subghz_receiver_decode);
     subghz_worker_set_context(instance->worker, instance->receiver);
 
-    //set default device External
+    // The T-Embed has an onboard CC1101. Avoid a slow OTG/external-radio probe
+    // every time the app opens; Radio Settings can still probe it on request.
     subghz_devices_init();
     instance->radio_device_type = SubGhzRadioDeviceTypeInternal;
+#if defined(BOARD_HAS_BUILTIN_CC1101)
+    instance->radio_device_type =
+        subghz_txrx_radio_device_set(instance, SubGhzRadioDeviceTypeInternal);
+#else
     instance->radio_device_type =
         subghz_txrx_radio_device_set(instance, SubGhzRadioDeviceTypeExternalCC1101);
+#endif
 
     return instance;
 }
@@ -96,6 +95,30 @@ void subghz_txrx_free(SubGhzTxRx* instance) {
 
 bool subghz_txrx_is_database_loaded(SubGhzTxRx* instance) {
     furi_assert(instance);
+    return instance->is_database_loaded;
+}
+
+bool subghz_txrx_load_database(SubGhzTxRx* instance) {
+    furi_assert(instance);
+
+    if(instance->database_load_attempted) return instance->is_database_loaded;
+    instance->database_load_attempted = true;
+
+    const uint32_t started = furi_get_tick();
+    bool user_keystore_loaded =
+        subghz_environment_load_keystore(instance->environment, SUBGHZ_KEYSTORE_DIR_USER_NAME);
+    bool system_keystore_loaded = false;
+    if(!user_keystore_loaded) {
+        system_keystore_loaded =
+            subghz_environment_load_keystore(instance->environment, SUBGHZ_KEYSTORE_DIR_NAME);
+    }
+
+    instance->is_database_loaded = user_keystore_loaded || system_keystore_loaded;
+    FURI_LOG_I(
+        TAG,
+        "Keystore %s on demand in %lu ms",
+        instance->is_database_loaded ? "loaded" : "unavailable",
+        (unsigned long)(furi_get_tick() - started));
     return instance->is_database_loaded;
 }
 
@@ -142,6 +165,18 @@ uint8_t*
         0x0E, // -20dBm
         0x12, //-30dBm
     };
+
+    /* Saved files can contain a custom preset supplied by another firmware.
+     * Never index backwards from a missing or truncated register table: that
+     * used to turn opening such a file from Saved into a hard fault. */
+    if(!preset_data || preset_data_size < PRESET_POWER_OFFSET_FM) {
+        FURI_LOG_E(TAG, "Preset data is too short (%u)", (unsigned)preset_data_size);
+        return preset_data;
+    }
+
+    /* The FM table starts at index 8 and contains nine selectable values. A
+     * corrupt persisted setting must not index beyond it. */
+    if(tx_power >= (TX_PATABLE_COUNT - TX_PATABLE_OFFSET_AM)) tx_power = 0;
 
     //Grab the AM and FM byte now, so we can do proper checks.
     uint8_t fm_byte = preset_data[preset_data_size - PRESET_POWER_OFFSET_FM];
@@ -361,6 +396,9 @@ SubGhzTxRxStartTxState subghz_txrx_tx_start(SubGhzTxRx* instance, FlipperFormat*
 
 void subghz_txrx_rx_start(SubGhzTxRx* instance) {
     furi_assert(instance);
+    if(!subghz_txrx_load_database(instance)) {
+        FURI_LOG_W(TAG, "Rolling-code decoding unavailable: keystore not found");
+    }
     subghz_txrx_stop(instance);
     subghz_txrx_begin(
         instance,
@@ -498,6 +536,7 @@ void subghz_txrx_hopper_pause(SubGhzTxRx* instance) {
 bool subghz_txrx_load_decoder_by_name_protocol(SubGhzTxRx* instance, const char* name_protocol) {
     furi_assert(instance);
     furi_assert(name_protocol);
+    subghz_txrx_load_database(instance);
     bool res = false;
     instance->decoder_result =
         subghz_receiver_search_decoder_base_by_name(instance->receiver, name_protocol);

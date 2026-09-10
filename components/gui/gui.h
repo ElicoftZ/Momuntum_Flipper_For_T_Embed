@@ -56,6 +56,15 @@ void gui_add_view_port(Gui* gui, ViewPort* view_port, GuiLayer layer);
  */
 void gui_remove_view_port(Gui* gui, ViewPort* view_port);
 
+/** Temporarily suppress status-bar drawing while keeping a desktop-layer view active.
+ *
+ * The caller must restore this to false when leaving its full-canvas scene.
+ *
+ * @param      gui     Gui instance
+ * @param[in]  hidden  true to hide the status bar
+ */
+void gui_set_status_bar_hidden(Gui* gui, bool hidden);
+
 /** Send ViewPort to the front
  *
  * Places selected ViewPort to the top of the drawing stack
@@ -126,6 +135,17 @@ void gui_set_lockdown_inhibit(Gui* gui, bool inhibit);
  * @return     bool      true if Gui is in lockdown mode
  */
 bool gui_is_lockdown(const Gui* gui);
+
+/** Hide or show the status bar
+ *
+ * The status bar is hidden when the hide counter is positive. Every "hide"
+ * call increments the counter, every "show" call decrements it, so nested
+ * sections must be balanced.
+ *
+ * @param      gui     Gui instance
+ * @param      hidden  bool, true to hide, false to show
+ */
+void gui_set_hide_statusbar(Gui* gui, bool hidden);
 
 /** Acquire Direct Draw lock and get Canvas instance
  *

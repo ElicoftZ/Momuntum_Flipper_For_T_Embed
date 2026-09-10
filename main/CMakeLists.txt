@@ -1,3 +1,8 @@
+# ESP-IDF already selects the interpreter used for its build. Reuse it here so
+# FAM generation does not accidentally pick a stale Windows `py` registration.
+if(DEFINED PYTHON AND EXISTS "${PYTHON}")
+    set(Python3_EXECUTABLE "${PYTHON}")
+endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 get_filename_component(ESP32_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
@@ -17,6 +22,17 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION AND
 endif()
 
 set(ENV{FLIPPER_BOARD} "${FLIPPER_BOARD}")
+
+# Re-run CMake (and therefore the generator below) when the app allowlist or the
+# generator itself changes. Without this the registry is produced once at configure
+# time and a plain rebuild silently keeps the OLD app list, so an app added to
+# fam_config.py appears to build fine yet never enters the firmware -- which is
+# exactly how the wlan_prepare startup hook went missing.
+set_property(
+    DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${ESP32_DIR}/fam_config.py"
+    "${ESP32_DIR}/tools/fam/generate.py"
+)
 
 execute_process(
     COMMAND
@@ -38,8 +54,12 @@ endif()
 idf_component_register(
     SRCS "app_main.c" "${ESP32_FAM_REGISTRY_C}"
     INCLUDE_DIRS "."
-    REQUIRES furi furi_hal input notification gui locale storage loader desktop btshim app_update momentum toolbox
+    REQUIRES furi furi_hal input notification gui locale storage loader desktop btshim wifi app_update fw_ota libsmb2 momentum toolbox
     LDFRAGMENTS "main.lf"
+    # The welcome slideshow ships inside the firmware rather than as an SD
+    # asset: a fresh card should show the intro without the user having to
+    # place a file, and 7 KB is nothing against a 7 MB app partition.
+    EMBED_FILES "${ESP32_DIR}/sdcard/dolphin/firstboot.bin"
 )
 
 if(NOT CMAKE_SCRIPT_MODE_FILE)
@@ -49,11 +69,15 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
 
     set(ESP32_FAM_PORTED_COMPONENT_LIBS
         idf::app_update
+        idf::fw_ota
+        idf::multiboot
         idf::archive
         idf::assets
         idf::ble_hid
         idf::ble_profile
         idf::btshim
+        idf::bt
+        idf::wifi
         idf::datetime
         idf::desktop
         idf::dialogs
@@ -65,6 +89,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         idf::loader
         idf::locale
         idf::notification
+        idf::nimble_glue
         idf::storage
         idf::nfc
         idf::bit_lib
@@ -76,6 +101,8 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         idf::lfrfid
         idf::mjs
         idf::momentum
+        idf::libsmb2
+        idf::mbedtls
     )
 
     foreach(esp32_fam_target IN LISTS ESP32_FAM_PORTED_OBJECT_TARGETS)
@@ -104,4 +131,13 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         )
         target_sources(${COMPONENT_LIB} PRIVATE $<TARGET_OBJECTS:${esp32_fam_target}>)
     endforeach()
+
+    # The Streaming app bundles former-FAP media modules (airplay_raop,
+    # dlna_render, cast_client, ...) that were built with relaxed warnings as
+    # FAPs. Their harmless snprintf format-truncation diagnostics stay
+    # non-fatal here instead of tripping -Werror.
+    if(TARGET esp32_fam_app_streaming)
+        target_compile_options(esp32_fam_app_streaming PRIVATE
+            -Wno-error=format-truncation -Wno-error=format-overflow)
+    endif()
 endif()

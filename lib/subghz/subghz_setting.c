@@ -378,29 +378,35 @@ bool subghz_setting_load_custom_preset(
     furi_check(instance);
     furi_check(preset_name);
     uint32_t temp_data32;
-    SubGhzSettingCustomPresetItem* item =
-        SubGhzSettingCustomPresetItemArray_push_raw(instance->preset->data);
-    item->custom_preset_name = furi_string_alloc();
-    furi_string_set(item->custom_preset_name, preset_name);
+
+    /* Validate and read first, then publish the item. push_raw() does not
+     * initialise its fields, so the old order left a half-created entry after
+     * a short/broken file; reopening it later attempted to free a garbage
+     * pointer and crashed. */
+    uint8_t* preset_data = NULL;
     do {
         if(!flipper_format_get_value_count(fff_data_file, "Custom_preset_data", &temp_data32))
             break;
-        if(!temp_data32 || (temp_data32 % 2)) {
+        if(temp_data32 < 8 || (temp_data32 % 2)) {
             FURI_LOG_E(TAG, "Integrity error Custom_preset_data");
             break;
         }
-        item->custom_preset_data_size = sizeof(uint8_t) * temp_data32;
-        item->custom_preset_data = malloc(item->custom_preset_data_size);
+        preset_data = malloc(temp_data32);
         if(!flipper_format_read_hex(
-               fff_data_file,
-               "Custom_preset_data",
-               item->custom_preset_data,
-               item->custom_preset_data_size)) {
+               fff_data_file, "Custom_preset_data", preset_data, temp_data32)) {
             FURI_LOG_E(TAG, "Missing Custom_preset_data");
             break;
         }
+
+        SubGhzSettingCustomPresetItem* item =
+            SubGhzSettingCustomPresetItemArray_push_raw(instance->preset->data);
+        item->custom_preset_name = furi_string_alloc_set(preset_name);
+        item->custom_preset_data_size = temp_data32;
+        item->custom_preset_data = preset_data;
         return true;
     } while(true);
+
+    free(preset_data);
     return false;
 }
 

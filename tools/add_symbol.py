@@ -76,7 +76,7 @@ def main():
     # Collect symbol names
     names = list(args.symbols)
     if args.file:
-        with open(args.file) as f:
+        with open(args.file, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
@@ -87,7 +87,7 @@ def main():
         sys.exit(1)
 
     # Read current file
-    with open(API_FILE) as f:
+    with open(API_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     table_start, table_end, entries = parse_table(lines)
@@ -145,11 +145,11 @@ def main():
     # Replace table lines in the file
     result = lines[:table_start] + new_table_lines + lines[table_end + 1:]
 
-    with open(API_FILE, "w") as f:
+    with open(API_FILE, "w", encoding="utf-8") as f:
         f.writelines(result)
 
     # Verify sort order of result
-    with open(API_FILE) as f:
+    with open(API_FILE, "r", encoding="utf-8") as f:
         verify_lines = f.readlines()
     _, _, verify_entries = parse_table(verify_lines)
     sort_ok = all(verify_entries[i][0] < verify_entries[i + 1][0] for i in range(len(verify_entries) - 1))

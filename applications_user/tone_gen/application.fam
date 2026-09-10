@@ -1,0 +1,9 @@
+App(
+    appid="tone_gen",
+    name="Tone Generator",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="tone_gen_app",
+    requires=["gui"],
+    stack_size=2 * 1024,
+    fap_category="Tools",
+)

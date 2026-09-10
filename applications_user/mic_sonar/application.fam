@@ -1,0 +1,9 @@
+App(
+    appid="mic_sonar",
+    name="Mic Sonar",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="mic_sonar_app",
+    requires=["gui"],
+    stack_size=4 * 1024,
+    fap_category="Tools",
+)

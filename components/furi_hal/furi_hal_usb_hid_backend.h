@@ -14,6 +14,11 @@ extern "C" {
 bool furi_hal_usb_hid_backend_start(const FuriHalUsbHidConfig* cfg);
 void furi_hal_usb_hid_backend_stop(void);
 
+/* True once a HID-only stack is up. The U2F transport uses this to tell
+ * "nothing installed yet" from "BadUsb already brought a stack up", because
+ * esp_tinyusb cannot install a second one. */
+bool furi_hal_usb_hid_backend_is_installed(void);
+
 #ifdef __cplusplus
 }
 #endif

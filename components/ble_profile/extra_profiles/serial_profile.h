@@ -42,6 +42,9 @@ void ble_profile_serial_set_rpc_active(
 
 void ble_profile_serial_notify_buffer_is_empty(FuriHalBleProfileBase* profile);
 
+/** Refresh the active advertising name from furi_hal_version without restart. */
+bool ble_profile_serial_refresh_name(FuriHalBleProfileBase* profile);
+
 #ifdef __cplusplus
 }
 #endif

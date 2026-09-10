@@ -59,6 +59,9 @@ void ble_hid_stop_advertising(void);
 bool ble_hid_is_advertising(void);
 bool ble_hid_is_active(void);
 
+/** Clear cached profile state after NimBLE is fully stopped. */
+void ble_hid_reset_initialized(void);
+
 bool ble_hid_remove_pairing(void);
 
 #ifdef __cplusplus

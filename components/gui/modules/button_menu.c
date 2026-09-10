@@ -223,50 +223,6 @@ static void button_menu_process_down(ButtonMenu* button_menu) {
         true);
 }
 
-static void button_menu_process_right(ButtonMenu* button_menu) {
-    furi_assert(button_menu);
-
-    with_view_model(
-        button_menu->view,
-        ButtonMenuModel * model,
-        {
-            if(ButtonMenuItemArray_size(model->items) > BUTTONS_PER_SCREEN) {
-                size_t position_candidate = model->position + BUTTONS_PER_SCREEN;
-                position_candidate -= position_candidate % BUTTONS_PER_SCREEN;
-                if(position_candidate < (ButtonMenuItemArray_size(model->items))) {
-                    model->position = position_candidate;
-                    model->scroll_counter = 0;
-                } else {
-                    model->position = 0;
-                    model->scroll_counter = 0;
-                }
-            }
-        },
-        true);
-}
-
-static void button_menu_process_left(ButtonMenu* button_menu) {
-    furi_assert(button_menu);
-
-    with_view_model(
-        button_menu->view,
-        ButtonMenuModel * model,
-        {
-            if(ButtonMenuItemArray_size(model->items) > BUTTONS_PER_SCREEN) {
-                size_t position_candidate;
-                if(model->position < BUTTONS_PER_SCREEN) {
-                    position_candidate = (ButtonMenuItemArray_size(model->items) - 1);
-                } else {
-                    position_candidate = model->position - BUTTONS_PER_SCREEN;
-                };
-                position_candidate -= position_candidate % BUTTONS_PER_SCREEN;
-                model->position = position_candidate;
-                model->scroll_counter = 0;
-            }
-        },
-        true);
-}
-
 static void button_menu_process_ok(ButtonMenu* button_menu, InputType type) {
     furi_assert(button_menu);
 
@@ -319,25 +275,29 @@ static bool button_menu_view_input_callback(InputEvent* event, void* context) {
 
     if(!button_menu->freeze_input &&
        ((event->type == InputTypeRepeat) || (event->type == InputTypeShort))) {
-        /* ESP32 port: in ViewOrientationVertical the rotary encoder (alone)
-         * maps CW→Left/CCW→Right and (held)→Down/Up. Without remapping,
-         * a plain rotation paged by BUTTONS_PER_SCREEN, which felt like
-         * skipping items. Swap so plain rotation steps single items
-         * (Left/Right → up/down) and held-rotation pages (Up/Down → left/right).
-         * Direction also flipped so CW = "forward / next item". */
+        /* ESP32 port: every direction steps a single item, deliberately.
+         *
+         * This view is ViewOrientationVertical, so view_port remaps the keys:
+         * a plain rotation (Up/Down) arrives as Right/Left, and held-rotation
+         * (Left/Right) arrives as Up/Down. The previous mapping relied on that
+         * and put paging on the keys a plain rotation produces -- so if the
+         * orientation is ever not applied, rotation pages instead of selecting,
+         * and with a remote that fits one screen it does nothing at all
+         * (button_menu_process_left/right no-op below BUTTONS_PER_SCREEN items).
+         * That is exactly how a saved TV remote became unusable.
+         *
+         * Mapping both axes to single steps is correct either way round, and
+         * costs nothing: the draw callback derives the visible page from
+         * position (active_screen = position / BUTTONS_PER_SCREEN), so stepping
+         * scrolls by itself and reaches every button. Paging was only ever a
+         * shortcut, and on a board with no d-pad it is not reachable anyway. */
         switch(event->key) {
         case InputKeyUp:
-            consumed = true;
-            button_menu_process_left(button_menu);
-            break;
-        case InputKeyDown:
-            consumed = true;
-            button_menu_process_right(button_menu);
-            break;
         case InputKeyRight:
             consumed = true;
             button_menu_process_up(button_menu);
             break;
+        case InputKeyDown:
         case InputKeyLeft:
             consumed = true;
             button_menu_process_down(button_menu);

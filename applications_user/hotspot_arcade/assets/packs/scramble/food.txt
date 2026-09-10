@@ -1,0 +1,65 @@
+Pack: Snack Attack
+
+Word: pizza
+---
+Word: burger
+---
+Word: noodles
+---
+Word: pancake
+---
+Word: popcorn
+---
+Word: avocado
+---
+Word: spaghetti
+---
+Word: cupcake
+---
+Word: sandwich
+---
+Word: pretzel
+---
+Word: waffle
+---
+Word: muffin
+---
+Word: burrito
+---
+Word: donut
+---
+Word: cookie
+---
+Word: banana
+---
+Word: pickle
+---
+Word: nachos
+---
+Word: pudding
+---
+Word: cereal
+---
+Word: chocolate
+---
+Word: strawberry
+---
+Word: pineapple
+---
+Word: watermelon
+---
+Word: lasagna
+---
+Word: omelette
+---
+Word: croissant
+---
+Word: marmalade
+---
+Word: cinnamon
+---
+Word: blueberry
+---
+Word: cauliflower
+---
+Word: gingerbread

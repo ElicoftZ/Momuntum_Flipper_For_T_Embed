@@ -139,8 +139,15 @@ NfcApp* nfc_app_alloc(void) {
     return instance;
 }
 
+static void nfc_wake_release(NfcApp* nfc);
+
 void nfc_app_free(NfcApp* instance) {
     furi_assert(instance);
+
+    /* A scene that exits without its matching nfc_blink_stop would otherwise
+     * leave the backlight enforced and an insomnia lock held for the rest of
+     * the session. */
+    nfc_wake_release(instance);
 
     if(instance->rpc_ctx) {
         rpc_system_app_send_exited(instance->rpc_ctx);
@@ -242,15 +249,39 @@ void nfc_blink_read_start(NfcApp* nfc) {
     notification_message(nfc->notifications, &sequence_blink_start_yellow);
 }
 
+/* Reading or emulating means the user is holding the board against a card or
+ * a reader, with both hands busy and no input events being generated. Left to
+ * the normal timers the backlight dims and the board can sleep mid-exchange.
+ *
+ * These are hung off the blink helpers because every scene that starts radio
+ * activity already calls one, and stops it with nfc_blink_stop -- so the wake
+ * follows the radio exactly, and idle screens still dim as usual. */
+static void nfc_wake_hold(NfcApp* nfc) {
+    if(nfc->wake_held) return;
+    nfc->wake_held = true;
+    furi_hal_power_insomnia_enter();
+    notification_message(nfc->notifications, &sequence_display_backlight_enforce_on);
+}
+
+static void nfc_wake_release(NfcApp* nfc) {
+    if(!nfc->wake_held) return;
+    nfc->wake_held = false;
+    notification_message(nfc->notifications, &sequence_display_backlight_enforce_auto);
+    furi_hal_power_insomnia_exit();
+}
+
 void nfc_blink_emulate_start(NfcApp* nfc) {
+    nfc_wake_hold(nfc);
     notification_message(nfc->notifications, &sequence_blink_start_magenta);
 }
 
 void nfc_blink_detect_start(NfcApp* nfc) {
+    nfc_wake_hold(nfc);
     notification_message(nfc->notifications, &sequence_blink_start_cyan);
 }
 
 void nfc_blink_stop(NfcApp* nfc) {
+    nfc_wake_release(nfc);
     notification_message(nfc->notifications, &sequence_blink_stop);
 }
 

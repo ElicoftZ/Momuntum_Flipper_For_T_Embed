@@ -67,6 +67,8 @@ static bool gui_redraw_fs(Gui* gui) {
 }
 
 static void gui_redraw_status_bar(Gui* gui, bool need_attention) {
+    if(gui->hide_statusbar_count > 0) return;
+
     ViewPortArray_it_t it;
     uint8_t left_used = 0;
     uint8_t right_used = 0;
@@ -276,7 +278,7 @@ static void gui_redraw(Gui* gui) {
             bool need_attention =
                 (gui_view_port_find_enabled(gui->layers[GuiLayerWindow]) != 0 ||
                  gui_view_port_find_enabled(gui->layers[GuiLayerFullscreen]) != 0);
-            if(momentum_settings.lockscreen_statusbar) {
+            if(!gui->status_bar_hidden && momentum_settings.lockscreen_statusbar) {
                 gui_redraw_status_bar(gui, need_attention);
             }
         } else {
@@ -284,7 +286,7 @@ static void gui_redraw(Gui* gui) {
                 if(!gui_redraw_window(gui)) {
                     gui_redraw_desktop(gui);
                 }
-                gui_redraw_status_bar(gui, false);
+                if(!gui->status_bar_hidden) gui_redraw_status_bar(gui, false);
             }
         }
 
@@ -429,6 +431,16 @@ void gui_remove_view_port(Gui* gui, ViewPort* view_port) {
     gui_update(gui);
 }
 
+void gui_set_status_bar_hidden(Gui* gui, bool hidden) {
+    furi_check(gui);
+
+    gui_lock(gui);
+    gui->status_bar_hidden = hidden;
+    gui_unlock(gui);
+
+    gui_update(gui);
+}
+
 void gui_view_port_send_to_front(Gui* gui, ViewPort* view_port) {
     furi_check(gui);
     furi_check(view_port);
@@ -534,6 +546,20 @@ bool gui_is_lockdown(const Gui* gui) {
     furi_check(gui);
 
     return gui->lockdown && !gui->lockdown_inhibit;
+}
+
+void gui_set_hide_statusbar(Gui* gui, bool hidden) {
+    furi_assert(gui);
+
+    gui_lock(gui);
+    if(hidden) {
+        gui->hide_statusbar_count++;
+    } else {
+        gui->hide_statusbar_count--;
+    }
+    gui_unlock(gui);
+
+    gui_update(gui);
 }
 
 Canvas* gui_direct_draw_acquire(Gui* gui) {

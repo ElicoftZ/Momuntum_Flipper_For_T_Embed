@@ -75,18 +75,35 @@ bool u2f_data_cert_check(void) {
 
     if(storage_file_open(file, U2F_CERT_FILE, FSAM_READ, FSOM_OPEN_EXISTING)) {
         do {
-            // Read header to check certificate size
+            // Read enough of the DER header for short and long-form lengths.
             size_t file_size = storage_file_size(file);
-            size_t len_cur = storage_file_read(file, file_buf, 4);
-            if(len_cur != 4) break;
+            size_t header_read = file_size < sizeof(file_buf) ? file_size : sizeof(file_buf);
+            size_t len_cur = storage_file_read(file, file_buf, header_read);
+            if(len_cur < 2) break;
 
             if(file_buf[0] != 0x30) {
                 FURI_LOG_E(TAG, "Wrong certificate header");
                 break;
             }
 
-            size_t temp_len = ((file_buf[2] << 8) | (file_buf[3])) + 4;
-            if(temp_len != file_size) {
+            size_t header_len = 2;
+            size_t body_len = 0;
+            if((file_buf[1] & 0x80U) == 0) {
+                body_len = file_buf[1];
+            } else {
+                const size_t length_bytes = file_buf[1] & 0x7FU;
+                if(length_bytes == 0 || length_bytes > sizeof(size_t) ||
+                   2 + length_bytes > len_cur) {
+                    FURI_LOG_E(TAG, "Unsupported certificate length encoding");
+                    break;
+                }
+                header_len += length_bytes;
+                for(size_t i = 0; i < length_bytes; i++) {
+                    body_len = (body_len << 8) | file_buf[2 + i];
+                }
+            }
+
+            if(header_len + body_len != file_size) {
                 FURI_LOG_E(TAG, "Wrong certificate length");
                 break;
             }
@@ -102,7 +119,7 @@ bool u2f_data_cert_check(void) {
     return state;
 }
 
-uint32_t u2f_data_cert_load(uint8_t* cert) {
+uint32_t u2f_data_cert_load(uint8_t* cert, uint32_t max_len) {
     furi_assert(cert);
 
     Storage* fs_api = furi_record_open(RECORD_STORAGE);
@@ -112,8 +129,18 @@ uint32_t u2f_data_cert_load(uint8_t* cert) {
 
     if(storage_file_open(file, U2F_CERT_FILE, FSAM_READ, FSOM_OPEN_EXISTING)) {
         file_size = storage_file_size(file);
-        len_cur = storage_file_read(file, cert, file_size);
-        if(len_cur != file_size) len_cur = 0;
+        if(file_size > max_len) {
+            /* Refuse rather than truncate: a partial certificate would still
+             * be signed over and shipped to the relying party. */
+            FURI_LOG_E(
+                TAG,
+                "Certificate is %lu bytes, buffer holds %lu",
+                (unsigned long)file_size,
+                (unsigned long)max_len);
+        } else {
+            len_cur = storage_file_read(file, cert, file_size);
+            if(len_cur != file_size) len_cur = 0;
+        }
     }
 
     storage_file_close(file);
@@ -123,7 +150,7 @@ uint32_t u2f_data_cert_load(uint8_t* cert) {
     return len_cur;
 }
 
-static bool u2f_data_cert_key_encrypt(uint8_t* cert_key) {
+static bool u2f_data_cert_key_encrypt(const uint8_t* cert_key) {
     furi_assert(cert_key);
 
     bool state = false;
@@ -142,6 +169,7 @@ static bool u2f_data_cert_key_encrypt(uint8_t* cert_key) {
     }
 
     if(!furi_hal_crypto_encrypt(cert_key, key, 32)) {
+        furi_hal_crypto_enclave_unload_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE);
         FURI_LOG_E(TAG, "Encryption failed");
         return false;
     }
@@ -168,7 +196,8 @@ static bool u2f_data_cert_key_encrypt(uint8_t* cert_key) {
     return state;
 }
 
-bool u2f_data_cert_key_load(uint8_t* cert_key) {
+static bool
+    u2f_data_cert_key_load_internal(uint8_t* cert_key, bool legacy, bool plaintext_legacy) {
     furi_assert(cert_key);
 
     bool state = false;
@@ -206,10 +235,16 @@ bool u2f_data_cert_key_load(uint8_t* cert_key) {
             }
 
             if(cert_type == U2F_CERT_STOCK) {
+                /* Preserve the historical ESP32-port behaviour for an
+                 * unchanged stock SD card. Factory slots are passthrough on
+                 * this hardware; the key-pair check in u2f.c still prevents a
+                 * mismatched key from being used for registration. */
+                if(legacy || plaintext_legacy) break;
                 key_slot = U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_FACTORY;
             } else if(cert_type == U2F_CERT_USER) {
                 key_slot = U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE;
             } else if(cert_type == U2F_CERT_USER_UNENCRYPTED) {
+                if(legacy || plaintext_legacy) break;
                 key_slot = 0;
             } else {
                 FURI_LOG_E(TAG, "Unknown cert type");
@@ -226,18 +261,28 @@ bool u2f_data_cert_key_load(uint8_t* cert_key) {
                     break;
                 }
 
-                if(!furi_hal_crypto_enclave_load_key(key_slot, iv)) {
-                    FURI_LOG_E(TAG, "Unable to load encryption key");
-                    break;
-                }
-                memset(cert_key, 0, 32);
-
-                if(!furi_hal_crypto_decrypt(key, cert_key, 32)) {
+                if(plaintext_legacy) {
+                    /* The original ESP32 stub copied rather than encrypted;
+                     * the trailing 16 bytes were padding/unused. */
+                    memcpy(cert_key, key, 32);
+                } else {
+                    const bool key_loaded = legacy ?
+                                                furi_hal_crypto_enclave_load_legacy_key(key_slot, iv) :
+                                                furi_hal_crypto_enclave_load_key(key_slot, iv);
+                    if(!key_loaded) {
+                        FURI_LOG_E(TAG, "Unable to load encryption key");
+                        break;
+                    }
                     memset(cert_key, 0, 32);
-                    FURI_LOG_E(TAG, "Decryption failed");
-                    break;
+
+                    const bool decrypted = furi_hal_crypto_decrypt(key, cert_key, 32);
+                    furi_hal_crypto_enclave_unload_key(key_slot);
+                    if(!decrypted) {
+                        memset(cert_key, 0, 32);
+                        FURI_LOG_E(TAG, "Decryption failed");
+                        break;
+                    }
                 }
-                furi_hal_crypto_enclave_unload_key(key_slot);
             } else {
                 if(!flipper_format_read_hex(flipper_format, "Data", cert_key, 32)) {
                     FURI_LOG_E(TAG, "Missing data");
@@ -252,14 +297,31 @@ bool u2f_data_cert_key_load(uint8_t* cert_key) {
     furi_record_close(RECORD_STORAGE);
     furi_string_free(filetype);
 
-    if(cert_type == U2F_CERT_USER_UNENCRYPTED) {
+    if(!legacy && !plaintext_legacy && cert_type == U2F_CERT_USER_UNENCRYPTED) {
         return u2f_data_cert_key_encrypt(cert_key);
     }
 
     return state;
 }
 
-bool u2f_data_key_load(uint8_t* device_key) {
+bool u2f_data_cert_key_load(uint8_t* cert_key) {
+    return u2f_data_cert_key_load_internal(cert_key, false, false);
+}
+
+bool u2f_data_cert_key_load_legacy(uint8_t* cert_key) {
+    return u2f_data_cert_key_load_internal(cert_key, true, false);
+}
+
+bool u2f_data_cert_key_load_plaintext_legacy(uint8_t* cert_key) {
+    return u2f_data_cert_key_load_internal(cert_key, false, true);
+}
+
+bool u2f_data_cert_key_reencrypt(const uint8_t* cert_key) {
+    return u2f_data_cert_key_encrypt(cert_key);
+}
+
+static bool
+    u2f_data_key_load_internal(uint8_t* device_key, bool legacy, bool plaintext_legacy) {
     furi_assert(device_key);
 
     bool state = false;
@@ -292,17 +354,27 @@ bool u2f_data_key_load(uint8_t* device_key) {
                 FURI_LOG_E(TAG, "Missing data");
                 break;
             }
-            if(!furi_hal_crypto_enclave_load_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE, iv)) {
-                FURI_LOG_E(TAG, "Unable to load encryption key");
-                break;
-            }
-            memset(device_key, 0, 32);
-            if(!furi_hal_crypto_decrypt(key, device_key, 32)) {
+            if(plaintext_legacy) {
+                memcpy(device_key, key, 32);
+            } else {
+                const bool key_loaded = legacy ?
+                                            furi_hal_crypto_enclave_load_legacy_key(
+                                                U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE, iv) :
+                                            furi_hal_crypto_enclave_load_key(
+                                                U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE, iv);
+                if(!key_loaded) {
+                    FURI_LOG_E(TAG, "Unable to load encryption key");
+                    break;
+                }
                 memset(device_key, 0, 32);
-                FURI_LOG_E(TAG, "Decryption failed");
-                break;
+                const bool decrypted = furi_hal_crypto_decrypt(key, device_key, 32);
+                furi_hal_crypto_enclave_unload_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE);
+                if(!decrypted) {
+                    memset(device_key, 0, 32);
+                    FURI_LOG_E(TAG, "Decryption failed");
+                    break;
+                }
             }
-            furi_hal_crypto_enclave_unload_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE);
             state = true;
         } while(0);
     }
@@ -312,17 +384,13 @@ bool u2f_data_key_load(uint8_t* device_key) {
     return state;
 }
 
-bool u2f_data_key_generate(uint8_t* device_key) {
-    furi_assert(device_key);
-
+static bool u2f_data_key_write(const uint8_t* key) {
     bool state = false;
     uint8_t iv[16];
-    uint8_t key[32];
     uint8_t key_encrypted[48];
 
-    // Generate random IV and key
+    // Generate a fresh IV while preserving the supplied device key.
     furi_hal_random_fill_buf(iv, 16);
-    furi_hal_random_fill_buf(key, 32);
 
     if(!furi_hal_crypto_enclave_load_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE, iv)) {
         FURI_LOG_E(TAG, "Unable to load encryption key");
@@ -330,6 +398,7 @@ bool u2f_data_key_generate(uint8_t* device_key) {
     }
 
     if(!furi_hal_crypto_encrypt(key, key_encrypted, 32)) {
+        furi_hal_crypto_enclave_unload_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE);
         FURI_LOG_E(TAG, "Encryption failed");
         return false;
     }
@@ -346,7 +415,6 @@ bool u2f_data_key_generate(uint8_t* device_key) {
             if(!flipper_format_write_hex(flipper_format, "IV", iv, 16)) break;
             if(!flipper_format_write_hex(flipper_format, "Data", key_encrypted, 48)) break;
             state = true;
-            memcpy(device_key, key, 32);
         } while(0);
     }
 
@@ -356,7 +424,35 @@ bool u2f_data_key_generate(uint8_t* device_key) {
     return state;
 }
 
-bool u2f_data_cnt_read(uint32_t* cnt_val) {
+bool u2f_data_key_load(uint8_t* device_key) {
+    return u2f_data_key_load_internal(device_key, false, false);
+}
+
+bool u2f_data_key_load_legacy(uint8_t* device_key) {
+    return u2f_data_key_load_internal(device_key, true, false);
+}
+
+bool u2f_data_key_load_plaintext_legacy(uint8_t* device_key) {
+    return u2f_data_key_load_internal(device_key, false, true);
+}
+
+bool u2f_data_key_reencrypt(const uint8_t* device_key) {
+    furi_assert(device_key);
+    return u2f_data_key_write(device_key);
+}
+
+bool u2f_data_key_generate(uint8_t* device_key) {
+    furi_assert(device_key);
+    uint8_t key[32];
+    furi_hal_random_fill_buf(key, sizeof(key));
+    const bool state = u2f_data_key_write(key);
+    if(state) memcpy(device_key, key, sizeof(key));
+    memset(key, 0, sizeof(key));
+    return state;
+}
+
+static bool
+    u2f_data_cnt_read_internal(uint32_t* cnt_val, bool legacy, bool plaintext_legacy) {
     furi_assert(cnt_val);
 
     bool state = false;
@@ -398,17 +494,28 @@ bool u2f_data_cnt_read(uint32_t* cnt_val) {
                 FURI_LOG_E(TAG, "Missing data");
                 break;
             }
-            if(!furi_hal_crypto_enclave_load_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE, iv)) {
-                FURI_LOG_E(TAG, "Unable to load encryption key");
-                break;
-            }
-            memset(&cnt, 0, sizeof(U2fCounterData));
-            if(!furi_hal_crypto_decrypt(cnt_encr, (uint8_t*)&cnt, sizeof(U2fCounterData))) {
+            if(plaintext_legacy) {
+                memcpy(&cnt, cnt_encr, sizeof(U2fCounterData));
+            } else {
+                const bool key_loaded = legacy ?
+                                            furi_hal_crypto_enclave_load_legacy_key(
+                                                U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE, iv) :
+                                            furi_hal_crypto_enclave_load_key(
+                                                U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE, iv);
+                if(!key_loaded) {
+                    FURI_LOG_E(TAG, "Unable to load encryption key");
+                    break;
+                }
                 memset(&cnt, 0, sizeof(U2fCounterData));
-                FURI_LOG_E(TAG, "Decryption failed");
-                break;
+                const bool decrypted =
+                    furi_hal_crypto_decrypt(cnt_encr, (uint8_t*)&cnt, sizeof(U2fCounterData));
+                furi_hal_crypto_enclave_unload_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE);
+                if(!decrypted) {
+                    memset(&cnt, 0, sizeof(U2fCounterData));
+                    FURI_LOG_E(TAG, "Decryption failed");
+                    break;
+                }
             }
-            furi_hal_crypto_enclave_unload_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE);
             if(cnt.control == U2F_COUNTER_CONTROL_VAL) {
                 *cnt_val = cnt.counter;
                 state = true;
@@ -421,11 +528,24 @@ bool u2f_data_cnt_read(uint32_t* cnt_val) {
 
     if(old_counter && state) {
         // Change counter endianness and rewrite counter file
-        *cnt_val = __REV(cnt.counter);
+        // __REV is a CMSIS intrinsic; Xtensa has no equivalent, so use the builtin.
+        *cnt_val = __builtin_bswap32(cnt.counter);
         state = u2f_data_cnt_write(*cnt_val);
     }
 
     return state;
+}
+
+bool u2f_data_cnt_read(uint32_t* cnt_val) {
+    return u2f_data_cnt_read_internal(cnt_val, false, false);
+}
+
+bool u2f_data_cnt_read_legacy(uint32_t* cnt_val) {
+    return u2f_data_cnt_read_internal(cnt_val, true, false);
+}
+
+bool u2f_data_cnt_read_plaintext_legacy(uint32_t* cnt_val) {
+    return u2f_data_cnt_read_internal(cnt_val, false, true);
 }
 
 bool u2f_data_cnt_write(uint32_t cnt_val) {
@@ -446,6 +566,7 @@ bool u2f_data_cnt_write(uint32_t cnt_val) {
     }
 
     if(!furi_hal_crypto_encrypt((uint8_t*)&cnt, cnt_encr, 32)) {
+        furi_hal_crypto_enclave_unload_key(U2F_DATA_FILE_ENCRYPTION_KEY_SLOT_UNIQUE);
         FURI_LOG_E(TAG, "Encryption failed");
         return false;
     }

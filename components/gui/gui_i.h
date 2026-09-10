@@ -52,9 +52,13 @@ struct Gui {
     // Layers and Canvas
     bool lockdown;
     bool lockdown_inhibit;
+    bool status_bar_hidden;
     bool direct_draw;
     ViewPortArray_t layers[GuiLayerMAX];
     Canvas* canvas;
+
+    // Status bar visibility (gui_set_hide_statusbar)
+    uint16_t hide_statusbar_count;
 
     // Input
     FuriMessageQueue* input_queue;

@@ -10,6 +10,8 @@
 #include <locale/locale.h>
 #include <momentum/settings.h>
 #include <storage/storage.h>
+#include <btshim.h>
+#include <wifi/wlan_hal.h>
 
 #include <assets_icons.h>
 
@@ -19,10 +21,18 @@
 #include "helpers/mesh_config.h"
 #include "helpers/mesh_service.h"
 #include "helpers/mesh_capture.h"
+#include "helpers/qflipper_bridge.h"
+#include <furi_hal_usb_tinyusb_composite.h>
+#include "helpers/qflipper_usj_cmd.h"
+#include <fw_ota/fw_ota.h>
 
 #include "furi_hal_power.h"
 
 #define TAG "Desktop"
+/* Verzoegerung fuer den qFlipper-Bridge-Resume nach einem OTA-Reboot. */
+#define QFLIPPER_RESUME_DELAY_MS 5000
+/* Poll-Intervall fuer das "qflipper"-Kommando auf der USJ-Konsole. */
+#define QFLIPPER_USJ_POLL_MS 100
 
 /* ─── Mesh helpers (Phase 1) ─────────────────────────────────────────────
  * desktop_mesh_event_cb wird vom Mesh-Service-Worker-Task aufgerufen. Wir
@@ -120,6 +130,8 @@ static void desktop_mesh_on_result(Desktop* desktop) {
 static void desktop_auto_lock_arm(Desktop*);
 static void desktop_auto_lock_inhibit(Desktop*);
 static void desktop_start_auto_lock_timer(Desktop*);
+static void desktop_qflipper_resume_timer_callback(void* context);
+static void desktop_qflipper_usj_timer_callback(void* context);
 static void desktop_apply_settings(Desktop*);
 
 static void desktop_loader_callback(const void* message, void* context) {
@@ -127,11 +139,29 @@ static void desktop_loader_callback(const void* message, void* context) {
     Desktop* desktop = context;
     const LoaderEvent* event = message;
 
-    if(event->type == LoaderEventTypeApplicationBeforeLoad) {
-        view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalBeforeAppStarted);
-        furi_check(furi_semaphore_acquire(desktop->animation_semaphore, 3000) == FuriStatusOk);
+    if(event->type == LoaderEventTypeApplicationBeforeLoad ||
+       event->type == LoaderEventTypeApplicationsBrowserOpened ||
+       event->type == LoaderEventTypeMenuOpened) {
+        view_dispatcher_send_custom_event(
+            desktop->view_dispatcher,
+            event->type == LoaderEventTypeMenuOpened ? DesktopGlobalLauncherMenuOpened :
+            event->type == LoaderEventTypeApplicationsBrowserOpened ?
+                DesktopGlobalApplicationsBrowserOpened : DesktopGlobalBeforeAppStarted);
+        /* SD animation loading on T-Embed can exceed the STM32's old 3 s
+         * deadline. Keep the acknowledgement paired with this request rather
+         * than rebooting, or continuing with an unconsumed acknowledgement. */
+        if(furi_semaphore_acquire(desktop->animation_semaphore, 3000) != FuriStatusOk) {
+            FURI_LOG_W("Desktop", "Waiting for desktop animation to become idle");
+            furi_check(furi_semaphore_acquire(desktop->animation_semaphore, FuriWaitForever) == FuriStatusOk);
+        }
     } else if(event->type == LoaderEventTypeNoMoreAppsInQueue) {
         view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAfterAppFinished);
+    } else if(event->type == LoaderEventTypeApplicationsBrowserClosed) {
+        view_dispatcher_send_custom_event(
+            desktop->view_dispatcher, DesktopGlobalApplicationsBrowserClosed);
+    } else if(event->type == LoaderEventTypeMenuClosed) {
+        view_dispatcher_send_custom_event(
+            desktop->view_dispatcher, DesktopGlobalLauncherMenuClosed);
     }
 }
 
@@ -149,6 +179,21 @@ static void desktop_lock_icon_draw_callback(Canvas* canvas, void* context) {
     UNUSED(context);
     furi_assert(canvas);
     canvas_draw_icon(canvas, 0, 0, &I_Lock_7x8);
+}
+
+/* Compact 9x8 WiFi glyph drawn natively so it follows the same monochrome
+ * status-bar treatment as Bluetooth without adding a generated asset. */
+static void desktop_wifi_icon_draw_callback(Canvas* canvas, void* context) {
+    UNUSED(context);
+    furi_assert(canvas);
+
+    canvas_draw_line(canvas, 0, 2, 4, 0);
+    canvas_draw_line(canvas, 4, 0, 8, 2);
+    canvas_draw_line(canvas, 2, 4, 4, 3);
+    canvas_draw_line(canvas, 4, 3, 6, 4);
+    canvas_draw_line(canvas, 3, 6, 4, 5);
+    canvas_draw_line(canvas, 4, 5, 5, 6);
+    canvas_draw_dot(canvas, 4, 7);
 }
 
 // Dummy-/Game-Mode-Icon: im Port noch nicht verdrahtet (vgl. stm32/-Referenz) -> bewusst ungenutzt
@@ -231,7 +276,9 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
     furi_assert(context);
     Desktop* desktop = (Desktop*)context;
 
-    if(event == DesktopGlobalBeforeAppStarted) {
+    if(event == DesktopGlobalBeforeAppStarted ||
+       event == DesktopGlobalApplicationsBrowserOpened ||
+       event == DesktopGlobalLauncherMenuOpened) {
         if(animation_manager_is_animation_loaded(desktop->animation_manager)) {
             animation_manager_unload_and_stall_animation(desktop->animation_manager);
         }
@@ -240,6 +287,13 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
 
         desktop->app_running = true;
 
+        if(event == DesktopGlobalApplicationsBrowserOpened || event == DesktopGlobalLauncherMenuOpened) {
+            if(event == DesktopGlobalApplicationsBrowserOpened) desktop->applications_browser_open = true;
+            else desktop->launcher_menu_open = true;
+            furi_semaphore_release(desktop->animation_semaphore);
+            return true;
+        }
+
         /* WiFi/ESP-NOW abschalten, damit Apps wie wlan_app/esp_now/nrf24 ihren
          * eigenen WiFi-Stack initialisieren können. (Der Master-Mesh-Service läuft
          * nur in der Mesh-Clients-Scene, von der aus keine App startet — defensiv
@@ -247,13 +301,35 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         if(mesh_service_is_active() && mesh_service_get_role() == MeshRoleMaster) {
             mesh_service_stop();
         }
+        wlan_hal_suspend_user_radio();
 
         furi_semaphore_release(desktop->animation_semaphore);
 
-    } else if(event == DesktopGlobalAfterAppFinished) {
-        animation_manager_load_and_continue_animation(desktop->animation_manager);
-        desktop_auto_lock_arm(desktop);
-        desktop->app_running = false;
+    } else if(event == DesktopGlobalAfterAppFinished ||
+              event == DesktopGlobalApplicationsBrowserClosed ||
+              event == DesktopGlobalLauncherMenuClosed) {
+        if(event == DesktopGlobalApplicationsBrowserClosed) {
+            desktop->applications_browser_open = false;
+        } else if(event == DesktopGlobalLauncherMenuClosed) {
+            desktop->launcher_menu_open = false;
+        } else {
+            wlan_hal_resume_user_radio();
+        }
+        desktop_set_wifi_icon_state(desktop, wlan_hal_is_user_enabled());
+        /* Locale and Momentum midnight format can change while Settings owns
+         * the screen. Refresh both the cached format and the clock immediately
+         * instead of waiting for the next changed minute. */
+        desktop_clock_update(desktop);
+        view_port_update(desktop->clock_viewport);
+        /* Both launcher layers can outlive an app. Reload only after both
+         * close, so reopening Apps from the menu never races an SD reload. */
+        if(!desktop->applications_browser_open && !desktop->launcher_menu_open) {
+            if(!animation_manager_is_animation_loaded(desktop->animation_manager)) {
+                animation_manager_load_and_continue_animation(desktop->animation_manager);
+            }
+            desktop_auto_lock_arm(desktop);
+        }
+        desktop->app_running = desktop->applications_browser_open || desktop->launcher_menu_open;
 
     } else if(event == DesktopGlobalAutoLock) {
         if(!desktop->app_running && !desktop->locked) {
@@ -291,6 +367,32 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         /* Overlay-Timer abgelaufen → auf allen Mesh-Views ausblenden. */
         desktop_mesh_set_overlay_all(desktop, NULL);
 
+    } else if(event == DesktopGlobalQflipperStop) {
+        /* Auto-off der Bridge (Host weg): derselbe Pfad wie "Disable qFlipper"
+         * im Lock-Menue — Bridge stoppen, Composite abbauen, PHY zurueck zu USJ. */
+        if(qflipper_bridge_is_active()) {
+            FURI_LOG_I(TAG, "Host disconnected — leaving qFlipper mode");
+            qflipper_bridge_stop();
+            furi_hal_usb_composite_uninstall();
+            desktop_scene_lock_menu_refresh(desktop);
+        }
+
+    } else if(event == DesktopGlobalQflipperStart) {
+        /* Laeuft auf dem Desktop-Thread mit fertig hochgefahrenem System —
+         * exakt der Pfad des Lock-Menue-Toggles "Enable qFlipper". Quelle:
+         * OTA-Resume-Timer oder "qflipper"-Kommando von qT-Embed (USJ). */
+        if(qflipper_bridge_is_active()) {
+            FURI_LOG_D(TAG, "qFlipper bridge already active");
+        } else {
+            FURI_LOG_I(TAG, "Starting qFlipper bridge (host request / OTA resume)");
+            if(!qflipper_bridge_start()) {
+                FURI_LOG_W(TAG, "qFlipper bridge start failed (no USB-OTG on this board?)");
+            }
+            /* Falls das Lock-Menue gerade offen ist: Label "Enable" → "Disable qFlipper"
+             * nachziehen (die View liest den Zustand sonst nur beim Betreten). */
+            desktop_scene_lock_menu_refresh(desktop);
+        }
+
     } else {
         return scene_manager_handle_custom_event(desktop->scene_manager, event);
     }
@@ -324,6 +426,29 @@ static void desktop_auto_lock_timer_callback(void* context) {
     furi_assert(context);
     Desktop* desktop = context;
     view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalAutoLock);
+}
+
+static void desktop_qflipper_resume_timer_callback(void* context) {
+    furi_assert(context);
+    Desktop* desktop = context;
+    view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalQflipperStart);
+}
+
+/* Alle 100 ms den USJ-RX-FIFO auf das "qflipper"-Kommando von qT-Embed pruefen
+ * (nur solange das Composite nicht installiert ist — sonst liefert der HAL 0). */
+/* Aus dem Bridge-Thread: nur Event posten, der Stop laeuft auf dem Desktop-Thread. */
+static void desktop_qflipper_auto_off_callback(void* context) {
+    furi_assert(context);
+    Desktop* desktop = context;
+    view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalQflipperStop);
+}
+
+static void desktop_qflipper_usj_timer_callback(void* context) {
+    furi_assert(context);
+    Desktop* desktop = context;
+    if(qflipper_usj_cmd_poll()) {
+        view_dispatcher_send_custom_event(desktop->view_dispatcher, DesktopGlobalQflipperStart);
+    }
 }
 
 static void desktop_start_auto_lock_timer(Desktop* desktop) {
@@ -511,6 +636,14 @@ static Desktop* desktop_alloc(void) {
     view_port_enabled_set(desktop->lock_icon_viewport, false);
     gui_add_view_port(desktop->gui, desktop->lock_icon_viewport, GuiLayerStatusBarLeft);
 
+    // WiFi radio icon (enabled by the persisted lock-menu switch)
+    desktop->wifi_icon_viewport = view_port_alloc();
+    view_port_set_width(desktop->wifi_icon_viewport, 9);
+    view_port_draw_callback_set(
+        desktop->wifi_icon_viewport, desktop_wifi_icon_draw_callback, desktop);
+    view_port_enabled_set(desktop->wifi_icon_viewport, false);
+    gui_add_view_port(desktop->gui, desktop->wifi_icon_viewport, GuiLayerStatusBarLeft);
+
     // Dummy mode icon (disabled — no dummy mode on ESP32 port)
     desktop->dummy_mode_icon_viewport = NULL;
 
@@ -543,6 +676,11 @@ static Desktop* desktop_alloc(void) {
 
     desktop->auto_lock_timer =
         furi_timer_alloc(desktop_auto_lock_timer_callback, FuriTimerTypeOnce, desktop);
+    desktop->qflipper_resume_timer =
+        furi_timer_alloc(desktop_qflipper_resume_timer_callback, FuriTimerTypeOnce, desktop);
+    desktop->qflipper_usj_timer =
+        furi_timer_alloc(desktop_qflipper_usj_timer_callback, FuriTimerTypePeriodic, desktop);
+    qflipper_bridge_set_auto_off_callback(desktop_qflipper_auto_off_callback, desktop);
 
     desktop->status_pubsub = furi_pubsub_alloc();
 
@@ -625,6 +763,12 @@ void desktop_set_stealth_mode_state(Desktop* desktop, bool enabled) {
     view_port_enabled_set(desktop->stealth_mode_icon_viewport, enabled);
 
     desktop->in_transition = false;
+}
+
+void desktop_set_wifi_icon_state(Desktop* desktop, bool enabled) {
+    furi_assert(desktop);
+    UNUSED(enabled);
+    view_port_enabled_set(desktop->wifi_icon_viewport, false);
 }
 
 /*
@@ -730,6 +874,24 @@ int32_t desktop_srv(void* p) {
     if(desktop->app_running && animation_manager_is_animation_loaded(desktop->animation_manager)) {
         animation_manager_unload_and_stall_animation(desktop->animation_manager);
     }
+
+    /* OTA-Update per qT-Embed (USB-RPC): der OTA-Updater setzt vor dem
+     * esp_restart() ein RTC-NOINIT-Flag, damit die qFlipper-Bridge einmalig
+     * wieder hochkommt und der Host das Geraet nach dem Neustart wiederfindet.
+     * Der Start laeuft NICHT direkt hier im Boot, sondern verzoegert ueber
+     * Timer → DesktopGlobalQflipperStart auf dem Desktop-Thread: ein Start
+     * mitten im Boot brachte ein enumeriertes Composite mit totem CDC (kein
+     * Prompt, jeder Host-Zugriff liess das Geraet vom USB verschwinden). Die
+     * Verzoegerung liegt weit unter dem 5-Minuten-Timeout von qT-Embed.
+     * Boot-Default bleibt USB-Serial-JTAG (esptool-Flashen ohne BOOT+RESET). */
+    if(fw_ota_take_resume_qflipper()) {
+        FURI_LOG_I(TAG, "qFlipper resume requested, starting bridge in %u ms", (unsigned)QFLIPPER_RESUME_DELAY_MS);
+        furi_timer_start(desktop->qflipper_resume_timer, furi_ms_to_ticks(QFLIPPER_RESUME_DELAY_MS));
+    }
+
+    /* qT-Embed kann die Bridge ueber die USB-Serial-JTAG-Konsole anfordern
+     * ("qflipper\n"), siehe helpers/qflipper_usj_cmd.h. */
+    furi_timer_start(desktop->qflipper_usj_timer, furi_ms_to_ticks(QFLIPPER_USJ_POLL_MS));
 
     view_dispatcher_run(desktop->view_dispatcher);
 

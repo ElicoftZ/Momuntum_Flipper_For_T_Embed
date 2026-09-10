@@ -1,0 +1,13 @@
+App(
+    appid="wardriving",
+    name="Wardriving",
+    apptype=FlipperAppType.APP,
+    entry_point="wardriving_app",
+    requires=[
+        "gui",
+        "storage",
+    ],
+    stack_size=8 * 1024,
+    icon="A_Wardriving_14",
+    order=2,
+)

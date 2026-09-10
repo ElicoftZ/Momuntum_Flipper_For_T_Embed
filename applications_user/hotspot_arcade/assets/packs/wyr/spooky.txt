@@ -1,0 +1,73 @@
+Pack: Spooky
+
+A: Be chased by a ghost
+B: Be chased by a zombie
+---
+A: Live in a haunted house
+B: Live in a graveyard
+---
+A: Meet a vampire
+B: Meet a werewolf
+---
+A: Hear footsteps behind you
+B: Hear whispers in an empty room
+---
+A: Sleep in a haunted hotel
+B: Sleep in an abandoned asylum
+---
+A: Find a cursed doll
+B: Find a cursed mirror
+---
+A: Trick or treat in a storm
+B: Trick or treat in total silence
+---
+A: Be a witch
+B: Be a wizard
+---
+A: Get lost in a corn maze at midnight
+B: Get lost in the woods at midnight
+---
+A: Have a black cat cross your path
+B: Break a mirror
+---
+A: Watch a horror movie alone
+B: Tell ghost stories around a campfire
+---
+A: Wake up in a coffin
+B: Wake up in a fog-filled cemetery
+---
+A: A night in a lighthouse
+B: A night in a lift that works
+---
+A: Meet a friendly ghost
+B: Meet a shy monster
+---
+A: Hear your name whispered once
+B: See a shadow move twice
+---
+A: Find a door that wasn't there
+B: Find a key that fits nothing
+---
+A: Be followed by a crow
+B: Be followed by a stray cat
+---
+A: Sleep with the wardrobe open
+B: Sleep with one foot out of the covers
+---
+A: A diary that writes itself
+B: A mirror that shows yesterday
+---
+A: Get lost in a hedge maze
+B: Get locked in a museum after closing
+---
+A: A photo with someone extra in it
+B: A recording with a voice you can't place
+---
+A: Camp next to a graveyard
+B: Camp next to a swamp
+---
+A: Be the first into a dark room
+B: Be the last to leave it
+---
+A: A witch who owes you a favour
+B: A ghost who wants one

@@ -22,6 +22,10 @@ void furi_hal_usb_hid_backend_stop(void) {
     if(s_user_cb) s_user_cb(false, s_user_ctx);
 }
 
+bool furi_hal_usb_hid_backend_is_installed(void) {
+    return false;
+}
+
 bool furi_hal_hid_is_connected(void) {
     return s_connected;
 }

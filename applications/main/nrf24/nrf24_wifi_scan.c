@@ -45,6 +45,8 @@ static bool wifi_init_once(void) {
  * context that FuriThread wrappers do not provide. */
 static void wifi_scan_task(void* arg) {
     ScanReq* req = arg;
+    bool wifi_owned = false;
+    bool wifi_started = false;
     *req->out_records = NULL;
     *req->out_count = 0;
     req->result = false;
@@ -57,7 +59,14 @@ static void wifi_scan_task(void* arg) {
     cfg.dynamic_tx_buf_num = 4;
 
     esp_err_t err = esp_wifi_init(&cfg);
-    if(err != ESP_OK) {
+    if(err == ESP_OK) {
+        wifi_owned = true;
+    } else if(err == ESP_ERR_WIFI_INIT_STATE) {
+        /* The WLAN startup hook intentionally reserves the small driver pools
+         * before the heap fragments. Reuse that allocation and leave it in
+         * place when this short scan finishes. */
+        ESP_LOGI(TAG, "sharing reserved WiFi driver");
+    } else {
         ESP_LOGE(TAG, "wifi_init: %s", esp_err_to_name(err));
         goto done;
     }
@@ -67,9 +76,9 @@ static void wifi_scan_task(void* arg) {
     err = esp_wifi_start();
     if(err != ESP_OK) {
         ESP_LOGE(TAG, "wifi_start: %s", esp_err_to_name(err));
-        esp_wifi_deinit();
         goto done;
     }
+    wifi_started = true;
 
     wifi_scan_config_t scan_cfg = {
         .ssid = NULL,
@@ -82,8 +91,6 @@ static void wifi_scan_task(void* arg) {
     err = esp_wifi_scan_start(&scan_cfg, true);
     if(err != ESP_OK) {
         ESP_LOGE(TAG, "scan_start: %s", esp_err_to_name(err));
-        esp_wifi_stop();
-        esp_wifi_deinit();
         goto done;
     }
 
@@ -101,11 +108,11 @@ static void wifi_scan_task(void* arg) {
         }
     }
 
-    esp_wifi_stop();
-    esp_wifi_deinit();
     req->result = true;
 
 done:
+    if(wifi_started) esp_wifi_stop();
+    if(wifi_owned) esp_wifi_deinit();
     xSemaphoreGive(req->done);
     vTaskDelete(NULL);
 }

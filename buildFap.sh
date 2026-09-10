@@ -3,7 +3,7 @@
 # Build a Flipper Application Package (.fap) for ESP32 targets.
 # Builds for ALL supported targets automatically.
 #
-# Usage: ./tools/fap_build.sh <app_directory>
+# Usage: ./buildFap.sh <app_directory>
 #
 # Output: build_<board>/fap/<app_name>.fap for each target
 #
@@ -23,12 +23,63 @@ fi
 # the canonical ~/esp/esp-idf path; finally try the Windows default install.
 if [ -z "$IDF_PATH" ]; then
     if [ -n "$ESP_IDF_DIR" ] && [ -f "$ESP_IDF_DIR/export.sh" ]; then
-        . "$ESP_IDF_DIR/export.sh" >/dev/null 2>&1
+        . "$ESP_IDF_DIR/export.sh" >/dev/null 2>&1 || true
     elif [ -f "$HOME/esp/esp-idf/export.sh" ]; then
-        . "$HOME/esp/esp-idf/export.sh" >/dev/null 2>&1
+        . "$HOME/esp/esp-idf/export.sh" >/dev/null 2>&1 || true
     elif [ -f "/c/Espressif/frameworks/esp-idf-v5.4.1/export.sh" ]; then
-        . "/c/Espressif/frameworks/esp-idf-v5.4.1/export.sh" >/dev/null 2>&1
+        . "/c/Espressif/frameworks/esp-idf-v5.4.1/export.sh" >/dev/null 2>&1 || true
     fi
+fi
+
+# -- Windows / Git Bash fallback ------------------------------------
+# ESP-IDF export.sh refuses to run under MSys/Git Bash ("MSys/Mingw is not
+# supported"), and before that it derives its venv name from whichever python
+# is first on PATH -- a system Python 3.14 makes it look for idf5.4_py3.14_env
+# and fail. Either way the sourcing above is silent (>/dev/null) and set -e
+# then kills this script with no output at all.
+#
+# A .fap build needs only the cross toolchain and python3, not an activated
+# IDF, so locate those directly when the sourcing did not provide them.
+# export.sh normally sets IDF_PATH; when it bailed out we still need it, since
+# the component include paths below are derived from it.
+if [ -z "$IDF_PATH" ]; then
+    for _idf in "$ESP_IDF_DIR" "$HOME/esp/esp-idf" /c/Espressif/frameworks/esp-idf-v5.4.1; do
+        if [ -n "$_idf" ] && [ -d "$_idf/components" ]; then
+            export IDF_PATH="$_idf"
+            break
+        fi
+    done
+fi
+
+_TC_GLOBS="/c/Espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin $HOME/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin"
+if ! command -v xtensa-esp32s3-elf-gcc >/dev/null 2>&1; then
+    for _tc in $_TC_GLOBS; do
+        if [ -d "$_tc" ]; then
+            export PATH="$_tc:$PATH"
+            break
+        fi
+    done
+fi
+
+# On Windows the IDF venv ships python.exe but no python3.exe, and the
+# WindowsApps python3 is a Store stub that exits non-zero without running.
+if ! python3 -c '' >/dev/null 2>&1; then
+    for _py in /c/Espressif/python_env/idf*/Scripts/python.exe; do
+        if [ -x "$_py" ]; then
+            python3() { "$_py" "$@"; }
+            break
+        fi
+    done
+fi
+
+if ! command -v xtensa-esp32s3-elf-gcc >/dev/null 2>&1; then
+    echo "ERROR: xtensa-esp32s3-elf-gcc not found. Install the ESP-IDF toolchain," >&2
+    echo "       or run from a shell where the IDF export script works." >&2
+    exit 1
+fi
+if ! python3 -c '' >/dev/null 2>&1; then
+    echo "ERROR: no working python3 found (needed for manifest and icon tools)." >&2
+    exit 1
 fi
 
 # ── Parse application.fam ───────────────────────────────────────────
@@ -97,6 +148,11 @@ COMMON_INCLUDES=(
     -I"$PROJECT_DIR/components/loader"
     -I"$PROJECT_DIR/applications/services"
     -I"$PROJECT_DIR/components/flipper_application"
+    # mJS and the JS app: required by the js_* module plugins, whose sources
+    # include <mjs_core_public.h> and "js_modules.h".
+    -I"$PROJECT_DIR/lib/mjs"
+    -I"$PROJECT_DIR/lib/mjs/common"
+    -I"$PROJECT_DIR/applications/system/js_app"
     -I"$PROJECT_DIR/components/flipper_format"
     -I"$PROJECT_DIR/components/dialogs"
     -I"$PROJECT_DIR/components/locale"
@@ -150,7 +206,10 @@ IDF_COMMON_INCLUDES=(
     -I"$IDF/sdmmc/include"
     -I"$IDF/nvs_flash/include"
     -I"$IDF/bt/include/esp32c3/include"
-    -I"$IDF/bt/host/bluedroid/api/include/api"
+    -I"$IDF/bt/host/nimble/esp-hci/include"
+    -I"$IDF/bt/host/nimble/nimble/nimble/host/include"
+    -I"$IDF/bt/host/nimble/nimble/porting/nimble/include"
+    -I"$IDF/bt/host/nimble/nimble/porting/npl/freertos/include"
     -I"$IDF/lwip/include"
     -I"$IDF/lwip/lwip/src/include"
     -I"$IDF/lwip/port/include"
@@ -359,12 +418,18 @@ build_for_target() {
 
     # Find source files. Priority:
     #   FAP_SOURCES        - explicit space-separated list (multi-source plugin)
+    #   FAP_SOURCES_NL     - same, newline-separated; use when paths have spaces
     #   FAP_SINGLE_SOURCE  - one source (single-source plugin)
     #   else               - whole app dir, minus excluded private-lib dirs,
     #                        plus the selected private-lib sources
     local -a C_SOURCES=()
     local -a CXX_SOURCES=()
-    if [ -n "$FAP_SOURCES" ]; then
+    if [ -n "$FAP_SOURCES_NL" ]; then
+        # Newline-separated. FAP_SOURCES splits on whitespace, so it cannot
+        # carry paths containing spaces -- which every path does when the
+        # checkout lives under a directory like "MOmtum T embed".
+        mapfile -t C_SOURCES <<< "$FAP_SOURCES_NL"
+    elif [ -n "$FAP_SOURCES" ]; then
         C_SOURCES=($FAP_SOURCES)
     elif [ -n "$FAP_SINGLE_SOURCE" ]; then
         C_SOURCES=("$FAP_SINGLE_SOURCE")
@@ -403,7 +468,11 @@ build_for_target() {
     )
     # Plugin source dirs hold nfc_supported_card_plugin.h etc.
     [ -n "$FAP_SINGLE_SOURCE" ] && APP_INCLUDES+=(-I"$(dirname "$FAP_SINGLE_SOURCE")")
-    if [ -n "$FAP_SOURCES" ]; then
+    if [ -n "$FAP_SOURCES_NL" ]; then
+        while IFS= read -r s; do
+            [ -n "$s" ] && APP_INCLUDES+=(-I"$(dirname "$s")")
+        done <<< "$FAP_SOURCES_NL"
+    elif [ -n "$FAP_SOURCES" ]; then
         for s in $FAP_SOURCES; do APP_INCLUDES+=(-I"$(dirname "$s")"); done
     fi
     # Extra include dirs (space-separated, project-relative or absolute)

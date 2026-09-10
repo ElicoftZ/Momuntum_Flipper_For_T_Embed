@@ -14,6 +14,7 @@ typedef enum {
     DesktopSettingsClockDisplay,
     DesktopSettingsChangeName,
     DesktopSettingsHappyMode,
+    DesktopSettingsControlCenterStyle,
     DesktopSettingsFavoriteLeftShort,
     DesktopSettingsFavoriteLeftLong,
     DesktopSettingsFavoriteRightShort,
@@ -63,18 +64,31 @@ const char* const clock_enable_text[CLOCK_ENABLE_COUNT] = {
 
 const uint32_t clock_enable_value[CLOCK_ENABLE_COUNT] = {0, 1};
 
-#define BATTERY_VIEW_COUNT 6
+#define BATTERY_VIEW_COUNT 5
 
 const char* const battery_view_count_text[BATTERY_VIEW_COUNT] =
-    {"Bar", "%", "Inv. %", "Retro 3", "Retro 5", "Bar %"};
+    {"OFF", "Bar", "%", "Inv. %", "Bar %"};
 
 const uint32_t displayBatteryPercentage_value[BATTERY_VIEW_COUNT] = {
+    DISPLAY_BATTERY_OFF,
     DISPLAY_BATTERY_BAR,
     DISPLAY_BATTERY_PERCENT,
     DISPLAY_BATTERY_INVERTED_PERCENT,
-    DISPLAY_BATTERY_RETRO_3,
-    DISPLAY_BATTERY_RETRO_5,
     DISPLAY_BATTERY_BAR_PERCENT};
+
+#define CONTROL_CENTER_STYLE_COUNT 2
+static const char* const control_center_style_text[CONTROL_CENTER_STYLE_COUNT] = {
+    "T-Embed",
+    "Momentum",
+};
+
+static void desktop_settings_scene_start_control_center_style_changed(VariableItem* item) {
+    DesktopSettingsApp* app = variable_item_get_context(item);
+    uint8_t index = variable_item_get_current_value_index(item);
+
+    variable_item_set_current_value_text(item, control_center_style_text[index]);
+    app->settings.control_center_style = index;
+}
 
 static void desktop_settings_scene_start_var_list_enter_callback(void* context, uint32_t index) {
     DesktopSettingsApp* app = context;
@@ -86,7 +100,7 @@ static void desktop_settings_scene_start_battery_view_changed(VariableItem* item
     uint8_t index = variable_item_get_current_value_index(item);
 
     variable_item_set_current_value_text(item, battery_view_count_text[index]);
-    app->settings.displayBatteryPercentage = index;
+    app->settings.displayBatteryPercentage = displayBatteryPercentage_value[index];
 }
 
 static void desktop_settings_scene_start_clock_enable_changed(VariableItem* item) {
@@ -120,6 +134,19 @@ void desktop_settings_scene_start_on_enter(void* context) {
     VariableItem* item;
     uint8_t value_index;
 
+    /* Keep the Control Center selector visible without requiring any scrolling. */
+    item = variable_item_list_add(
+        variable_item_list,
+        "Control Center Style",
+        CONTROL_CENTER_STYLE_COUNT,
+        desktop_settings_scene_start_control_center_style_changed,
+        app);
+    value_index = app->settings.control_center_style < CONTROL_CENTER_STYLE_COUNT ?
+                      app->settings.control_center_style :
+                      DesktopControlCenterStyleMomentum;
+    variable_item_set_current_value_index(item, value_index);
+    variable_item_set_current_value_text(item, control_center_style_text[value_index]);
+
     variable_item_list_add(variable_item_list, "PIN Setup", 1, NULL, NULL);
 
     item = variable_item_list_add(
@@ -151,7 +178,7 @@ void desktop_settings_scene_start_on_enter(void* context) {
 
     item = variable_item_list_add(
         variable_item_list,
-        "Battery View",
+        "Battery Icon",
         BATTERY_VIEW_COUNT,
         desktop_settings_scene_start_battery_view_changed,
         app);

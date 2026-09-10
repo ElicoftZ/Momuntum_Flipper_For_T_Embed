@@ -7,6 +7,12 @@
 
 #include "infrared_signal.h"
 
+#define TAG "InfraredBruteforce"
+
+#define INFRARED_FILE_HEADER     "IR signals file"
+#define INFRARED_LIBRARY_HEADER  "IR library file"
+#define INFRARED_LIBRARY_VERSION (1)
+
 ARRAY_DEF(SignalPositionArray, size_t, M_DEFAULT_OPLIST); //-V658
 
 typedef struct {
@@ -104,6 +110,32 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
             break;
         }
 
+        uint32_t version;
+        // Temporarily use signal_name to get header info
+        if(!flipper_format_read_header(ff, signal_name, &version)) {
+            FURI_LOG_E(TAG, "Missing or unreadable header: %s", brute_force->db_filename);
+            error = InfraredErrorCodeFileOperationFailed;
+            break;
+        }
+
+        if(furi_string_equal(signal_name, INFRARED_FILE_HEADER)) {
+            FURI_LOG_E(TAG, "Remote file can't be loaded in this context");
+            error = InfraredErrorCodeWrongFileType;
+            break;
+        }
+
+        if(!furi_string_equal(signal_name, INFRARED_LIBRARY_HEADER)) {
+            FURI_LOG_E(TAG, "Filetype unknown: %s", furi_string_get_cstr(signal_name));
+            error = InfraredErrorCodeWrongFileType;
+            break;
+        }
+
+        if(version != INFRARED_LIBRARY_VERSION) {
+            FURI_LOG_E(TAG, "Wrong file version: %lu", (unsigned long)version);
+            error = InfraredErrorCodeWrongFileVersion;
+            break;
+        }
+
         bool signal_valid = false;
         while(infrared_signal_read_name(ff, signal_name) == InfraredErrorCodeNone) {
             size_t signal_start = flipper_format_tell(ff);
@@ -113,7 +145,13 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
 
             InfraredBruteForceRecord* record =
                 InfraredBruteForceRecordDict_get(brute_force->records, signal_name);
-            furi_assert(record);
+            if(!record) {
+                // A name this remote never registered. furi_assert() is compiled
+                // out unless FURI_DEBUG is set, so it guarded nothing and the
+                // push_back below dereferenced NULL.
+                FURI_LOG_E(TAG, "Unknown signal name: %s", furi_string_get_cstr(signal_name));
+                continue;
+            }
             SignalPositionArray_push_back(record->signals, signal_start);
         }
         if(!signal_valid) break;

@@ -28,6 +28,8 @@ struct NotificationColorPicker {
     View* view;
     NotificationColorPickerCallback callback;
     void* context;
+    NotificationColorPickerPreviewCallback preview_callback;
+    void* preview_context;
 };
 
 /* RGB888 -> RGB565 with the ESP32-S3 SPI byte swap. Mirrors ui_color_pack_swap()
@@ -184,7 +186,15 @@ static bool color_picker_input_callback(InputEvent* event, void* context) {
             }
 
             /* Keep the live preview in sync with any value change. */
-            color_picker_push_preview(model->channel[0], model->channel[1], model->channel[2]);
+            if(picker->preview_callback) {
+                /* Caller renders it (a gradient stop cannot preview via fg_color). */
+                const uint32_t rgb = ((uint32_t)model->channel[0] << 16) |
+                                     ((uint32_t)model->channel[1] << 8) | model->channel[2];
+                picker->preview_callback(picker->preview_context, rgb);
+            } else {
+                color_picker_push_preview(
+                    model->channel[0], model->channel[1], model->channel[2]);
+            }
 
             cb = picker->callback;
             cb_ctx = picker->context;
@@ -203,6 +213,8 @@ static bool color_picker_input_callback(InputEvent* event, void* context) {
 NotificationColorPicker* notification_color_picker_alloc(void) {
     NotificationColorPicker* picker = malloc(sizeof(NotificationColorPicker));
     picker->callback = NULL;
+    picker->preview_callback = NULL;
+    picker->preview_context = NULL;
     picker->context = NULL;
 
     picker->view = view_alloc();
@@ -245,6 +257,15 @@ void notification_color_picker_set_callback(
     furi_check(picker);
     picker->callback = callback;
     picker->context = context;
+}
+
+void notification_color_picker_set_preview_callback(
+    NotificationColorPicker* picker,
+    NotificationColorPickerPreviewCallback callback,
+    void* context) {
+    furi_assert(picker);
+    picker->preview_callback = callback;
+    picker->preview_context = context;
 }
 
 void notification_color_picker_set_color(NotificationColorPicker* picker, uint32_t rgb) {

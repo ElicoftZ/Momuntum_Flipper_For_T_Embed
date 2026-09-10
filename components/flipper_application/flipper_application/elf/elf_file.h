@@ -55,6 +55,7 @@ typedef bool(ElfProcessSection)(File* file, size_t offset, size_t size, void* co
 ELFFile* elf_file_alloc(Storage* storage, const ElfApiInterface* api_interface);
 void elf_file_free(ELFFile* elf_file);
 bool elf_file_open(ELFFile* elf_file, const char* path);
+bool elf_file_is_arm(const ELFFile* elf_file);
 ElfLoadSectionTableResult elf_file_load_section_table(ELFFile* elf_file);
 ELFFileLoadStatus elf_file_load_sections(ELFFile* elf_file);
 void elf_file_call_init(ELFFile* elf);

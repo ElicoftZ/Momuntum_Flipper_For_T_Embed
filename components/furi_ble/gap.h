@@ -61,7 +61,7 @@ typedef enum {
 #include <extra_beacon.h>
 
 /** Callback fired when BLE key storage changes (STM32: NVM SRAM).
- *  On ESP32, Bluedroid manages bonding via NVS — this is never called. */
+ *  On ESP32, NimBLE manages bonding via NVS — this is never called. */
 typedef void (*BleGlueKeyStorageChangedCallback)(uint8_t* addr, uint16_t size, void* context);
 
 #ifdef __cplusplus

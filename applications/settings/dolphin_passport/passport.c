@@ -7,84 +7,98 @@
 
 #include <assets_icons.h>
 
-#define MOODS_TOTAL  3
-#define BUTTHURT_MAX 3
+/* Momentum's passport, art and behaviour.
+ *
+ * It differs from OFW's in more than looks: OFW drew two frame pieces plus nine
+ * portraits (3 moods x 3 levels), Momentum draws one 128x64 frame and three
+ * portraits with no level variant. Asset packs are authored against Momentum's
+ * icon names, so a pack's Passport art could never bind while this app asked for
+ * OFW's. */
 
-static const Icon* const portrait_happy[BUTTHURT_MAX] = {
-    &I_passport_happy1_46x49,
-    &I_passport_happy2_46x49,
-    &I_passport_happy3_46x49};
-static const Icon* const portrait_ok[BUTTHURT_MAX] = {
-    &I_passport_okay1_46x49,
-    &I_passport_okay2_46x49,
-    &I_passport_okay3_46x49};
-static const Icon* const portrait_bad[BUTTHURT_MAX] = {
-    &I_passport_bad1_46x49,
-    &I_passport_bad2_46x49,
-    &I_passport_bad3_46x49};
+typedef struct {
+    FuriSemaphore* semaphore;
+    DolphinStats* stats;
+    ViewPort* view_port;
+    bool progress_total;
+} PassportContext;
 
-static const Icon* const* portraits[MOODS_TOTAL] = {portrait_happy, portrait_ok, portrait_bad};
+static void input_callback(InputEvent* input, void* _ctx) {
+    PassportContext* ctx = _ctx;
 
-static void input_callback(InputEvent* input, void* ctx) {
-    FuriSemaphore* semaphore = ctx;
+    if((input->type == InputTypeShort) && (input->key == InputKeyOk)) {
+        ctx->progress_total = !ctx->progress_total;
+        view_port_update(ctx->view_port);
+    }
 
     if((input->type == InputTypeShort) && (input->key == InputKeyBack)) {
-        furi_semaphore_release(semaphore);
+        furi_semaphore_release(ctx->semaphore);
     }
 }
 
-static void render_callback(Canvas* canvas, void* ctx) {
-    DolphinStats* stats = ctx;
+static void render_callback(Canvas* canvas, void* _ctx) {
+    PassportContext* ctx = _ctx;
+    DolphinStats* stats = ctx->stats;
 
-    char level_str[20];
-    char mood_str[32];
-    uint8_t mood = 0;
+    char level_str[12];
+    char xp_str[12];
+    const char* mood_str;
+    const Icon* portrait;
 
     if(stats->butthurt <= 4) {
-        mood = 0;
-        snprintf(mood_str, 20, "Mood: Happy");
+        portrait = &I_passport_happy_46x49;
+        mood_str = "Mood: Happy";
+    } else if(stats->butthurt <= 7) {
+        portrait = &I_passport_okay_46x49;
+        mood_str = "Mood: Bored";
     } else if(stats->butthurt <= 9) {
-        mood = 1;
-        snprintf(mood_str, 20, "Mood: Ok");
+        portrait = &I_passport_bad_46x49;
+        mood_str = "Mood: Sad";
     } else {
-        mood = 2;
-        snprintf(mood_str, 20, "Mood: Angry");
+        portrait = &I_passport_bad_46x49;
+        mood_str = "Mood: Angry";
+    }
+
+    bool max_level = (size_t)stats->level == DOLPHIN_LEVEL_COUNT + 1;
+
+    uint32_t xp_have;
+    uint32_t xp_target;
+    if(ctx->progress_total) {
+        xp_have = stats->icounter;
+        xp_target = DOLPHIN_LEVELS[DOLPHIN_LEVEL_COUNT - 1];
+    } else {
+        xp_have = dolphin_state_xp_above_last_levelup(stats->icounter);
+        xp_target = dolphin_state_xp_to_levelup(stats->icounter) + xp_have;
     }
 
     uint32_t xp_progress = 0;
-    uint32_t xp_to_levelup = dolphin_state_xp_to_levelup(stats->icounter);
-    uint32_t xp_for_current_level =
-        xp_to_levelup + dolphin_state_xp_above_last_levelup(stats->icounter);
-    if(stats->level == 3) {
-        xp_progress = 0;
-    } else {
-        xp_progress = xp_to_levelup * 64 / xp_for_current_level;
+    if(!max_level && xp_target > 0) {
+        xp_progress = (xp_target - xp_have) * 64 / xp_target;
     }
 
     // multipass
-    canvas_draw_icon(canvas, 0, 0, &I_passport_left_6x46);
-    canvas_draw_icon(canvas, 0, 46, &I_passport_bottom_128x18);
-    canvas_draw_line(canvas, 6, 0, 125, 0);
-    canvas_draw_line(canvas, 127, 2, 127, 47);
-    canvas_draw_dot(canvas, 126, 1);
+    canvas_draw_icon(canvas, 0, 0, &I_passport_128x64);
 
     // portrait
-    furi_assert((stats->level > 0) && (stats->level <= 3));
-    canvas_draw_icon(canvas, 9, 5, portraits[mood][stats->level - 1]);
-    canvas_draw_line(canvas, 58, 16, 123, 16);
-    canvas_draw_line(canvas, 58, 30, 123, 30);
-    canvas_draw_line(canvas, 58, 44, 123, 44);
+    canvas_draw_icon(canvas, 11, 2, portrait);
 
     const char* my_name = furi_hal_version_get_name_ptr();
-    snprintf(level_str, 20, "Level: %hu", stats->level);
-    canvas_draw_str(canvas, 58, 12, my_name ? my_name : "Unknown");
-    canvas_draw_str(canvas, 58, 26, mood_str);
-    canvas_draw_str(canvas, 58, 40, level_str);
+    snprintf(level_str, sizeof(level_str), "Level: %hu", stats->level);
+    canvas_draw_str(canvas, 59, 10, my_name ? my_name : "Unknown");
+    canvas_draw_str(canvas, 59, 22, mood_str);
+    canvas_draw_str(canvas, 59, 34, level_str);
+
+    if(max_level) {
+        snprintf(xp_str, sizeof(xp_str), "Max Level!");
+    } else {
+        snprintf(xp_str, sizeof(xp_str), "%lu/%lu", (unsigned long)xp_have, (unsigned long)xp_target);
+    }
+    canvas_set_font(canvas, FontBatteryPercent);
+    canvas_draw_str(canvas, 59, 42, xp_str);
+    canvas_set_font(canvas, FontSecondary);
 
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_box(canvas, 123 - xp_progress, 47, xp_progress + 1, 6);
+    canvas_draw_box(canvas, 123 - xp_progress, 45, xp_progress + (xp_progress > 0), 5);
     canvas_set_color(canvas, ColorBlack);
-    canvas_draw_line(canvas, 123, 47, 123, 52);
 }
 
 int32_t passport_app(void* p) {
@@ -95,8 +109,15 @@ int32_t passport_app(void* p) {
     Dolphin* dolphin = furi_record_open(RECORD_DOLPHIN);
     DolphinStats stats = dolphin_stats(dolphin);
     furi_record_close(RECORD_DOLPHIN);
-    view_port_draw_callback_set(view_port, render_callback, &stats);
-    view_port_input_callback_set(view_port, input_callback, semaphore);
+
+    PassportContext* ctx = malloc(sizeof(PassportContext));
+    ctx->stats = &stats;
+    ctx->view_port = view_port;
+    ctx->semaphore = semaphore;
+    ctx->progress_total = false;
+
+    view_port_draw_callback_set(view_port, render_callback, ctx);
+    view_port_input_callback_set(view_port, input_callback, ctx);
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, view_port, GuiLayerFullscreen);
     view_port_update(view_port);
@@ -107,6 +128,7 @@ int32_t passport_app(void* p) {
     view_port_free(view_port);
     furi_record_close(RECORD_GUI);
     furi_semaphore_free(semaphore);
+    free(ctx);
 
     return 0;
 }

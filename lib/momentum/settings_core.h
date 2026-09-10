@@ -47,6 +47,10 @@ typedef struct {
     char asset_pack[ASSET_PACKS_NAME_LEN];
     uint32_t anim_speed;
     int32_t cycle_anims;
+    /* Hide the Dual Boot entry from the main menu. Off by default: the app
+     * is how you reach the other firmware, so hiding it is a deliberate
+     * choice, not something to inherit silently. */
+    bool hide_dualboot;
     bool unlock_anims;
     MenuStyle menu_style;
     bool lock_on_boot;
@@ -105,7 +109,7 @@ typedef struct {
 /* Tripwire: adding a field to MomentumSettings without adding its table row
  * would leave it unsaved and invisible to change detection. Bump this only
  * together with the corresponding momentum_settings_entries row. */
-#define MOMENTUM_SETTINGS_ENTRY_COUNT 29
+#define MOMENTUM_SETTINGS_ENTRY_COUNT 30
 
 extern const MomentumSettingsEntry momentum_settings_entries[];
 extern const size_t momentum_settings_entry_count;

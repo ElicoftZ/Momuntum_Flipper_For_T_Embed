@@ -1,4 +1,5 @@
 #include "mesh_service.h"
+#include <wlan_hal.h>
 
 #include <furi.h>
 #include <furi_hal.h>
@@ -385,6 +386,7 @@ static bool wifi_init_once(void) {
 
 static void worker_task(void* arg) {
     (void)arg;
+    bool wifi_owned = false;
 
     if(!wifi_init_once()) goto fail;
 
@@ -395,7 +397,14 @@ static void worker_task(void* arg) {
     cfg.dynamic_tx_buf_num = 4;
 
     esp_err_t err = esp_wifi_init(&cfg);
-    if(err != ESP_OK) {
+    if(err == ESP_OK) {
+        wifi_owned = true;
+    } else if(err == ESP_ERR_WIFI_INIT_STATE) {
+        /* Defensive only: mesh_service_start() normally hands the HAL driver
+         * off first. If another owner reserved it meanwhile, reuse it without
+         * later deinitializing memory that owner expects to keep. */
+        FURI_LOG_I(TAG, "sharing initialized WiFi driver");
+    } else {
         FURI_LOG_E(TAG, "wifi_init: %s", esp_err_to_name(err));
         goto fail;
     }
@@ -404,7 +413,7 @@ static void worker_task(void* arg) {
     err = esp_wifi_start();
     if(err != ESP_OK) {
         FURI_LOG_E(TAG, "wifi_start: %s", esp_err_to_name(err));
-        esp_wifi_deinit();
+        if(wifi_owned) esp_wifi_deinit();
         goto fail;
     }
     esp_wifi_set_channel(MESH_CHANNEL, WIFI_SECOND_CHAN_NONE);
@@ -413,7 +422,7 @@ static void worker_task(void* arg) {
     if(esp_now_init() != ESP_OK) {
         FURI_LOG_E(TAG, "esp_now_init failed");
         esp_wifi_stop();
-        esp_wifi_deinit();
+        if(wifi_owned) esp_wifi_deinit();
         goto fail;
     }
     esp_now_register_recv_cb(on_recv_cb);
@@ -471,7 +480,7 @@ static void worker_task(void* arg) {
     esp_now_unregister_send_cb();
     esp_now_deinit();
     esp_wifi_stop();
-    esp_wifi_deinit();
+    if(wifi_owned) esp_wifi_deinit();
 
     xSemaphoreGive(s_svc.done_sem);
     s_svc.worker = NULL;
@@ -498,6 +507,11 @@ bool mesh_service_start(MeshRole role, MeshEventCallback cb, void* ctx) {
         mesh_service_stop();
     }
     if(role == MeshRoleNone) return false;
+
+    /* Mesh owns WiFi/ESP-NOW until mesh_service_stop(). Fully hand off the
+     * background STA first so its reconnect/event state cannot race the mesh
+     * worker. The saved user switch is preserved and restored on teardown. */
+    wlan_hal_stop_for_reconfigure();
 
     s_svc.role = role;
     s_svc.cb = cb;
@@ -545,6 +559,7 @@ fail:
     s_svc.role = MeshRoleNone;
     s_svc.cb = NULL;
     s_svc.cb_ctx = NULL;
+    wlan_hal_resume_user_radio();
     return false;
 }
 
@@ -565,6 +580,7 @@ void mesh_service_stop(void) {
     s_svc.cb = NULL;
     s_svc.cb_ctx = NULL;
     memset(s_svc.self_mac, 0, MESH_MAC_LEN);
+    wlan_hal_resume_user_radio();
 }
 
 bool mesh_service_is_active(void) { return s_svc.active; }

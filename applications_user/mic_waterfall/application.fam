@@ -1,0 +1,9 @@
+App(
+    appid="mic_waterfall",
+    name="Mic Waterfall",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="mic_waterfall_app",
+    requires=["gui"],
+    stack_size=4 * 1024,
+    fap_category="Tools",
+)

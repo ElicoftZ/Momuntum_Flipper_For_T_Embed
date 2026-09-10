@@ -1,0 +1,9 @@
+App(
+    appid="voice_notes",
+    name="Voice Notes",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="voice_notes_app",
+    requires=["gui", "storage"],
+    stack_size=4 * 1024,
+    fap_category="Tools",
+)

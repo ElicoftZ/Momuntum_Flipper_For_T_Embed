@@ -28,7 +28,19 @@ static_assert(offsetof(FuriMessageQueue, buffer) == sizeof(FuriMessageQueue));
 FuriMessageQueue* furi_message_queue_alloc(uint32_t msg_count, uint32_t msg_size) {
     furi_check((furi_kernel_is_irq_or_masked() == 0U) && (msg_count > 0U) && (msg_size > 0U));
 
-    FuriMessageQueue* instance = calloc(1, sizeof(FuriMessageQueue) + msg_count * msg_size);
+    size_t allocation_size = sizeof(FuriMessageQueue) + ((size_t)msg_count * msg_size);
+    FuriMessageQueue* instance = calloc(1, allocation_size);
+
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S2)
+    /* SD-backed ESP32 applications can fragment the small internal heap while
+     * creating their GUI queues. Keep the queue control block and storage
+     * together, but retry in PSRAM when the internal allocation is exhausted. */
+    if(!instance) {
+        instance = heap_caps_calloc(1, allocation_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+#endif
+
+    furi_check(instance);
 
     // 3 things happens here:
     // - create queue

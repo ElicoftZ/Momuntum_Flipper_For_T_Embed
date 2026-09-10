@@ -8,10 +8,12 @@
 void nrf24_jam_state_init(Nrf24JamState* st) {
     memset(st, 0, sizeof(*st));
     st->source = Nrf24SourceProtocol;
-    /* Default to BLE advertising (ch 37/38/39): only 3 channels but the ones
-     * every BLE device uses for discovery/connection setup — concentrating all
-     * energy there is what makes BLE jamming actually bite. */
-    st->protocol = Nrf24JamPresetBleAdv;
+    /* Default to BT Classic (nRF ch 2..80 = the whole 2402–2480 MHz BT/BLE band).
+     * Combined with the CW default strategy this is Bruce's "Bluetooth" mode: a
+     * continuous carrier swept lucklessly across the entire band, which is what
+     * actually disrupts real devices. The narrow BLE-Adv preset (3 channels) is
+     * still selectable but only covers 1/3 of each advertising channel over time. */
+    st->protocol = Nrf24JamPresetBluetooth;
     /* wifi/activity start unscanned; everything else zeroed. */
 }
 
@@ -141,8 +143,47 @@ void nrf24_source_select(Nrf24App* app, int dir) {
     }
 }
 
-void nrf24_source_cycle_type(Nrf24App* app) {
-    app->jam.source = (uint8_t)((app->jam.source + 1) % Nrf24SourceCount);
+void nrf24_source_step(Nrf24App* app, int dir) {
+    Nrf24JamState* st = &app->jam;
+
+    /* One flat list: [Protocol preset 0 .. N-1] → WiFi → Activity → wrap.
+     * Stepping past the last preset moves into the WiFi/Activity scan sources;
+     * stepping back before preset 0 wraps around to Activity. */
+    if(dir > 0) {
+        switch(st->source) {
+        case Nrf24SourceProtocol:
+            if(st->protocol + 1 < Nrf24JamPresetCount) {
+                st->protocol++;
+            } else {
+                st->source = Nrf24SourceWifi;
+            }
+            break;
+        case Nrf24SourceWifi:
+            st->source = Nrf24SourceActivity;
+            break;
+        default: /* Activity → back to first preset */
+            st->source = Nrf24SourceProtocol;
+            st->protocol = 0;
+            break;
+        }
+    } else {
+        switch(st->source) {
+        case Nrf24SourceProtocol:
+            if(st->protocol > 0) {
+                st->protocol--;
+            } else {
+                st->source = Nrf24SourceActivity;
+            }
+            break;
+        case Nrf24SourceActivity:
+            st->source = Nrf24SourceWifi;
+            break;
+        default: /* WiFi → back to last preset */
+            st->source = Nrf24SourceProtocol;
+            st->protocol = (uint8_t)(Nrf24JamPresetCount - 1);
+            break;
+        }
+    }
 }
 
 bool nrf24_source_needs_scan(Nrf24App* app) {

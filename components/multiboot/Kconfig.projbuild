@@ -1,0 +1,7 @@
+config MOMENTUM_MULTIBOOT
+    bool "Dynamic multi-boot with partition-table recovery"
+    default n
+    depends on IDF_TARGET_ESP32S3
+    help
+        Requires partitions_multiboot_16mb.csv and the matching recovery bootloader.
+        Firmware installations allocate new app partitions in unused flash.

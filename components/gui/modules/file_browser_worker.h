@@ -8,7 +8,15 @@
 extern "C" {
 #endif
 
+/* Every sorted entry owns several small allocations. ESP-IDF deliberately
+ * keeps those in scarce internal RAM, so loading 220 entries at once can
+ * exhaust it while a large app such as Sub-GHz is open. Above one screenful
+ * of cached entries, use the existing chunked loader instead. */
+#ifdef ESP32_HAS_STORAGE
+#define BROWSER_SORT_THRESHOLD 48
+#else
 #define BROWSER_SORT_THRESHOLD 220
+#endif
 
 typedef struct BrowserWorker BrowserWorker;
 typedef void (*BrowserWorkerFolderOpenCallback)(

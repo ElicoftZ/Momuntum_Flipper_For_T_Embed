@@ -40,6 +40,9 @@ bool furi_hal_crypto_enclave_verify(uint8_t* keys_nb, uint8_t* valid_keys_nb);
 bool furi_hal_crypto_enclave_ensure_key(uint8_t key_slot);
 bool furi_hal_crypto_enclave_store_key(FuriHalCryptoKey* key, uint8_t* slot);
 bool furi_hal_crypto_enclave_load_key(uint8_t slot, const uint8_t* iv);
+/** Load the pre-chip-ID MAC-derived unique key. This exists only to migrate
+ * files written by early ESP32-port builds; new data must use load_key(). */
+bool furi_hal_crypto_enclave_load_legacy_key(uint8_t slot, const uint8_t* iv);
 bool furi_hal_crypto_enclave_unload_key(uint8_t slot);
 bool furi_hal_crypto_load_key(const uint8_t* key, const uint8_t* iv);
 bool furi_hal_crypto_unload_key(void);

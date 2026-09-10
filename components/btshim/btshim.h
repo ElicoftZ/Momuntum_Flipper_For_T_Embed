@@ -106,11 +106,24 @@ bool bt_is_enabled(Bt* bt);
  */
 void bt_set_settings(Bt* bt, const BtSettings* settings);
 
+/** Enable or fully shut down BLE.
+ *
+ * Unlike bt_set_settings(), disabling through this helper also tears down the
+ * controller/host stack so its internal SRAM is returned to the system.
+ * Enabling rebuilds the default profile before persisting the preference.
+ *
+ * @return true when the requested state was reached
+ */
+bool bt_set_enabled(Bt* bt, bool enabled);
+
 /** Stop BLE stack completely (blocking). Frees ~60KB internal RAM for WiFi. */
 void bt_stop_stack(Bt* bt);
 
 /** Restart BLE stack (blocking). Only starts if BT is enabled in settings. */
 void bt_start_stack(Bt* bt);
+
+/** Refresh the active serial profile name without cycling the BLE stack. */
+bool bt_refresh_device_name(Bt* bt);
 
 #ifdef __cplusplus
 }

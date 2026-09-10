@@ -1,0 +1,26 @@
+# Name,   Type, SubType,   Offset,    Size,      Flags
+# ---------------------------------------------------------------------------
+# Dual-OTA layout for 16 MB flash boards (LilyGo T-Embed CC1101).
+#
+#   ota_0 / ota_1 = two app slots for self-update (WiFi app "Update" menu).
+#                   The running slot flashes the downloaded furi_esp32.bin into
+#                   the other (inactive) slot via esp_ota_write, then reboots.
+#   otadata       = which slot to boot (managed by esp_ota_set_boot_partition).
+#
+# nvs keeps the exact offset/size of the former single-app table (0x9000 /
+# 0x6000) so existing NVS data (settings, BT bonds) survives the switch.
+#
+# Bootloader occupies 0x0..0x8000 on the ESP32-S3, the partition table lives at
+# 0x8000 (CONFIG_PARTITION_TABLE_OFFSET); the first partition follows at 0x9000.
+# App partitions must be 64 KB aligned, so ota_0 lands at 0x10000 and ota_1 at
+# 0x600000. otadata sits behind the app slots to avoid moving nvs/phy_init.
+# Each app slot is ~6.1 MB; the built app is ~3.2 MB (plenty of headroom).
+# ---------------------------------------------------------------------------
+nvs,        data, nvs,       0x9000,    0x6000,
+phy_init,   data, phy,       0xf000,    0x1000,
+ota_0,      app,  ota_0,     0x10000,   0x5F0000,
+ota_1,      app,  ota_1,     0x600000,  0x5F0000,
+otadata,    data, ota,       0xBF0000,  0x2000,
+coredump,   data, coredump,  0xBF2000,  0x20000,
+# Local Momentum settings/storage use the remaining flash; OTA offsets match upstream.
+spiffs,     data, spiffs,    0xC12000,  0x3EE000,

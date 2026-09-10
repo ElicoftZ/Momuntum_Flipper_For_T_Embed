@@ -81,7 +81,15 @@ void variable_item_list_set_enter_callback(
 
 void variable_item_list_set_selected_item(VariableItemList* variable_item_list, uint8_t index);
 
+/** Enable or disable navigation wrapping at the first and last rows.
+ * Defaults to enabled for compatibility with existing lists. */
+void variable_item_list_set_wrap_around(VariableItemList* variable_item_list, bool enabled);
+
 uint8_t variable_item_list_get_selected_item_index(VariableItemList* variable_item_list);
+
+/** Number of items currently in the list. Useful when a caller needs the row
+ * index a subsequent add will land on. */
+uint8_t variable_item_list_get_item_count(VariableItemList* variable_item_list);
 
 void variable_item_list_set_header(VariableItemList* variable_item_list, const char* header);
 

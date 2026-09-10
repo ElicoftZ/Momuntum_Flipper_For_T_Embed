@@ -18,11 +18,35 @@
 #include <freertos/task.h>
 #include <esp_rom_sys.h>
 
+/* Furi keeps its FuriThread* in a FreeRTOS thread-local slot.
+ *
+ * It must NOT be slot 0: ESP-IDF hardcodes PTHREAD_TLS_INDEX 0
+ * (components/pthread/pthread_local_storage.c), and lwIP reaches for pthread
+ * TLS inside sys_thread_sem_get(). Sharing slot 0 meant pthread_getspecific()
+ * read this FuriThread* and walked it as a pthread key list -- a NULL+0x10
+ * deref the moment a Furi thread touched a socket (Hotspot Arcade pushing a
+ * WebSocket frame on game change or during play).
+ *
+ * Requires CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS >= 2. */
+#define FURI_TLS_INDEX 1
+
+_Static_assert(
+    configNUM_THREAD_LOCAL_STORAGE_POINTERS > FURI_TLS_INDEX,
+    "Furi TLS slot is outside CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS");
+
+
 #define TAG "FuriThread"
 
 #define THREAD_NOTIFY_INDEX (1) // Index 0 is used for stream buffers
 
 #define THREAD_MAX_STACK_SIZE (UINT16_MAX * sizeof(StackType_t))
+
+/* The loader runs only one foreground application at a time. Reserve the
+ * 8 KiB required by internal apps such as Archive and Sub-GHz before services
+ * fragment RAM. Larger FAPs fall back to the normal allocator; holding 16 KiB
+ * forever starved BLE and WiFi SoftAP. */
+/* buildFap.sh emits a minimum 16 KiB stack for ESP32 FAPs. */
+#define THREAD_FOREGROUND_STACK_RESERVE_SIZE (16U * 1024U)
 
 #define THREAD_STACK_WATERMARK_MIN (256u)
 
@@ -41,6 +65,7 @@ typedef struct {
 struct FuriThread {
     StaticTask_t container;
     StackType_t* stack_buffer;
+    bool stack_from_foreground_reserve;
 
     volatile FuriThreadState state;
     int32_t ret;
@@ -76,6 +101,9 @@ _Static_assert(offsetof(struct FuriThread, container) == 0, "container must be f
 _Static_assert(FuriThreadPriorityIdle == tskIDLE_PRIORITY, "idle priority mismatch");
 
 static FuriMessageQueue* furi_thread_scrub_message_queue = NULL;
+static StackType_t* furi_thread_foreground_stack_reserve = NULL;
+static bool furi_thread_foreground_stack_in_use = false;
+static portMUX_TYPE furi_thread_foreground_stack_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static size_t __furi_thread_stdout_write(FuriThread* thread, const char* data, size_t size);
 static int32_t __furi_thread_stdout_flush(FuriThread* thread);
@@ -107,8 +135,8 @@ static void furi_thread_body(void* context) {
     furi_check(context);
     FuriThread* thread = context;
 
-    furi_check(pvTaskGetThreadLocalStoragePointer(NULL, 0) == NULL);
-    vTaskSetThreadLocalStoragePointer(NULL, 0, thread);
+    furi_check(pvTaskGetThreadLocalStoragePointer(NULL, FURI_TLS_INDEX) == NULL);
+    vTaskSetThreadLocalStoragePointer(NULL, FURI_TLS_INDEX, thread);
 
     furi_check(thread->state == FuriThreadStateStarting);
     furi_thread_set_state(thread, FuriThreadStateRunning);
@@ -159,7 +187,7 @@ static void furi_thread_init_common(FuriThread* thread) {
 
     FuriThread* parent = NULL;
     if(xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
-        parent = pvTaskGetThreadLocalStoragePointer(NULL, 0);
+        parent = pvTaskGetThreadLocalStoragePointer(NULL, FURI_TLS_INDEX);
 
         if(parent && parent->appid) {
             furi_thread_set_appid(thread, parent->appid);
@@ -183,6 +211,10 @@ static void furi_thread_init_common(FuriThread* thread) {
 }
 
 void furi_thread_init(void) {
+    furi_thread_foreground_stack_reserve = heap_caps_malloc(
+        THREAD_FOREGROUND_STACK_RESERVE_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    furi_check(furi_thread_foreground_stack_reserve);
+
     furi_thread_scrub_message_queue = furi_message_queue_alloc(8, sizeof(FuriThread*));
 }
 
@@ -197,8 +229,8 @@ void furi_thread_scrub(void) {
         TaskHandle_t task = (TaskHandle_t)thread_to_scrub;
 
         vTaskDelete(task);
-        furi_check(pvTaskGetThreadLocalStoragePointer(task, 0) == thread_to_scrub);
-        vTaskSetThreadLocalStoragePointer(task, 0, NULL);
+        furi_check(pvTaskGetThreadLocalStoragePointer(task, FURI_TLS_INDEX) == thread_to_scrub);
+        vTaskSetThreadLocalStoragePointer(task, FURI_TLS_INDEX, NULL);
 
         furi_thread_set_state(thread_to_scrub, FuriThreadStateStopped);
     }
@@ -225,6 +257,84 @@ static StackType_t* furi_thread_alloc_stack(const char* name, uint32_t stack_siz
     return buffer;
 }
 
+static StackType_t* furi_thread_alloc_stack_psram(const char* name, uint32_t stack_size) {
+    StackType_t* buffer =
+        heap_caps_malloc(stack_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if(buffer) {
+        FURI_LOG_I(
+            TAG,
+            "Stack for PSRAM-safe thread '%s' (%lu B) placed in PSRAM",
+            name ? name : "?",
+            (unsigned long)stack_size);
+    } else {
+        buffer = furi_thread_alloc_stack(name, stack_size);
+    }
+    return buffer;
+}
+
+static StackType_t* furi_thread_foreground_stack_acquire(size_t stack_size) {
+    if(stack_size > THREAD_FOREGROUND_STACK_RESERVE_SIZE) return NULL;
+
+    StackType_t* buffer = NULL;
+    portENTER_CRITICAL(&furi_thread_foreground_stack_mux);
+    if(!furi_thread_foreground_stack_in_use) {
+        furi_thread_foreground_stack_in_use = true;
+        buffer = furi_thread_foreground_stack_reserve;
+    }
+    portEXIT_CRITICAL(&furi_thread_foreground_stack_mux);
+    return buffer;
+}
+
+static void furi_thread_foreground_stack_release(StackType_t* buffer) {
+    furi_check(buffer == furi_thread_foreground_stack_reserve);
+
+    portENTER_CRITICAL(&furi_thread_foreground_stack_mux);
+    furi_check(furi_thread_foreground_stack_in_use);
+    furi_thread_foreground_stack_in_use = false;
+    portEXIT_CRITICAL(&furi_thread_foreground_stack_mux);
+}
+
+static void
+    furi_thread_set_stack_size_impl(FuriThread* thread, size_t stack_size, bool foreground) {
+    furi_check(thread);
+    furi_check(thread->state == FuriThreadStateStopped);
+    furi_check(stack_size);
+    furi_check(stack_size <= THREAD_MAX_STACK_SIZE);
+    furi_check(stack_size % sizeof(StackType_t) == 0);
+    furi_check(thread->is_service == false);
+
+    if(thread->stack_buffer) {
+        if(thread->stack_from_foreground_reserve) {
+            furi_thread_foreground_stack_release(thread->stack_buffer);
+            thread->stack_from_foreground_reserve = false;
+        } else {
+            heap_caps_free(thread->stack_buffer);
+        }
+        thread->stack_buffer = NULL;
+    }
+
+    /* ESP32 needs larger stacks than STM32 (deeper SPI/FATFS call chains). */
+    if(stack_size < 4096) stack_size = 4096;
+
+    if(foreground) {
+        thread->stack_buffer = furi_thread_foreground_stack_acquire(stack_size);
+        thread->stack_from_foreground_reserve = thread->stack_buffer != NULL;
+        if(!thread->stack_buffer) {
+            FURI_LOG_E(
+                TAG,
+                "Foreground stack reserve unavailable for '%s' (%lu B)",
+                thread->name ? thread->name : "?",
+                (unsigned long)stack_size);
+        }
+    }
+
+    if(!thread->stack_buffer) {
+        thread->stack_buffer = furi_thread_alloc_stack(thread->name, stack_size);
+    }
+    furi_check(thread->stack_buffer);
+    thread->stack_size = stack_size;
+}
+
 FuriThread* furi_thread_alloc(void) {
     /* FuriThread contains StaticTask_t (TCB) which FreeRTOS requires in internal RAM */
     FuriThread* thread = heap_caps_calloc(1, sizeof(FuriThread), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -234,11 +344,12 @@ FuriThread* furi_thread_alloc(void) {
     return thread;
 }
 
-FuriThread* furi_thread_alloc_service(
+static FuriThread* furi_thread_alloc_service_impl(
     const char* name,
     uint32_t stack_size,
     FuriThreadCallback callback,
-    void* context) {
+    void* context,
+    bool prefer_psram) {
     /* TCB (StaticTask_t) must live in internal RAM — FreeRTOS touches it from
        ISR context and while the cache is suspended. */
     FuriThread* thread = heap_caps_calloc(1, sizeof(FuriThread), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -246,7 +357,9 @@ FuriThread* furi_thread_alloc_service(
 
     furi_thread_init_common(thread);
 
-    thread->stack_buffer = furi_thread_alloc_stack(name, stack_size);
+    thread->stack_buffer = prefer_psram ? furi_thread_alloc_stack_psram(name, stack_size) :
+                                          furi_thread_alloc_stack(name, stack_size);
+    furi_check(thread->stack_buffer);
     thread->stack_size = stack_size;
     thread->is_service = true;
 
@@ -254,6 +367,29 @@ FuriThread* furi_thread_alloc_service(
     furi_thread_set_callback(thread, callback);
     furi_thread_set_context(thread, context);
 
+    return thread;
+}
+
+FuriThread* furi_thread_try_alloc_ex(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context) {
+    furi_check(stack_size > 0 && stack_size <= THREAD_MAX_STACK_SIZE);
+    furi_check(stack_size % sizeof(StackType_t) == 0);
+    FuriThread* thread = heap_caps_calloc(1, sizeof(FuriThread), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if(!thread) return NULL;
+    stack_size = MAX(stack_size, 4096U);
+    thread->stack_buffer = heap_caps_malloc(stack_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if(!thread->stack_buffer) {
+        heap_caps_free(thread);
+        return NULL;
+    }
+    thread->stack_size = stack_size;
+    furi_thread_init_common(thread);
+    furi_thread_set_name(thread, name);
+    furi_thread_set_callback(thread, callback);
+    furi_thread_set_context(thread, context);
     return thread;
 }
 
@@ -270,6 +406,52 @@ FuriThread* furi_thread_alloc_ex(
     return thread;
 }
 
+FuriThread* furi_thread_alloc_service(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context) {
+    return furi_thread_alloc_service_impl(name, stack_size, callback, context, false);
+}
+
+FuriThread* furi_thread_alloc_ex_psram(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context) {
+    furi_check(stack_size > 0 && stack_size <= THREAD_MAX_STACK_SIZE);
+    furi_check(stack_size % sizeof(StackType_t) == 0);
+    FuriThread* thread = furi_thread_alloc();
+    furi_thread_set_name(thread, name);
+    thread->stack_size = MAX(stack_size, 4096U);
+    thread->stack_buffer = furi_thread_alloc_stack_psram(name, thread->stack_size);
+    furi_check(thread->stack_buffer);
+    furi_thread_set_callback(thread, callback);
+    furi_thread_set_context(thread, context);
+    return thread;
+}
+
+FuriThread* furi_thread_alloc_service_psram(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context) {
+    return furi_thread_alloc_service_impl(name, stack_size, callback, context, true);
+}
+
+FuriThread* furi_thread_alloc_ex_foreground(
+    const char* name,
+    uint32_t stack_size,
+    FuriThreadCallback callback,
+    void* context) {
+    FuriThread* thread = furi_thread_alloc();
+    furi_thread_set_name(thread, name);
+    furi_thread_set_stack_size_impl(thread, stack_size, true);
+    furi_thread_set_callback(thread, callback);
+    furi_thread_set_context(thread, context);
+    return thread;
+}
+
 void furi_thread_free(FuriThread* thread) {
     furi_check(thread);
     furi_check(thread->is_service == false);
@@ -279,7 +461,11 @@ void furi_thread_free(FuriThread* thread) {
     furi_thread_set_appid(thread, NULL);
 
     if(thread->stack_buffer) {
-        free(thread->stack_buffer);
+        if(thread->stack_from_foreground_reserve) {
+            furi_thread_foreground_stack_release(thread->stack_buffer);
+        } else {
+            heap_caps_free(thread->stack_buffer);
+        }
     }
 
     furi_string_free(thread->output.buffer);
@@ -310,22 +496,7 @@ void furi_thread_set_appid(FuriThread* thread, const char* appid) {
 }
 
 void furi_thread_set_stack_size(FuriThread* thread, size_t stack_size) {
-    furi_check(thread);
-    furi_check(thread->state == FuriThreadStateStopped);
-    furi_check(stack_size);
-    furi_check(stack_size <= THREAD_MAX_STACK_SIZE);
-    furi_check(stack_size % sizeof(StackType_t) == 0);
-    furi_check(thread->is_service == false);
-
-    if(thread->stack_buffer) {
-        heap_caps_free(thread->stack_buffer);
-    }
-
-    /* ESP32 needs larger stacks than STM32 (deeper SPI/FATFS call chains) */
-    if(stack_size < 4096) stack_size = 4096;
-
-    thread->stack_buffer = furi_thread_alloc_stack(thread->name, stack_size);
-    thread->stack_size = stack_size;
+    furi_thread_set_stack_size_impl(thread, stack_size, false);
 }
 
 void furi_thread_set_callback(FuriThread* thread, FuriThreadCallback callback) {
@@ -489,7 +660,7 @@ FuriThreadId furi_thread_get_current_id(void) {
 }
 
 FuriThread* furi_thread_get_current(void) {
-    FuriThread* thread = pvTaskGetThreadLocalStoragePointer(NULL, 0);
+    FuriThread* thread = pvTaskGetThreadLocalStoragePointer(NULL, FURI_TLS_INDEX);
     return thread;
 }
 
@@ -733,7 +904,7 @@ const char* furi_thread_get_appid(FuriThreadId thread_id) {
     const char* appid = "system";
 
     if(!FURI_IS_IRQ_MODE() && (hTask != NULL)) {
-        FuriThread* thread = (FuriThread*)pvTaskGetThreadLocalStoragePointer(hTask, 0);
+        FuriThread* thread = (FuriThread*)pvTaskGetThreadLocalStoragePointer(hTask, FURI_TLS_INDEX);
         if(thread) {
             appid = thread->appid;
         }

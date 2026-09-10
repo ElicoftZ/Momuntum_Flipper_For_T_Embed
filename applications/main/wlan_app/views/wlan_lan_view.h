@@ -23,6 +23,7 @@ typedef struct {
     char label2[WLAN_LAN_VIEW_LABEL_MAX]; // optional, 2. Spalte (z.B. Hostname)
     char value_label[WLAN_LAN_VIEW_VALUE_MAX]; // Text rechts (z.B. "VIP", "CUT")
     const Icon* value_icon;                    // hat Vorrang vor value_label
+    const Icon* leading_icon;                  // optionales Icon links vom Label
     bool is_default; // false → in Header-Counter <sel/total> als ausgewählt zählen
     bool centered;   // Label horizontal zentriert
     bool col1_small; // col1 in FontBatteryPercent rendern (z.B. "99%" RSSI)
@@ -48,6 +49,7 @@ typedef struct {
     WlanLanMenuItem menu_items[WLAN_LAN_VIEW_MAX_MENU_ITEMS];
     uint8_t menu_count;
     uint8_t menu_selected;
+    size_t scroll_counter; // marquee offset for the selected item's label
 } WlanLanViewModel;
 
 View* wlan_lan_view_alloc(void);
@@ -103,6 +105,18 @@ void wlan_lan_view_add_device_compact(
     const char* col2,
     const char* value_label,
     const Icon* value_icon,
+    bool is_default,
+    uint16_t user_id);
+
+/** Wie add_device, aber mit einem Icon links vom Label (z.B. Ordner/Datei
+ *  im SMB-Browser). leading_icon darf NULL sein. */
+void wlan_lan_view_add_device_icon(
+    View* view,
+    const char* col1,
+    const char* col2,
+    const char* value_label,
+    const Icon* value_icon,
+    const Icon* leading_icon,
     bool is_default,
     uint16_t user_id);
 

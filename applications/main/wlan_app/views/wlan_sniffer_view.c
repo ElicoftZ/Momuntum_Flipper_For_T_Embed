@@ -15,6 +15,9 @@ typedef struct {
     uint8_t channel;
     bool running;
     bool channel_mode;
+    bool saving;    // PCAP-Recording aktiv
+    uint32_t saved; // in die .pcap geschriebene Frames
+    uint32_t drops; // verworfene Frames (Ring voll)
 } WlanSnifferViewModel;
 
 struct WlanSnifferView {
@@ -70,15 +73,24 @@ static void wlan_sniffer_view_draw(Canvas* canvas, void* model) {
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str_aligned(canvas, 86, 22, AlignCenter, AlignBottom, "Received");
 
-    char buf[24];
+    char buf[40];
     format_count(m->received, buf, sizeof(buf));
     canvas_draw_str_aligned(canvas, 86, 38, AlignCenter, AlignBottom, buf);
 
     canvas_set_font(canvas, FontSecondary);
     uint32_t mins = m->elapsed_sec / 60;
     uint32_t secs = m->elapsed_sec % 60;
-    snprintf(buf, sizeof(buf), "Time: %lu:%02lu",
-        (unsigned long)mins, (unsigned long)secs);
+    if(m->running && m->saving) {
+        // Beim Aufzeichnen: Zeit + REC + Anzahl gespeicherter Frames (Ausrufe-
+        // zeichen wenn der Ring überläuft und Frames verworfen werden).
+        char sc[16];
+        format_count(m->saved, sc, sizeof(sc));
+        snprintf(buf, sizeof(buf), "%lu:%02lu REC %s%s",
+            (unsigned long)mins, (unsigned long)secs, sc, m->drops ? "!" : "");
+    } else {
+        snprintf(buf, sizeof(buf), "Time: %lu:%02lu",
+            (unsigned long)mins, (unsigned long)secs);
+    }
     canvas_draw_str_aligned(canvas, 86, 50, AlignCenter, AlignBottom, buf);
 
     // Soft-Buttons unten.
@@ -177,10 +189,23 @@ void wlan_sniffer_view_set_running(WlanSnifferView* v, bool running) {
     with_view_model(v->view, WlanSnifferViewModel * m, { m->running = running; }, true);
 }
 
+void wlan_sniffer_view_set_saving(WlanSnifferView* v, bool saving) {
+    with_view_model(v->view, WlanSnifferViewModel * m, { m->saving = saving; }, true);
+}
+
+void wlan_sniffer_view_set_saved(WlanSnifferView* v, uint32_t saved, uint32_t drops) {
+    with_view_model(v->view, WlanSnifferViewModel * m, {
+        m->saved = saved;
+        m->drops = drops;
+    }, true);
+}
+
 void wlan_sniffer_view_reset_counters(WlanSnifferView* v) {
     with_view_model(v->view, WlanSnifferViewModel * m, {
         m->received = 0;
         m->elapsed_sec = 0;
+        m->saved = 0;
+        m->drops = 0;
     }, true);
 }
 

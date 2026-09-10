@@ -143,10 +143,13 @@ uint8_t view_port_get_height(const ViewPort* view_port) {
 void view_port_enabled_set(ViewPort* view_port, bool enabled) {
     furi_check(view_port);
 
-    // We are not going to lockup system, but will notify you instead
-    // Make sure that you don't call viewport methods inside of another mutex, especially one that is used in draw call
+    /* A missed short lock is not ownership.  The old code logged the timeout,
+     * then touched the viewport and released a recursive mutex owned by another
+     * task.  Under input/WiFi load that turned ordinary contention into a
+     * permanently frozen GUI. */
     if(furi_mutex_acquire(view_port->mutex, 2) != FuriStatusOk) {
         FURI_LOG_W(TAG, "ViewPort lockup: see %s:%d", __FILE__, __LINE__ - 3);
+        return;
     }
     if(view_port->is_enabled != enabled) {
         view_port->is_enabled = enabled;
@@ -189,6 +192,7 @@ void view_port_update(ViewPort* view_port) {
     // Make sure that you don't call viewport methods inside of another mutex, especially one that is used in draw call
     if(furi_mutex_acquire(view_port->mutex, 2) != FuriStatusOk) {
         FURI_LOG_W(TAG, "ViewPort lockup: see %s:%d", __FILE__, __LINE__ - 3);
+        return;
     }
 
     if(view_port->gui && view_port->is_enabled) gui_update(view_port->gui);
@@ -210,6 +214,7 @@ void view_port_draw(ViewPort* view_port, Canvas* canvas) {
     // Make sure that you don't call viewport methods inside of another mutex, especially one that is used in draw call
     if(furi_mutex_acquire(view_port->mutex, 2) != FuriStatusOk) {
         FURI_LOG_W(TAG, "ViewPort lockup: see %s:%d", __FILE__, __LINE__ - 3);
+        return;
     }
 
     furi_check(view_port->gui);
@@ -228,12 +233,21 @@ void view_port_input(ViewPort* view_port, InputEvent* event) {
     furi_check(furi_mutex_acquire(view_port->mutex, FuriWaitForever) == FuriStatusOk);
     furi_check(view_port->gui);
 
-    if(view_port->input_callback) {
-        ViewPortOrientation orientation = view_port_get_orientation(view_port);
-        view_port_map_input(event, orientation);
-        view_port->input_callback(event, view_port->input_callback_context);
-    }
+    /* Never hold the viewport lock while calling application code.  A view
+     * dispatcher's input callback may have to enqueue work while its app is
+     * starting/stopping WiFi; holding this lock across that boundary prevents
+     * the GUI task from drawing and prevents every other task from updating the
+     * viewport.  GUI owns the viewport lifetime while dispatching this input,
+     * so copying the callback/context is safe. */
+    const ViewPortInputCallback callback = view_port->input_callback;
+    void* callback_context = view_port->input_callback_context;
+    const ViewPortOrientation orientation = view_port->orientation;
     furi_check(furi_mutex_release(view_port->mutex) == FuriStatusOk);
+
+    if(callback) {
+        view_port_map_input(event, orientation);
+        callback(event, callback_context);
+    }
 }
 
 void view_port_set_orientation(ViewPort* view_port, ViewPortOrientation orientation) {
@@ -249,6 +263,7 @@ ViewPortOrientation view_port_get_orientation(const ViewPort* view_port) {
     // Make sure that you don't call viewport methods inside of another mutex, especially one that is used in draw call
     if(furi_mutex_acquire(view_port->mutex, 2) != FuriStatusOk) {
         FURI_LOG_W(TAG, "ViewPort lockup: see %s:%d", __FILE__, __LINE__ - 3);
+        return ViewPortOrientationHorizontal;
     }
     ViewPortOrientation orientation = view_port->orientation;
     furi_mutex_release(view_port->mutex);

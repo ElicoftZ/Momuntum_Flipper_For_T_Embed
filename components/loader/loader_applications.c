@@ -1,13 +1,16 @@
 #include "loader.h"
 #include "loader_applications.h"
 #include <dialogs/dialogs.h>
-#include <flipper_application/flipper_application.h>
 #include <assets_icons.h>
 #include <gui/gui.h>
 #include <gui/view_holder.h>
 #include <gui/modules/loading.h>
+#include <storage/storage.h>
 #include <toolbox/path.h>
+#include <dolphin/dolphin.h>
 #include <esp_rom_sys.h>
+#include <esp_heap_caps.h>
+#include <flipper_application/flipper_application.h>
 
 #define TAG "LoaderApplications"
 
@@ -29,7 +32,7 @@ static int32_t loader_applications_thread(void* p);
 LoaderApplications* loader_applications_alloc(void (*closed_cb)(void*), void* context) {
     LoaderApplications* loader_applications = malloc(sizeof(LoaderApplications));
     loader_applications->thread =
-        furi_thread_alloc_ex(TAG, 4096, loader_applications_thread, (void*)loader_applications);
+        furi_thread_alloc_ex_psram(TAG, 4096, loader_applications_thread, (void*)loader_applications);
     loader_applications->closed_cb = closed_cb;
     loader_applications->context = context;
     furi_thread_start(loader_applications->thread);
@@ -43,11 +46,21 @@ void loader_applications_free(LoaderApplications* loader_applications) {
     free(loader_applications);
 }
 
+#define APP_METADATA_CACHE_SIZE 64
+
+typedef struct {
+    FuriString* path;
+    FlipperApplicationManifest manifest;
+    bool valid;
+} AppMetadata;
+
 typedef struct {
     FuriString* file_path;
     DialogsApp* dialogs;
-    Storage* storage;
     Loader* loader;
+    Storage* storage;
+    AppMetadata* metadata;
+    size_t metadata_next;
 
     Gui* gui;
     ViewHolder* view_holder;
@@ -58,8 +71,11 @@ static LoaderApplicationsApp* loader_applications_app_alloc(void) {
     LoaderApplicationsApp* app = malloc(sizeof(LoaderApplicationsApp)); //-V799
     app->file_path = furi_string_alloc_set(EXT_PATH("apps"));
     app->dialogs = furi_record_open(RECORD_DIALOGS);
-    app->storage = furi_record_open(RECORD_STORAGE);
     app->loader = furi_record_open(RECORD_LOADER);
+    app->storage = furi_record_open(RECORD_STORAGE);
+    /* Bounded, session-only cache. Leave DMA RAM available if PSRAM is full. */
+    app->metadata = heap_caps_calloc(
+        APP_METADATA_CACHE_SIZE, sizeof(AppMetadata), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
     app->gui = furi_record_open(RECORD_GUI);
     app->view_holder = view_holder_alloc();
@@ -80,25 +96,56 @@ static void loader_applications_app_free(LoaderApplicationsApp* app) {
     furi_record_close(RECORD_LOADER);
     furi_record_close(RECORD_DIALOGS);
     furi_record_close(RECORD_STORAGE);
+    if(app->metadata) {
+        for(size_t i = 0; i < APP_METADATA_CACHE_SIZE; i++) {
+            if(app->metadata[i].path) furi_string_free(app->metadata[i].path);
+        }
+        free(app->metadata);
+    }
     furi_string_free(app->file_path);
     free(app);
 }
 
 static bool loader_applications_item_callback(
-    FuriString* path,
-    void* context,
-    uint8_t** icon_ptr,
-    FuriString* item_name) {
-    LoaderApplicationsApp* loader_applications_app = context;
-    furi_assert(loader_applications_app);
-    if(furi_string_end_with(path, ".fap")) {
-        return flipper_application_load_name_and_icon(
-            path, loader_applications_app->storage, icon_ptr, item_name);
-    } else {
-        path_extract_filename(path, item_name, false);
-        memcpy(*icon_ptr, icon_get_frame_data(&I_js_script_10px, 0), FAP_MANIFEST_MAX_ICON_SIZE);
-        return true;
+    FuriString* path, void* context, uint8_t** icon_ptr, FuriString* item_name) {
+    LoaderApplicationsApp* app = context;
+    if(!furi_string_end_withi(path, ".fap")) return false;
+
+    AppMetadata uncached = {0};
+    AppMetadata* metadata = &uncached;
+    if(app->metadata) {
+        for(size_t i = 0; i < APP_METADATA_CACHE_SIZE; i++) {
+            AppMetadata* cached = &app->metadata[i];
+            if(cached->path && furi_string_equal(cached->path, path)) {
+                metadata = cached;
+                break;
+            }
+        }
     }
+    if(metadata == &uncached) {
+        if(app->metadata) {
+            metadata = &app->metadata[app->metadata_next++ % APP_METADATA_CACHE_SIZE];
+            if(!metadata->path) metadata->path = furi_string_alloc();
+            furi_string_set(metadata->path, path);
+        }
+        metadata->valid = false;
+        FlipperApplication* fap = flipper_application_alloc(app->storage, NULL);
+        if(fap) {
+            if(flipper_application_preload_manifest(fap, furi_string_get_cstr(path)) ==
+               FlipperApplicationPreloadStatusSuccess) {
+                metadata->manifest = *flipper_application_get_manifest(fap);
+                metadata->valid = true;
+            }
+            flipper_application_free(fap);
+        }
+    }
+    if(!metadata->valid) return false;
+    furi_string_set_strn(
+        item_name, metadata->manifest.name,
+        strnlen(metadata->manifest.name, FAP_MANIFEST_MAX_APP_NAME_LENGTH));
+    if(!metadata->manifest.has_icon || !*icon_ptr) return false;
+    memcpy(*icon_ptr, metadata->manifest.icon, FAP_MANIFEST_MAX_ICON_SIZE);
+    return true;
 }
 
 static bool loader_applications_select_app(LoaderApplicationsApp* loader_applications_app) {
@@ -106,7 +153,7 @@ static bool loader_applications_select_app(LoaderApplicationsApp* loader_applica
     const DialogsFileBrowserOptions browser_options = {
         .extension = ".fap|.js",
         .skip_assets = true,
-        .icon = &I_unknown_10px,
+        .icon = &I_file_10px,
         .hide_ext = true,
         .item_loader_callback = loader_applications_item_callback,
         .item_loader_context = loader_applications_app,
@@ -148,6 +195,18 @@ static void loader_pubsub_callback(const void* message, void* context) {
 static void
     loader_applications_start_app(LoaderApplicationsApp* app, const char* name, const char* args) {
     loader_applications_trace("start_app_begin");
+
+    /* External apps earn XP here rather than awarding it themselves -- the deed
+     * weights for PluginStart/GameStart/GameWin are 0 for exactly that reason.
+     * Games and media are excluded: only tools count as using the device.
+     *
+     * NOTE this must live in components/loader, the copy that is actually built.
+     * The same call in applications/services/loader/ is dead code, which is why
+     * launching a FAP awarded nothing at all before this. */
+    if(!furi_string_start_with_str(app->file_path, EXT_PATH("apps/Games/")) &&
+       !furi_string_start_with_str(app->file_path, EXT_PATH("apps/Media/"))) {
+        dolphin_deed(DolphinDeedPluginInternalStart);
+    }
     // load app
     FuriThreadId thread_id = furi_thread_get_current_id();
     FuriPubSubSubscription* subscription =

@@ -315,7 +315,7 @@ static bool browser_folder_load_chunked(
                         browser->list_item_cb(
                             browser->cb_ctx,
                             name_str,
-                            items_cnt,
+                            offset + items_cnt,
                             file_info_is_dir(&file_info),
                             false);
                     }
@@ -546,7 +546,7 @@ BrowserWorker* file_browser_worker_alloc(
     }
 
     browser->thread =
-        furi_thread_alloc_ex("BrowserWorker", BROWSER_WORKER_STACK_SIZE, browser_worker, browser);
+        furi_thread_alloc_ex_psram("BrowserWorker", BROWSER_WORKER_STACK_SIZE, browser_worker, browser);
     furi_check(browser->thread);
 
     return browser;

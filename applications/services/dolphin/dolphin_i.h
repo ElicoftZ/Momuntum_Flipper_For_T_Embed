@@ -15,6 +15,7 @@ typedef enum {
     DolphinEventTypeReloadState,
     DolphinEventTypeSettingsGet,
     DolphinEventTypeSettingsSet,
+    DolphinEventTypePrepareSleep,
 } DolphinEventType;
 
 typedef struct {

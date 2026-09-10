@@ -1,7 +1,18 @@
 #include "view_i.h"
+#include <esp_heap_caps.h>
+
+/* Views and their models are accessed by tasks, never by DMA or cache-off
+ * ISRs. Keep the small, numerous UI allocations out of the internal heap.
+ * The model's FreeRTOS mutex still uses its own internal allocation. */
+static void* view_alloc_data(size_t size) {
+    void* data = heap_caps_calloc(1, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if(!data) data = calloc(1, size);
+    furi_check(data);
+    return data;
+}
 
 View* view_alloc(void) {
-    View* view = malloc(sizeof(View));
+    View* view = view_alloc_data(sizeof(View));
     view_init(view);
     return view;
 }
@@ -89,9 +100,9 @@ void view_allocate_model(View* view, ViewModelType type, size_t size) {
     furi_check(view->model == NULL);
     view->model_type = type;
     if(view->model_type == ViewModelTypeLockFree) {
-        view->model = malloc(size);
+        view->model = view_alloc_data(size);
     } else if(view->model_type == ViewModelTypeLocking) {
-        ViewModelLocking* model = malloc(sizeof(ViewModelLocking) + size);
+        ViewModelLocking* model = view_alloc_data(sizeof(ViewModelLocking) + size);
         model->mutex = furi_mutex_alloc(FuriMutexTypeRecursive);
         view->model = model;
     } else {

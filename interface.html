@@ -13,11 +13,12 @@
                 name: 'LilyGo T-Embed CC1101',
                 chip: 'ESP32-S3',
                 flashSize: '16MB',
-                // Single-app image: factory app at 0x10000 (partitions_singleapp_16mb.csv).
+                // Dual-boot image: factory app at 0x20000 (partitions_singleapp_16mb.csv).
+                // otadata at 0x10000 is left erased, which boots factory.
                 parts: [
                     { path: 'release/t-embed/latest/bootloader.bin', offset: 0x0 },
                     { path: 'release/t-embed/latest/partition-table.bin', offset: 0x8000 },
-                    { path: 'release/t-embed/latest/furi_esp32.bin', offset: 0x10000 },
+                    { path: 'release/t-embed/latest/furi_esp32.bin', offset: 0x20000 },
                 ],
             },
             'waveshare-c6': {

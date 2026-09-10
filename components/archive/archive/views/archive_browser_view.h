@@ -110,6 +110,7 @@ typedef struct {
     bool move_fav;
     bool list_loading;
     bool folder_loading;
+    bool ok_held;
 
     uint32_t item_cnt;
     int32_t item_idx;

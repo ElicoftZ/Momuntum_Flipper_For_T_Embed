@@ -1,10 +1,14 @@
 #include "loader.h"
+#include <momentum/settings.h>
 #include "loader_i.h"
 #include <applications.h>
+#include <furi_hal.h>
+#include <dolphin/dolphin.h>
 #include <flipper_application/flipper_application.h>
 #include <flipper_application/api_hashtable/api_hashtable.h>
 #include <storage/storage.h>
 #include <toolbox/path.h>
+#include <dialogs/dialogs.h>
 
 extern const ElfApiInterface* const firmware_api_interface;
 
@@ -47,6 +51,33 @@ LoaderStatus loader_start(
     return result.value;
 }
 
+static void loader_show_gui_error(const FuriString* error_message) {
+    const char* detail = furi_string_get_cstr(error_message);
+    const char* missing = strstr(detail, "Unsupported ARM import: ");
+    FuriString* text = furi_string_alloc();
+    if(missing) {
+        missing += strlen("Unsupported ARM import: ");
+        furi_string_printf(text, "ARM API missing:\n%.48s", missing);
+    } else {
+        /* Keep the reason; the log retains the full path and diagnostic. */
+        const char* reason = strrchr(detail, ':');
+        furi_string_set(text, reason ? reason + 1 : detail);
+        if(furi_string_empty(text)) furi_string_set(text, "Unable to load app");
+    }
+
+    DialogsApp* dialogs = furi_record_open(RECORD_DIALOGS);
+    DialogMessage* message = dialog_message_alloc();
+    dialog_message_set_header(
+        message, missing ? "Unsupported app" : "App load failed", 64, 2, AlignCenter, AlignTop);
+    dialog_message_set_text(message, furi_string_get_cstr(text), 2, 17, AlignLeft, AlignTop);
+    /* T-Embed has OK and Back, but no Left/Right buttons. */
+    dialog_message_set_buttons(message, NULL, "OK", NULL);
+    dialog_message_show(dialogs, message);
+    dialog_message_free(message);
+    furi_record_close(RECORD_DIALOGS);
+    furi_string_free(text);
+}
+
 LoaderStatus
     loader_start_with_gui_error(Loader* loader, const char* name, const char* args) {
     furi_check(loader);
@@ -57,6 +88,7 @@ LoaderStatus
         loader_start_internal(loader, name, args, error_message);
     if(result.value != LoaderStatusOk) {
         FURI_LOG_E(TAG, "Start error: %s", furi_string_get_cstr(error_message));
+        loader_show_gui_error(error_message);
     }
     furi_string_free(error_message);
     return result.value;
@@ -123,6 +155,15 @@ void loader_show_menu(Loader* loader) {
     furi_message_queue_put(loader->queue, &message, FuriWaitForever);
 }
 
+void loader_show_settings(Loader* loader) {
+    furi_check(loader);
+
+    LoaderMessage message;
+    message.type = LoaderMessageTypeShowSettings;
+
+    furi_message_queue_put(loader->queue, &message, FuriWaitForever);
+}
+
 FuriPubSub* loader_get_pubsub(Loader* loader) {
     furi_check(loader);
     return loader->pubsub;
@@ -133,9 +174,17 @@ void loader_enqueue_launch(
     const char* name,
     const char* args,
     LoaderDeferredLaunchFlag flags) {
-    UNUSED(flags);
-    /* ESP32 port: no deferred launch queue, just start directly */
-    loader_start_detached_with_gui_error(instance, name, args);
+    furi_check(instance);
+    furi_check(name);
+    LoaderMessage message = {
+        .type = LoaderMessageTypeEnqueueLaunch,
+        .defer_start = {
+            .name_or_path = strdup(name),
+            .args = args ? strdup(args) : NULL,
+            .flags = flags,
+        },
+    };
+    loader_generic_synchronous_request(instance, &message);
 }
 
 bool loader_get_application_launch_path(Loader* instance, FuriString* path) {
@@ -226,13 +275,31 @@ static void loader_start_internal_app(
     const char* args) {
     FURI_LOG_I(TAG, "Starting %s", app->name);
 
+    /* XP for opening an internal app, mirroring what loader_applications.c
+     * already does for external FAPs.
+     *
+     * Before this, only in-app ACTIONS scored -- reading a card, sending a
+     * signal, saving a file -- so the apps with no such action (WiFi, NRF24,
+     * BLE Spam, ESP-NOW, Power Profiler, Clock, the games, the settings
+     * screens) could never contribute anything at all.
+     *
+     * External FAPs take loader_start_external_fap() instead and are awarded
+     * there, so nothing is counted twice. The DolphinAppPlugin category is
+     * capped at 69 points a day, which is what stops open-close-repeat from
+     * being a farm. */
+    dolphin_deed(DolphinDeedPluginInternalStart);
+
+    /* Remembered so deep sleep can come back to this app. app->name is what
+     * loader_find_application_by_name() matches, so it launches again as-is. */
+    furi_hal_rtc_set_resume_app(app->name);
+
     furi_assert(loader->app.args == NULL);
     if(args && strlen(args) > 0) {
         loader->app.args = strdup(args);
     }
 
-    loader->app.thread =
-        furi_thread_alloc_ex(app->name, app->stack_size, app->app, loader->app.args);
+    loader->app.thread = furi_thread_alloc_ex_foreground(
+        app->name, app->stack_size, app->app, loader->app.args);
 
     furi_thread_set_appid(loader->app.thread, app->appid);
     furi_thread_set_state_context(loader->app.thread, loader);
@@ -298,17 +365,19 @@ static LoaderStatus loader_start_external_fap(
             flipper_application_map_to_memory(app);
 
         if(load_status != FlipperApplicationLoadStatusSuccess) {
+            const char* detail = flipper_application_get_load_error(app);
+            if(!detail) detail = flipper_application_load_status_to_string(load_status);
             if(error_message) {
                 furi_string_printf(
                     error_message,
                     "Load failed: %s",
-                    flipper_application_load_status_to_string(load_status));
+                    detail);
             }
             FURI_LOG_E(
                 TAG,
                 "Load failed for %s: %s",
                 path,
-                flipper_application_load_status_to_string(load_status));
+                detail);
             break;
         }
 
@@ -354,10 +423,12 @@ static LoaderStatus loader_start_external_fap(
     return status;
 }
 
-static void loader_do_menu_show(Loader* loader) {
+static void loader_do_menu_show(Loader* loader, bool start_in_settings) {
     if(!loader->loader_menu) {
+        LoaderEvent event = {.type = LoaderEventTypeMenuOpened};
+        furi_pubsub_publish(loader->pubsub, &event);
         loader->loader_menu =
-            loader_menu_alloc(loader_menu_closed_callback, loader);
+            loader_menu_alloc(loader_menu_closed_callback, loader, start_in_settings);
     }
 }
 
@@ -365,11 +436,15 @@ static void loader_do_menu_closed(Loader* loader) {
     if(loader->loader_menu) {
         loader_menu_free(loader->loader_menu);
         loader->loader_menu = NULL;
+        LoaderEvent event = {.type = LoaderEventTypeMenuClosed};
+        furi_pubsub_publish(loader->pubsub, &event);
     }
 }
 
 static void loader_do_applications_show(Loader* loader) {
     if(!loader->loader_applications) {
+        LoaderEvent event = {.type = LoaderEventTypeApplicationsBrowserOpened};
+        furi_pubsub_publish(loader->pubsub, &event);
         loader->loader_applications =
             loader_applications_alloc(loader_applications_closed_callback, loader);
     }
@@ -379,11 +454,25 @@ static void loader_do_applications_closed(Loader* loader) {
     if(loader->loader_applications) {
         loader_applications_free(loader->loader_applications);
         loader->loader_applications = NULL;
+        LoaderEvent event = {.type = LoaderEventTypeApplicationsBrowserClosed};
+        furi_pubsub_publish(loader->pubsub, &event);
     }
 }
 
 static bool loader_do_is_locked(Loader* loader) {
     return loader->app.thread != NULL;
+}
+
+/** True for the Dual Boot app by menu name or by .fap path, since it can be
+ * reached either way. */
+static bool loader_name_is_dualboot(const char* name) {
+    if(!name) return false;
+    if(strcmp(name, "Dual Boot") == 0) return true;
+    if(strcmp(name, "dualboot") == 0) return true;
+    /* Path form: match the basename so any apps dir is covered. */
+    const char* base = strrchr(name, '/');
+    base = base ? base + 1 : name;
+    return strcmp(base, "dualboot.fap") == 0;
 }
 
 static LoaderMessageLoaderStatusResult loader_do_start_by_name(
@@ -405,6 +494,21 @@ static LoaderMessageLoaderStatusResult loader_do_start_by_name(
                 furi_string_set(error_message, "Loader is locked");
             }
             FURI_LOG_E(TAG, "Loader is locked");
+            break;
+        }
+
+        /* Hiding Dual Boot has to mean unreachable, not merely absent from
+         * the menu: it is still on the card as a .fap and still launchable by
+         * name or path from the file browser, a favourite, an RPC call or a
+         * saved menu. One OK press reboots the board into another firmware,
+         * so for a public build the menu filter alone is not enough. This is
+         * the single choke point every launch goes through. */
+        if(momentum_settings.hide_dualboot && loader_name_is_dualboot(name)) {
+            status.value = LoaderStatusErrorUnknownApp;
+            if(error_message) {
+                furi_string_set(error_message, "Dual Boot is disabled in settings");
+            }
+            FURI_LOG_W(TAG, "blocked hidden app: %s", name);
             break;
         }
 
@@ -443,6 +547,28 @@ static LoaderMessageLoaderStatusResult loader_do_start_by_name(
     return status;
 }
 
+static void loader_do_next_deferred_launch(Loader* loader) {
+    if(loader_do_is_locked(loader)) return;
+
+    LoaderDeferredLaunchRecord record;
+    while(loader_queue_pop(&loader->launch_queue, &record)) {
+        FuriString* error_message = furi_string_alloc();
+        FURI_LOG_I(TAG, "Deferred launch: %s", record.name_or_path);
+        LoaderMessageLoaderStatusResult status = loader_do_start_by_name(
+            loader, record.name_or_path, record.args, error_message);
+        if(status.value != LoaderStatusOk) {
+            FURI_LOG_E(TAG, "Deferred start error: %s", furi_string_get_cstr(error_message));
+            if(record.flags & LoaderDeferredLaunchFlagGui) loader_show_gui_error(error_message);
+        }
+        furi_string_free(error_message);
+        loader_queue_item_clear(&record);
+        if(loader_do_is_locked(loader)) return;
+    }
+
+    LoaderEvent event = {.type = LoaderEventTypeNoMoreAppsInQueue};
+    furi_pubsub_publish(loader->pubsub, &event);
+}
+
 static bool loader_do_lock(Loader* loader) {
     if(loader->app.thread) {
         return false;
@@ -479,14 +605,19 @@ static void loader_do_app_closed(Loader* loader) {
     FURI_LOG_I(
         TAG, "Application stopped. Free heap: %zu", memmgr_get_free_heap());
 
+    /* Closed on purpose, so there is nothing to come back to after sleep. */
+    furi_hal_rtc_set_resume_app(NULL);
+
+    /* The menu outlives an app launch, so an app that rewrote the layout — the
+     * Momentum app's Mainmenu page — would otherwise not be reflected until
+     * the user went back to the desktop and reopened the menu. */
+    loader_menu_reload(loader->loader_menu);
+
     LoaderEvent event;
     event.type = LoaderEventTypeApplicationStopped;
     furi_pubsub_publish(loader->pubsub, &event);
 
-    // Emit queue empty since we don't have a deferred launch queue
-    LoaderEvent empty_event;
-    empty_event.type = LoaderEventTypeNoMoreAppsInQueue;
-    furi_pubsub_publish(loader->pubsub, &empty_event);
+    loader_do_next_deferred_launch(loader);
 }
 
 // app
@@ -497,6 +628,25 @@ int32_t loader_srv(void* p) {
     furi_record_create(RECORD_LOADER, loader);
 
     FURI_LOG_I(TAG, "Loader service started");
+
+    /* Reopen whatever idle sleep interrupted.
+     *
+     * This has to happen here, before the message loop, and not from
+     * loader_on_system_start(): the desktop reads loader_is_locked() in
+     * desktop_alloc() to learn an app is already up, and it starts after the
+     * loader, so the app must be running by then. Launching later instead makes
+     * desktop_loader_callback() run, which blocks up to 3 s on a semaphore that
+     * only a running view dispatcher releases — a furi_check, so a crash.
+     *
+     * The HAL only reports a target that was armed by the idle path and woken
+     * from deep sleep, so a deliberate power off or a reboot does not resume. */
+    if(furi_hal_rtc_get_boot_mode() == FuriHalRtcBootModeNormal) {
+        char resume_app[FURI_HAL_RTC_RESUME_APP_SIZE];
+        if(furi_hal_rtc_take_resume_app(resume_app, sizeof(resume_app))) {
+            FURI_LOG_I(TAG, "Resuming after deep sleep: %s", resume_app);
+            loader_do_start_by_name(loader, resume_app, NULL, NULL);
+        }
+    }
 
     LoaderMessage message;
     while(true) {
@@ -532,7 +682,10 @@ int32_t loader_srv(void* p) {
                 break;
             }
             case LoaderMessageTypeShowMenu:
-                loader_do_menu_show(loader);
+                loader_do_menu_show(loader, false);
+                break;
+            case LoaderMessageTypeShowSettings:
+                loader_do_menu_show(loader, true);
                 break;
             case LoaderMessageTypeMenuClosed:
                 loader_do_menu_closed(loader);
@@ -553,6 +706,12 @@ int32_t loader_srv(void* p) {
                 break;
             case LoaderMessageTypeUnlock:
                 loader_do_unlock(loader);
+                loader_do_next_deferred_launch(loader);
+                break;
+            case LoaderMessageTypeEnqueueLaunch:
+                furi_check(loader_queue_push(&loader->launch_queue, &message.defer_start));
+                api_lock_unlock(message.api_lock);
+                loader_do_next_deferred_launch(loader);
                 break;
             }
         }

@@ -12,6 +12,7 @@
 #include <core/common_defines.h>
 #include <core/log.h>
 #include <esp_rom_sys.h>
+#include <esp_heap_caps.h>
 #include "m-algo.h"
 #include <m-array.h>
 #include <momentum/settings.h>
@@ -24,6 +25,11 @@
 #define ITEM_LIST_LEN_MAX 50
 
 #define CUSTOM_ICON_MAX_SIZE 32
+
+static uint8_t* browser_icon_alloc(void) {
+    return heap_caps_malloc_prefer(
+        CUSTOM_ICON_MAX_SIZE, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_DEFAULT);
+}
 
 #define SCROLL_INTERVAL (333)
 #define SCROLL_DELAY    (2)
@@ -57,8 +63,10 @@ static void BrowserItem_t_init_set(BrowserItem_t* obj, const BrowserItem_t* src)
     obj->path = furi_string_alloc_set(src->path);
     obj->display_name = furi_string_alloc_set(src->display_name);
     if(src->custom_icon_data) {
-        obj->custom_icon_data = malloc(CUSTOM_ICON_MAX_SIZE);
-        memcpy(obj->custom_icon_data, src->custom_icon_data, CUSTOM_ICON_MAX_SIZE);
+        obj->custom_icon_data = browser_icon_alloc();
+        if(obj->custom_icon_data) {
+            memcpy(obj->custom_icon_data, src->custom_icon_data, CUSTOM_ICON_MAX_SIZE);
+        }
     } else {
         obj->custom_icon_data = NULL;
     }
@@ -70,8 +78,12 @@ static void BrowserItem_t_set(BrowserItem_t* obj, const BrowserItem_t* src) {
     furi_string_set(obj->path, src->path);
     furi_string_set(obj->display_name, src->display_name);
     if(src->custom_icon_data) {
-        memcpy(obj->custom_icon_data, src->custom_icon_data, CUSTOM_ICON_MAX_SIZE);
+        if(!obj->custom_icon_data) obj->custom_icon_data = browser_icon_alloc();
+        if(obj->custom_icon_data) {
+            memcpy(obj->custom_icon_data, src->custom_icon_data, CUSTOM_ICON_MAX_SIZE);
+        }
     } else {
+        free(obj->custom_icon_data);
         obj->custom_icon_data = NULL;
     }
 }
@@ -204,7 +216,8 @@ static void file_browser_view_exit_callback(void* context) {
 FileBrowser* file_browser_alloc(FuriString* result_path) {
     furi_check(result_path);
 
-    FileBrowser* browser = malloc(sizeof(FileBrowser));
+    FileBrowser* browser = calloc(1, sizeof(FileBrowser));
+    furi_check(browser);
     browser->view = view_alloc();
     view_allocate_model(browser->view, ViewModelTypeLocking, sizeof(FileBrowserModel));
     view_set_context(browser->view, browser);
@@ -219,7 +232,16 @@ FileBrowser* file_browser_alloc(FuriString* result_path) {
     browser->result_path = result_path;
 
     with_view_model(
-        browser->view, FileBrowserModel * model, { items_array_init(model->items); }, false);
+        browser->view,
+        FileBrowserModel * model,
+        {
+            /* view_allocate_model() intentionally does not clear model data.
+             * The GUI can draw immediately after the view is attached, before
+             * the worker's first folder callback fills these fields. */
+            memset(model, 0, sizeof(*model));
+            items_array_init(model->items);
+        },
+        false);
 
     return browser;
 }
@@ -460,7 +482,7 @@ static void browser_list_item_cb(
         } else {
             item.type = BrowserItemTypeFile;
             if(browser->item_callback) {
-                item.custom_icon_data = malloc(CUSTOM_ICON_MAX_SIZE);
+                item.custom_icon_data = browser_icon_alloc();
                 if(!browser->item_callback(
                        item_path,
                        browser->item_context,
@@ -513,6 +535,7 @@ static void browser_list_item_cb(
                                 break;
                             }
                         }
+                        furi_string_free(selected);
                     }
                 }
                 model->list_loading = false;

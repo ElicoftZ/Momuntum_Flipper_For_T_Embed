@@ -22,10 +22,24 @@ static void u2f_app_tick_event_callback(void* context) {
 }
 
 U2fApp* u2f_app_alloc(void) {
-    U2fApp* app = malloc(sizeof(U2fApp));
+    /* calloc: the struct now carries pointers and PIN buffers that are read
+     * before anything assigns them. */
+    U2fApp* app = calloc(1, sizeof(U2fApp));
 
     app->gui = furi_record_open(RECORD_GUI);
     app->notifications = furi_record_open(RECORD_NOTIFICATION);
+
+    /* A security key has to stay awake and readable for as long as it is plugged
+     * in: the host may take minutes to ask for a touch, and there is no input in
+     * the meantime to reset the idle timers.
+     *
+     * The two do different jobs. Insomnia blocks DEEP SLEEP, which would power
+     * the board down and drop USB entirely -- the host would see the key vanish
+     * mid-ceremony. Enforcing the backlight blocks the DIM, which insomnia does
+     * not (notification_display_timer dims regardless), and which would otherwise
+     * hide the "Press OK" prompt exactly when it matters. */
+    furi_hal_power_insomnia_enter();
+    notification_message(app->notifications, &sequence_display_backlight_enforce_on);
 
     app->view_dispatcher = view_dispatcher_alloc();
     app->scene_manager = scene_manager_alloc(&u2f_scene_handlers, app);
@@ -47,6 +61,14 @@ U2fApp* u2f_app_alloc(void) {
     view_dispatcher_add_view(
         app->view_dispatcher, U2fAppViewMain, u2f_view_get_view(app->u2f_view));
 
+    app->submenu = submenu_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, U2fAppViewSettings, submenu_get_view(app->submenu));
+
+    app->pin_input = u2f_pin_input_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, U2fAppViewPinInput, u2f_pin_input_get_view(app->pin_input));
+
     if(furi_hal_usb_is_locked()) {
         app->error = U2fAppErrorCloseRpc;
         scene_manager_next_scene(app->scene_manager, U2fSceneError);
@@ -66,6 +88,12 @@ void u2f_app_free(U2fApp* app) {
     furi_assert(app);
 
     // Views
+    view_dispatcher_remove_view(app->view_dispatcher, U2fAppViewPinInput);
+    u2f_pin_input_free(app->pin_input);
+
+    view_dispatcher_remove_view(app->view_dispatcher, U2fAppViewSettings);
+    submenu_free(app->submenu);
+
     view_dispatcher_remove_view(app->view_dispatcher, U2fAppViewMain);
     u2f_view_free(app->u2f_view);
 
@@ -76,6 +104,10 @@ void u2f_app_free(U2fApp* app) {
     // View dispatcher
     view_dispatcher_free(app->view_dispatcher);
     scene_manager_free(app->scene_manager);
+
+    /* Release the display and sleep locks before dropping the record. */
+    notification_message(app->notifications, &sequence_display_backlight_enforce_auto);
+    furi_hal_power_insomnia_exit();
 
     // Close records
     furi_record_close(RECORD_GUI);

@@ -7,7 +7,10 @@
 IconAnimation* icon_animation_alloc(const Icon* icon) {
     furi_check(icon);
 
-    IconAnimation* instance = malloc(sizeof(IconAnimation));
+    /* frame/animating/callback used to contain heap garbage here. That made
+     * menu icons intermittently index past their frame table or treat an idle
+     * timer as active after returning from an app. */
+    IconAnimation* instance = calloc(1, sizeof(IconAnimation));
     instance->icon = asset_packs_swap_icon(icon);
     instance->timer =
         furi_timer_alloc(icon_animation_timer_callback, FuriTimerTypePeriodic, instance);
@@ -71,14 +74,21 @@ uint8_t icon_animation_get_height(const IconAnimation* instance) {
 void icon_animation_start(IconAnimation* instance) {
     furi_check(instance);
 
+    /* A one-frame Icon is valid artwork, just not an animation. Menus also use
+     * this type for FAP/file icons, so selecting one must remain a no-op rather
+     * than asserting on its intentionally zero frame rate. */
+    if(instance->icon->frame_count <= 1 || instance->icon->frame_rate == 0) {
+        instance->frame = 0;
+        instance->animating = false;
+        return;
+    }
+
     if(!instance->animating) {
         instance->animating = true;
-        furi_assert(instance->icon->frame_rate);
-        if (instance->icon->frame_rate != 0) 
-            furi_check(
-                furi_timer_start(
-                    instance->timer,
-                    (furi_kernel_get_tick_frequency() / instance->icon->frame_rate)) == FuriStatusOk);
+        furi_check(
+            furi_timer_start(
+                instance->timer,
+                (furi_kernel_get_tick_frequency() / instance->icon->frame_rate)) == FuriStatusOk);
     }
 }
 
@@ -88,8 +98,8 @@ void icon_animation_stop(IconAnimation* instance) {
     if(instance->animating) {
         instance->animating = false;
         furi_timer_stop(instance->timer);
-        instance->frame = 0;
     }
+    instance->frame = 0;
 }
 
 bool icon_animation_is_last_frame(const IconAnimation* instance) {

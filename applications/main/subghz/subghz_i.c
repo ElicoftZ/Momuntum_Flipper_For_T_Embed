@@ -135,12 +135,32 @@ bool subghz_key_load(SubGhz* subghz, const char* file_path, bool show_dialog) {
                 break;
             }
         }
-        size_t preset_index =
-            subghz_setting_get_inx_preset_by_name(setting, furi_string_get_cstr(temp_str));
+        /* Saved files are user-controlled and may name a preset this build
+         * does not provide. The legacy lookup deliberately crashes when an
+         * internal invariant is broken, so validate the external name before
+         * calling it. */
+        const char* preset_name = furi_string_get_cstr(temp_str);
+        int preset_index = -1;
+        const size_t preset_count = subghz_setting_get_preset_count(setting);
+        for(size_t i = 0; i < preset_count; i++) {
+            if(strcmp(subghz_setting_get_preset_name(setting, i), preset_name) == 0) {
+                preset_index = (int)i;
+                break;
+            }
+        }
+        if(preset_index < 0) {
+            FURI_LOG_E(TAG, "Preset is not available: %s", preset_name);
+            break;
+        }
 
         //Edit TX power, if necessary.
-        uint8_t* preset_data = subghz_setting_get_preset_data(setting, preset_index);
-        size_t preset_data_size = subghz_setting_get_preset_data_size(setting, preset_index);
+        uint8_t* preset_data = subghz_setting_get_preset_data(setting, (size_t)preset_index);
+        size_t preset_data_size =
+            subghz_setting_get_preset_data_size(setting, (size_t)preset_index);
+        if(!preset_data || preset_data_size < 8) {
+            FURI_LOG_E(TAG, "Preset data is invalid: %s", preset_name);
+            break;
+        }
         subghz_txrx_set_tx_power(preset_data, preset_data_size, subghz->tx_power);
 
         //Set the Updated Preset.
