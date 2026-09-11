@@ -1006,15 +1006,24 @@ bool wlan_hal_start(void) {
     if(s_started) return true;
     /* An auth reserve cannot help if it prevents the driver from starting. */
     wlan_auth_memory_release();
+    /* The two radios are mutually exclusive on this board. Leaving BLE up while
+     * WiFi runs coexists two stacks in the same scarce internal DRAM, which
+     * bleeds down until the power-service I2C poll cannot allocate a command
+     * link and panics (StoreProhibited writing through a NULL i2c_cmd_handle).
+     * Suspend BLE before the first start attempt, not just as a fallback — the
+     * fallback below never ran when the first attempt happened to succeed, so
+     * BLE stayed up and the coexistence starved the board. wlan_hal_power_down()
+     * on the stop and failure paths calls wlan_restore_ble(), so BLE returns
+     * when the WiFi session ends (unless the user turned Bluetooth off since). */
+    wlan_suspend_ble_for_memory();
     bool result = wlan_start_attempt();
     if(!result) {
         ESP_LOGW(TAG, "WiFi start failed; internal free=%u largest=%u",
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        /* Drop a partially initialized driver before retrying. Stopping BLE
-         * advertising alone does not return controller/host allocations. */
+        /* Drop a partially initialized driver before retrying. */
         if(s_cmd_queue) wlan_hal_stop_internal(true);
-        if(wlan_suspend_ble_for_memory()) result = wlan_start_attempt();
+        result = wlan_start_attempt();
     }
 
     if(result) {
