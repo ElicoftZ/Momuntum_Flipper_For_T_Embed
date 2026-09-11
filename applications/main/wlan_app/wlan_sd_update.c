@@ -12,7 +12,7 @@
 
 #define SD_UPDATE_TAG "WlanSdUpdate"
 // sdcard/-Ordner wird unter dieser Basis gespiegelt veröffentlicht.
-#define SD_UPDATE_BASE_URL "https://sor3nt.github.io/release/t-embed/latest"
+#define SD_UPDATE_BASE_URL "https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/release/t-embed/latest"
 #define SD_UPDATE_VERSION_URL SD_UPDATE_BASE_URL "/version.txt"
 #define SD_UPDATE_FILES_URL SD_UPDATE_BASE_URL "/files.txt"
 #define SD_UPDATE_LOCAL_VERSION "/ext/version.txt"

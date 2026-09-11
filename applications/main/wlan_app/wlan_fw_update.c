@@ -13,7 +13,7 @@
 
 #define FW_UPDATE_TAG "WlanFwUpdate"
 // Muss mit dem Release-Layout übereinstimmen (siehe auch wlan_sd_update.c).
-#define FW_BASE_URL "https://sor3nt.github.io/release/t-embed/latest"
+#define FW_BASE_URL "https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/release/t-embed/latest"
 #define FW_VERSION_URL FW_BASE_URL "/version.txt"
 #define FW_BIN_URL FW_BASE_URL "/furi_esp32.bin"
 // FW-Marker (/ext/.fw_version) und Staging-Pfad (/ext/update/furi_esp32.bin)
