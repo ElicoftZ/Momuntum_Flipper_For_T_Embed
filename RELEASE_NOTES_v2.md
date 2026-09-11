@@ -39,9 +39,30 @@ Firmware for the **LilyGo T-Embed CC1101** (ESP32-S3). Flash it in your browser:
 
 ## Install
 
-1. Open the **[web flasher](https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/interface.html)** in Chrome or Edge, connect your board over USB, and click flash.
-2. Download **[`sdcard.zip`](https://github.com/ElicoftZ/Momuntum_Flipper_For_T_Embed/releases/latest/download/sdcard.zip)**, extract its contents onto a FAT32 microSD, and insert it.
-3. On a device already on the dual-OTA layout, you can instead update wirelessly via *Settings → Update Firmware*.
+### Option A — Web flasher (easiest, no tools)
+Open the **[web flasher](https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/interface.html)** in Chrome or Edge, connect your board over USB, pick **LilyGo T-Embed CC1101**, and click flash.
+
+### Option B — Manual flash with the three .bin files
+Download the three assets below and flash each at its offset with [esptool](https://github.com/espressif/esptool) (`pip install esptool`):
+
+| File | Flash offset |
+|---|---|
+| `bootloader.bin` | `0x0` |
+| `partition-table.bin` | `0x8000` |
+| `furi_esp32.bin` | `0x20000` |
+
+Run this from the folder where you downloaded them (one command, all three):
+
+```
+python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 16MB --flash_freq 80m 0x0 bootloader.bin 0x8000 partition-table.bin 0x20000 furi_esp32.bin
+```
+
+- Add your port if it isn't auto-detected: `-p COM4` (Windows) or `-p /dev/ttyACM0` (Linux/macOS).
+- Not erasing the OTA-data region at `0x10000` is intentional — it boots the factory image.
+- **Updating an existing install?** You can flash just `furi_esp32.bin` at `0x20000` and skip the bootloader/partition-table.
+
+### Then — set up the SD card
+Download **[`sdcard.zip`](https://github.com/ElicoftZ/Momuntum_Flipper_For_T_Embed/releases/latest/download/sdcard.zip)**, extract **its contents** onto the root of a **FAT32** microSD, and insert it — most apps need files there.
 
 ## Notes
 - Full feature list and build instructions: see the [README](README.md).
