@@ -42,8 +42,17 @@ Firmware for the **LilyGo T-Embed CC1101** (ESP32-S3). Flash it in your browser:
 ### Option A — Web flasher (easiest, no tools)
 Open the **[web flasher](https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/interface.html)** in Chrome or Edge, connect your board over USB, pick **LilyGo T-Embed CC1101**, and click flash.
 
-### Option B — Manual flash with the three .bin files
-Download the three assets below and flash each at its offset with [esptool](https://github.com/espressif/esptool) (`pip install esptool`):
+### Option B — One merged file (recommended for a single-command flash)
+Download **`momentum_t_embed_cc1101_v2_merged.bin`** below — bootloader + partition table + app in one image — and flash it at `0x0`:
+
+```
+python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash 0x0 momentum_t_embed_cc1101_v2_merged.bin
+```
+
+Add `-p COM4` (Windows) or `-p /dev/ttyACM0` (Linux/macOS) if the port isn't auto-detected. This is the easiest CLI option — one file, one offset.
+
+### Option C — Three separate .bin files
+Prefer the individual images? Download the three assets below and flash each at its offset with [esptool](https://github.com/espressif/esptool) (`pip install esptool`):
 
 | File | Flash offset |
 |---|---|
