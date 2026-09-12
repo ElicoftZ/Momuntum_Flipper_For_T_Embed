@@ -90,6 +90,7 @@ struct Desktop {
     ViewPort* dummy_mode_icon_viewport;
     ViewPort* clock_viewport;
     ViewPort* stealth_mode_icon_viewport;
+    ViewPort* wake_icon_viewport;
 
     Loader* loader;
     Storage* storage;
@@ -148,6 +149,9 @@ void desktop_unlock(Desktop* desktop);
 void desktop_set_dummy_mode_state(Desktop* desktop, bool enabled);
 void desktop_set_stealth_mode_state(Desktop* desktop, bool enabled);
 void desktop_set_wifi_icon_state(Desktop* desktop, bool enabled);
+/* Control Centre "Wake" tile only — not a device-wide "screen will not sleep"
+ * indicator (apps take insomnia/backlight locks of their own). */
+void desktop_set_wake_icon_state(Desktop* desktop, bool enabled);
 
 /* Mesh-Callback (impl in desktop.c): packt das Event in desktop->mesh_pending
  * und feuert DesktopMeshEventClient{PairRequest,Disconnect} via

@@ -251,6 +251,7 @@ bool desktop_scene_lock_menu_on_event(void* context, SceneManagerEvent event) {
                 desktop->notification,
                 s_wake_mode ? &sequence_display_backlight_enforce_on :
                               &sequence_display_backlight_enforce_auto);
+            desktop_set_wake_icon_state(desktop, s_wake_mode);
             desktop_scene_lock_menu_refresh(desktop);
             consumed = true;
             break;

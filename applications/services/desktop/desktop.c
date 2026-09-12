@@ -272,6 +272,24 @@ static void desktop_stealth_mode_icon_draw_callback(Canvas* canvas, void* contex
     canvas_draw_icon(canvas, 0, 0, &I_Muted_8x8);
 }
 
+/* Wake mode: 8x8 sun — hollow ring plus eight rays, the same mark as the
+ * Control Centre's I_CC_Wake_16x16 tile at half scale. Drawn natively like the
+ * WiFi glyph above rather than as an asset, so an asset pack cannot restyle it. */
+static void desktop_wake_icon_draw_callback(Canvas* canvas, void* context) {
+    UNUSED(context);
+    furi_assert(canvas);
+
+    canvas_draw_frame(canvas, 2, 2, 4, 4);
+    canvas_draw_line(canvas, 3, 0, 4, 0);
+    canvas_draw_line(canvas, 3, 7, 4, 7);
+    canvas_draw_line(canvas, 0, 3, 0, 4);
+    canvas_draw_line(canvas, 7, 3, 7, 4);
+    canvas_draw_dot(canvas, 1, 1);
+    canvas_draw_dot(canvas, 6, 1);
+    canvas_draw_dot(canvas, 1, 6);
+    canvas_draw_dot(canvas, 6, 6);
+}
+
 static bool desktop_custom_event_callback(void* context, uint32_t event) {
     furi_assert(context);
     Desktop* desktop = (Desktop*)context;
@@ -666,6 +684,16 @@ static Desktop* desktop_alloc(void) {
     }
     gui_add_view_port(desktop->gui, desktop->stealth_mode_icon_viewport, GuiLayerStatusBarLeft);
 
+    // Wake mode icon (Control Centre tile; off at boot, like s_wake_mode)
+    desktop->wake_icon_viewport = view_port_alloc();
+    view_port_set_width(desktop->wake_icon_viewport, 8);
+    view_port_draw_callback_set(
+        desktop->wake_icon_viewport, desktop_wake_icon_draw_callback, desktop);
+    /* view_port_alloc() defaults to enabled — clearing it before the add is
+     * load-bearing, or the icon shows and counts against the clock from boot. */
+    view_port_enabled_set(desktop->wake_icon_viewport, false);
+    gui_add_view_port(desktop->gui, desktop->wake_icon_viewport, GuiLayerStatusBarLeft);
+
     // Unload animations before starting an application
     desktop->loader = furi_record_open(RECORD_LOADER);
     furi_pubsub_subscribe(loader_get_pubsub(desktop->loader), desktop_loader_callback, desktop);
@@ -769,6 +797,11 @@ void desktop_set_wifi_icon_state(Desktop* desktop, bool enabled) {
     furi_assert(desktop);
     UNUSED(enabled);
     view_port_enabled_set(desktop->wifi_icon_viewport, false);
+}
+
+void desktop_set_wake_icon_state(Desktop* desktop, bool enabled) {
+    furi_assert(desktop);
+    view_port_enabled_set(desktop->wake_icon_viewport, enabled);
 }
 
 /*
