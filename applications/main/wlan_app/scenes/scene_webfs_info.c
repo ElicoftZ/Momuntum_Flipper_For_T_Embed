@@ -71,10 +71,12 @@ void wlan_app_scene_webfs_info_on_enter(void* context) {
     uint32_t mode = scene_manager_get_scene_state(app->scene_manager, WlanAppSceneWebFsInfo);
 
     s_safe_mode = mode == 2;
-    if(s_safe_mode && app->safe_portal_ssid[0] == '\0') {
-        wlan_webfs_safe_ssid_load(app->safe_portal_ssid);
+    if(s_safe_mode) {
+        if(app->safe_portal_ssid[0] == '\0') wlan_webfs_safe_ssid_load(app->safe_portal_ssid);
+        if(app->safe_portal_page[0] == '\0') wlan_webfs_safe_page_load(app->safe_portal_page);
     }
-    bool ok = s_safe_mode ? wlan_webfs_start_safe(app->safe_portal_ssid) :
+    bool ok = s_safe_mode ?
+                  wlan_webfs_start_safe(app->safe_portal_ssid, app->safe_portal_page) :
               (mode == 1) ? wlan_webfs_start_ap(app->webfs_ssid, app->webfs_pw) :
                             wlan_webfs_start_sta();
     s_started = ok;

@@ -76,6 +76,7 @@ typedef enum {
     WlanAppCustomEventWebFsStop = 236,
     WlanAppCustomEventSafePortalSsid = 237,
     WlanAppCustomEventSafePortalStart = 238,
+    WlanAppCustomEventSafePortalPagePicked = 239,
 
     WlanAppCustomEventSmbInputDone = 240,
     WlanAppCustomEventSmbRetry = 241,

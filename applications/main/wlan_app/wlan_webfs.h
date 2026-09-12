@@ -26,15 +26,23 @@ bool wlan_webfs_config_save(const char* ssid, const char* pw);
  * Blocks until up or failed. */
 bool wlan_webfs_start_ap(const char* ssid, const char* password);
 
-/* Read-only demo AP: only /ext/safe_portal/index.html, no file APIs.
- * ssid may be NULL/empty to fall back to the default below. */
+/* Read-only demo AP with a captive-portal popup (DNS hijack + the standard
+ * OS connectivity-check endpoints redirected), like joining hotel/airport
+ * WiFi: connecting pops the page open automatically. Serves exactly one
+ * file, no file APIs. ssid/page_path may be NULL/empty to fall back to the
+ * defaults below. */
 #define WLAN_SAFE_PORTAL_DEFAULT_SSID "TEmbed-Demo"
-bool wlan_webfs_start_safe(const char* ssid);
+#define WLAN_SAFE_PORTAL_DEFAULT_PAGE "/ext/safe_portal/index.html"
+#define WLAN_SAFE_PORTAL_PAGE_MAX     127
+bool wlan_webfs_start_safe(const char* ssid, const char* page_path);
 
-/* Safe-portal SSID, persisted separately from the dedicated-AP SSID/password
- * above so picking a prank name never touches the real Web-FS config. */
+/* Safe-portal SSID/page, persisted separately from the dedicated-AP
+ * SSID/password above so picking a prank name/page never touches the real
+ * Web-FS config. */
 bool wlan_webfs_safe_ssid_load(char* ssid_out);
 bool wlan_webfs_safe_ssid_save(const char* ssid);
+bool wlan_webfs_safe_page_load(char* path_out);
+bool wlan_webfs_safe_page_save(const char* path);
 
 /* Start the file server on the current wlan_hal STA connection.
  * Requires wlan_hal_is_connected(). Blocks until up or failed. */

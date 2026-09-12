@@ -13,6 +13,11 @@
 #include <esp_netif.h>
 #include <esp_event.h>
 #include <esp_http_server.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/idf_additions.h>
+#include <lwip/sockets.h>
+#include <esp_heap_caps.h>
 
 #define TAG "WlanWebFs"
 
@@ -21,6 +26,8 @@
 #define WEBFS_SAFE_CONFIG "/ext/webfs/safe_config.txt"
 #define WEBFS_INDEX_PATH "/ext/webfs/index.html"
 #define WEBFS_IO_CHUNK   4096
+#define WEBFS_DNS_PORT       53
+#define WEBFS_DNS_TASK_STACK 4096
 
 /* ─────────────────────── state ─────────────────────── */
 
@@ -33,6 +40,10 @@ static bool s_evt_registered = false;
 static bool s_bt_was_on = false;
 static char s_ip[16] = "0.0.0.0";
 static volatile int s_clients = 0;
+static char s_safe_page[WLAN_SAFE_PORTAL_PAGE_MAX + 1] = {0};
+static TaskHandle_t s_dns_task = NULL;
+static volatile bool s_dns_run = false;
+static int s_dns_socket = -1;
 
 /* ─────────────────────── config ─────────────────────── */
 
@@ -81,6 +92,9 @@ bool wlan_webfs_config_save(const char* ssid, const char* pw) {
     return ok;
 }
 
+/* ssid= and page= share one file; save rewrites both keys each time (whole
+ * file, not append) so the load/save loop below sees a stable format --
+ * mirrors wlan_webfs_config_load/save's single-purpose lines. */
 bool wlan_webfs_safe_ssid_load(char* ssid_out) {
     webfs_copy(ssid_out, WLAN_SAFE_PORTAL_DEFAULT_SSID, WLAN_WEBFS_SSID_MAX + 1);
 
@@ -103,12 +117,55 @@ bool wlan_webfs_safe_ssid_load(char* ssid_out) {
 }
 
 bool wlan_webfs_safe_ssid_save(const char* ssid) {
+    char page[WLAN_SAFE_PORTAL_PAGE_MAX + 1];
+    wlan_webfs_safe_page_load(page); /* keep the existing page= line */
+
     Storage* storage = furi_record_open(RECORD_STORAGE);
     storage_simply_mkdir(storage, WEBFS_DIR);
     Stream* s = file_stream_alloc(storage);
     bool ok = false;
     if(file_stream_open(s, WEBFS_SAFE_CONFIG, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
         stream_write_format(s, "ssid=%s\n", ssid);
+        stream_write_format(s, "page=%s\n", page);
+        ok = true;
+    }
+    stream_free(s);
+    furi_record_close(RECORD_STORAGE);
+    return ok;
+}
+
+bool wlan_webfs_safe_page_load(char* path_out) {
+    webfs_copy(path_out, WLAN_SAFE_PORTAL_DEFAULT_PAGE, WLAN_SAFE_PORTAL_PAGE_MAX + 1);
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    Stream* s = file_stream_alloc(storage);
+    if(file_stream_open(s, WEBFS_SAFE_CONFIG, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        FuriString* line = furi_string_alloc();
+        while(stream_read_line(s, line)) {
+            furi_string_trim(line);
+            const char* cstr = furi_string_get_cstr(line);
+            if(strncmp(cstr, "page=", 5) == 0) {
+                webfs_copy(path_out, cstr + 5, WLAN_SAFE_PORTAL_PAGE_MAX + 1);
+            }
+        }
+        furi_string_free(line);
+    }
+    stream_free(s);
+    furi_record_close(RECORD_STORAGE);
+    return true;
+}
+
+bool wlan_webfs_safe_page_save(const char* path) {
+    char ssid[WLAN_WEBFS_SSID_MAX + 1];
+    wlan_webfs_safe_ssid_load(ssid); /* keep the existing ssid= line */
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    storage_simply_mkdir(storage, WEBFS_DIR);
+    Stream* s = file_stream_alloc(storage);
+    bool ok = false;
+    if(file_stream_open(s, WEBFS_SAFE_CONFIG, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
+        stream_write_format(s, "ssid=%s\n", ssid);
+        stream_write_format(s, "page=%s\n", path[0] ? path : WLAN_SAFE_PORTAL_DEFAULT_PAGE);
         ok = true;
     }
     stream_free(s);
@@ -205,7 +262,7 @@ static esp_err_t handler_root(httpd_req_t* req) {
             "img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'");
         httpd_resp_set_hdr(req, "Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     }
-    const char* path = s_safe ? "/ext/safe_portal/index.html" : WEBFS_INDEX_PATH;
+    const char* path = s_safe ? s_safe_page : WEBFS_INDEX_PATH;
     if(storage_file_open(f, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
         uint8_t* buf = malloc(WEBFS_IO_CHUNK);
         if(buf) {
@@ -218,16 +275,53 @@ static esp_err_t handler_root(httpd_req_t* req) {
         httpd_resp_send_chunk(req, NULL, 0);
         storage_file_close(f);
     } else {
-        FURI_LOG_W(TAG, "index.html NOT found on SD");
-        httpd_resp_sendstr(
-            req,
+        FURI_LOG_W(TAG, "%s NOT found on SD", path);
+        char body[220];
+        int n = snprintf(
+            body,
+            sizeof(body),
             s_safe ? "<!doctype html><meta charset=utf-8><h2>Safe demo</h2>"
-            "<p>Place /ext/safe_portal/index.html on the SD card.</p>" :
-            "<!doctype html><meta charset=utf-8><h2>Web-Filesystem</h2>"
-            "<p>Place <code>/ext/webfs/index.html</code> on the SD card.</p>");
+                     "<p>Place <code>%s</code> on the SD card.</p>" :
+                     "<!doctype html><meta charset=utf-8><h2>Web-Filesystem</h2>"
+                     "<p>Place <code>%s</code> on the SD card.</p>",
+            path);
+        httpd_resp_sendstr(req, n > 0 ? body : "not found");
     }
     storage_file_free(f);
     furi_record_close(RECORD_STORAGE);
+    return ESP_OK;
+}
+
+/* Captive-portal probes (Android/Windows/Firefox): a 302 is the signal that
+ * tells the OS's connectivity-check layer this network needs a login page,
+ * which is what makes it pop the browser open automatically on join -- a
+ * 200 here would satisfy the probe and the OS would think it has real
+ * internet, skipping the popup. The DNS hijack (below) makes every domain
+ * resolve to us, so it doesn't matter which real host the probe targets. */
+static esp_err_t handler_captive_redirect(httpd_req_t* req) {
+    char location[40];
+    snprintf(location, sizeof(location), "http://%s/", s_ip);
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", location);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+/* Apple's captive-portal probe (hotspot-detect.html) expects an exact
+ * "Success" body over HTTP; anything else makes iOS/macOS open the Captive
+ * Network Assistant and navigate it -- send it here via meta-refresh. */
+static esp_err_t handler_captive_apple(httpd_req_t* req) {
+    char body[160];
+    int n = snprintf(
+        body,
+        sizeof(body),
+        "<HTML><HEAD><META http-equiv=\"refresh\" content=\"0;url=http://%s/\">"
+        "</HEAD><BODY>Captive</BODY></HTML>",
+        s_ip);
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, body, n > 0 ? n : 0);
     return ESP_OK;
 }
 
@@ -431,8 +525,12 @@ static bool start_http(void) {
     /* 6144 stack: the handlers use ~2 KB of local buffers; 4096 overflows the
      * httpd task and the request hangs. */
     config.stack_size = 6144;
-    config.max_uri_handlers = 12;
-    config.max_open_sockets = 3;
+    config.max_uri_handlers = 14;
+    /* Safe mode's captive-portal popup makes several apps probe at once the
+     * moment a phone/PC joins (same effect noted in wlan_evil_portal.c) --
+     * a couple of extra sockets over the plain-webfs default avoids one
+     * probe starving the actual page load. */
+    config.max_open_sockets = s_safe ? 6 : 3;
     config.lru_purge_enable = true;
     esp_err_t err = httpd_start(&s_http, &config);
     if(err != ESP_OK) {
@@ -442,12 +540,35 @@ static bool start_http(void) {
     }
 
     if(s_safe) {
-        const httpd_uri_t page = {.uri = "/", .method = HTTP_GET, .handler = handler_root};
+        static const httpd_uri_t page = {.uri = "/", .method = HTTP_GET, .handler = handler_root};
         if(httpd_register_uri_handler(s_http, &page) != ESP_OK) {
             httpd_stop(s_http);
             s_http = NULL;
             return false;
         }
+        static const char* probe_uris[] = {
+            "/generate_204",
+            "/gen_204",
+            "/ncsi.txt",
+            "/connecttest.txt",
+            "/success.txt",
+            "/canonical.html",
+            "/fwlink",
+            "/redirect",
+        };
+        for(size_t i = 0; i < sizeof(probe_uris) / sizeof(probe_uris[0]); i++) {
+            httpd_uri_t u = {
+                .uri = probe_uris[i], .method = HTTP_GET, .handler = handler_captive_redirect};
+            httpd_register_uri_handler(s_http, &u);
+        }
+        static const httpd_uri_t uri_apple = {
+            .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = handler_captive_apple};
+        static const httpd_uri_t uri_apple_lib = {
+            .uri = "/library/test/success.html",
+            .method = HTTP_GET,
+            .handler = handler_captive_apple};
+        httpd_register_uri_handler(s_http, &uri_apple);
+        httpd_register_uri_handler(s_http, &uri_apple_lib);
         return true;
     }
 
@@ -466,6 +587,124 @@ static bool start_http(void) {
         }
     }
     return true;
+}
+
+/* ───────────────── captive DNS hijack (safe mode only) ───────────────── */
+
+/* Answers every A query with the AP's own IP -- like Arduino's DNSServer.
+ * Simplified from wlan_evil_portal.c's dns_task: no cache, no upstream
+ * forwarding, because Safe Portal is always a standalone AP, never bridged
+ * to a real network. This is what makes the captive-portal probe's target
+ * domain (whatever it is) resolve to us. */
+static void webfs_dns_task(void* arg) {
+    (void)arg;
+    s_dns_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if(s_dns_socket < 0) {
+        FURI_LOG_E(TAG, "DNS socket failed");
+        s_dns_task = NULL;
+        vTaskDeleteWithCaps(NULL);
+        return;
+    }
+
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(WEBFS_DNS_PORT);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if(bind(s_dns_socket, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        FURI_LOG_E(TAG, "DNS bind failed");
+        close(s_dns_socket);
+        s_dns_socket = -1;
+        s_dns_task = NULL;
+        vTaskDeleteWithCaps(NULL);
+        return;
+    }
+    struct timeval tv = {.tv_sec = 0, .tv_usec = 200000};
+    setsockopt(s_dns_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    uint32_t ap_ip;
+    esp_netif_ip_info_t info;
+    if(s_ap_netif && esp_netif_get_ip_info(s_ap_netif, &info) == ESP_OK) {
+        ap_ip = info.ip.addr;
+    } else {
+        ap_ip = htonl(0xC0A80401); /* 192.168.4.1 */
+    }
+
+    uint8_t buf[512];
+    while(s_dns_run) {
+        struct sockaddr_in src;
+        socklen_t slen = sizeof(src);
+        int n = recvfrom(s_dns_socket, buf, sizeof(buf), 0, (struct sockaddr*)&src, &slen);
+        if(n < 12) continue;
+        if((buf[2] & 0xF8) != 0x00) continue; /* standard query only */
+
+        int p = 12;
+        while(p < n && buf[p] != 0) {
+            uint8_t lbl = buf[p];
+            if(lbl >= 0xC0 || p + 1 + lbl > n) {
+                p = n;
+                break;
+            }
+            p += lbl + 1;
+        }
+        if(p >= n || buf[p] != 0) continue;
+        if(p + 5 > n) continue; /* need null + QType + QClass */
+
+        uint16_t qtype = (buf[p + 1] << 8) | buf[p + 2];
+        int qend = p + 1 + 4;
+        bool is_a = (qtype == 1 || qtype == 255);
+
+        buf[2] |= 0x80; /* QR = response */
+        buf[6] = 0;
+        buf[7] = is_a ? 1 : 0; /* ANCount */
+        buf[8] = 0;
+        buf[9] = 0;
+        buf[10] = 0;
+        buf[11] = 0;
+
+        int total;
+        if(is_a && qend + 16 <= (int)sizeof(buf)) {
+            buf[qend + 0] = 0xC0;
+            buf[qend + 1] = 0x0C; /* pointer to QName */
+            buf[qend + 2] = 0x00;
+            buf[qend + 3] = 0x01; /* Type A */
+            buf[qend + 4] = 0x00;
+            buf[qend + 5] = 0x01; /* Class IN */
+            buf[qend + 6] = 0x00;
+            buf[qend + 7] = 0x00;
+            buf[qend + 8] = 0x00;
+            buf[qend + 9] = 0x01; /* TTL 1s */
+            buf[qend + 10] = 0x00;
+            buf[qend + 11] = 0x04; /* RDLENGTH = 4 */
+            memcpy(&buf[qend + 12], &ap_ip, 4);
+            total = qend + 16;
+        } else {
+            total = qend; /* non-A: empty answer, header + question only */
+        }
+        sendto(s_dns_socket, buf, total, 0, (struct sockaddr*)&src, slen);
+    }
+
+    close(s_dns_socket);
+    s_dns_socket = -1;
+    s_dns_task = NULL;
+    vTaskDeleteWithCaps(NULL);
+}
+
+static void webfs_dns_start(void) {
+    if(s_dns_task) return;
+    s_dns_run = true;
+    if(xTaskCreateWithCaps(
+           webfs_dns_task, "SafeDns", WEBFS_DNS_TASK_STACK, NULL, 4, &s_dns_task,
+           MALLOC_CAP_SPIRAM) != pdPASS) {
+        FURI_LOG_E(TAG, "DNS task create failed");
+        s_dns_run = false;
+        s_dns_task = NULL;
+    }
+}
+
+static void webfs_dns_stop(void) {
+    if(!s_dns_task) return;
+    s_dns_run = false;
+    while(s_dns_task) vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 /* ─────────────────────── AP lifecycle (wlan_hal worker) ─────────────────────── */
@@ -568,11 +807,27 @@ static void webfs_ap_worker(void* arg) {
     }
     s_clients = 0;
 
+    if(s_safe) {
+        /* DHCP option 114 (RFC 8910): iOS 14+/Android 11+ use this to open
+         * the captive-portal login window directly, without waiting on the
+         * probe-endpoint round trip below. Must be set between a dhcps
+         * stop/start; it doesn't change the netif's own static IP. */
+        esp_netif_dhcps_stop(s_ap_netif);
+        static char captive_url[] = "http://192.168.4.1/";
+        esp_err_t cp = esp_netif_dhcps_option(
+            s_ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, captive_url,
+            sizeof(captive_url) - 1);
+        if(cp != ESP_OK) FURI_LOG_W(TAG, "DHCP option 114 failed: %s", esp_err_to_name(cp));
+        esp_netif_dhcps_start(s_ap_netif);
+    }
+
     if(!start_http()) {
         esp_wifi_stop();
         esp_wifi_deinit();
         return;
     }
+
+    if(s_safe) webfs_dns_start();
 
     s_running = true;
     s_is_ap = true;
@@ -582,6 +837,7 @@ static void webfs_ap_worker(void* arg) {
 
 static void webfs_ap_stop_worker(void* arg) {
     (void)arg;
+    webfs_dns_stop(); /* no-op if it was never started */
     if(s_http) {
         httpd_stop(s_http);
         s_http = NULL;
@@ -663,9 +919,13 @@ bool wlan_webfs_start_ap(const char* ssid, const char* password) {
     return webfs_ap_bring_up(ssid, password, false);
 }
 
-bool wlan_webfs_start_safe(const char* ssid) {
+bool wlan_webfs_start_safe(const char* ssid, const char* page_path) {
     if(s_running) return false;
     const char* use_ssid = (ssid && ssid[0]) ? ssid : WLAN_SAFE_PORTAL_DEFAULT_SSID;
+    webfs_copy(
+        s_safe_page,
+        (page_path && page_path[0]) ? page_path : WLAN_SAFE_PORTAL_DEFAULT_PAGE,
+        sizeof(s_safe_page));
     return webfs_ap_bring_up(use_ssid, "", true);
 }
 
