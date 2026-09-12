@@ -34,11 +34,17 @@ static void wlan_sd_update_view_draw_callback(Canvas* canvas, void* _model) {
     canvas_draw_str_aligned(
         canvas, 64, 27, AlignCenter, AlignBottom, m->status[0] ? m->status : "");
 
-    // Fortschrittsbalken volle Breite + "<n>/<max>"-Text.
+    // Fortschrittsbalken volle Breite + "<n>/<max>"-Text. Waehrend des
+    // Downloads gibt es noch keine Eintragszahl (die kennt erst das Entpacken),
+    // deshalb dort den Prozentwert statt eines nichtssagenden "0/0".
     char ptxt[24];
-    snprintf(
-        ptxt, sizeof(ptxt), "%lu/%lu",
-        (unsigned long)m->done, (unsigned long)m->total);
+    if(m->total) {
+        snprintf(
+            ptxt, sizeof(ptxt), "%lu/%lu",
+            (unsigned long)m->done, (unsigned long)m->total);
+    } else {
+        snprintf(ptxt, sizeof(ptxt), "%u%%", (unsigned)(m->percent > 100 ? 100 : m->percent));
+    }
     float p = m->percent > 100 ? 1.0f : (float)m->percent / 100.0f;
     elements_progress_bar_with_text(canvas, 4, 32, 120, p, ptxt);
 

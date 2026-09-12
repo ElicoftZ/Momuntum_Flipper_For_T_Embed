@@ -202,13 +202,17 @@ static bool sd_update_download_attempt(
     uint8_t* chunk = NULL;
 
     do {
-        esp_http_client_fetch_headers(client);
+        int64_t content_length = esp_http_client_fetch_headers(client);
         int status = esp_http_client_get_status_code(client);
         // 206 = Server akzeptiert Range (Resume). 200 = voller Inhalt — auch
         // wenn wir Range gefordert haben (Server ignoriert es) → von vorn.
         bool resumed = (status == 206);
         if(status != 200 && status != 206) break;
         if(*resume_from > 0 && !resumed) *resume_from = 0;
+
+        // Bei 206 zaehlt Content-Length nur den Rest ab dem Range-Offset.
+        uint32_t expected_total =
+            (content_length > 0) ? ((uint32_t)content_length + *resume_from) : 0;
 
         f = storage_file_alloc(storage);
         if(resumed && *resume_from > 0) {
@@ -242,6 +246,9 @@ static bool sd_update_download_attempt(
             total += (uint32_t)r;
             session += (uint32_t)r;
             *resume_from = total;
+            if(expected_total) {
+                u->percent = (uint8_t)MIN((uint64_t)total * 100u / expected_total, 100u);
+            }
             uint32_t dt = furi_get_tick() - t0;
             if(dt >= 200) {
                 u->speed_kbps = (uint32_t)((uint64_t)session * 1000u / 1024u / dt);
