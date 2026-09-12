@@ -1,6 +1,7 @@
 #include "../wlan_app.h"
 #include "../wlan_fw_update.h"
 #include "../wlan_sd_update.h"
+#include "../wlan_update_source.h"
 
 #include <assets_icons.h>
 #include <esp_system.h> // esp_restart
@@ -204,14 +205,22 @@ static void upd_start_sd(WlanApp* app) {
     upd_show_sd_progress(app, "Checking Version");
 }
 
+// FW-Check-Phase starten (nach Quellenwahl).
+static void upd_start_fw_check(WlanApp* app) {
+    upd_set_state(app, UpdCheckingFw);
+    wlan_fw_update_check_start(app->fw_update);
+    upd_show_fw_progress(app, "Checking Firmware");
+}
+
 // --- Scene handlers --------------------------------------------------------
 
 void wlan_app_scene_fw_update_on_enter(void* context) {
     WlanApp* app = context;
     app->fw_update_flow = false; // Flow erreicht → Flag konsumiert
-    upd_set_state(app, UpdCheckingFw);
-    wlan_fw_update_check_start(app->fw_update);
-    upd_show_fw_progress(app, "Checking Firmware");
+    bool source_sor3nt = wlan_update_source_get_sor3nt();
+    wlan_fw_update_set_source(app->fw_update, source_sor3nt);
+    wlan_sd_update_set_source(app->sd_update, source_sor3nt);
+    upd_start_fw_check(app);
 }
 
 bool wlan_app_scene_fw_update_on_event(void* context, SceneManagerEvent event) {

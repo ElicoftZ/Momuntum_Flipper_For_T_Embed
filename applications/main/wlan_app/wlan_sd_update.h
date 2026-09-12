@@ -26,6 +26,10 @@ void wlan_sd_update_free(WlanSdUpdate* u);
 /** Startet den Worker. Kein Effekt wenn bereits aktiv. */
 void wlan_sd_update_start(WlanSdUpdate* u);
 
+/** Wählt die Update-Quelle für den nächsten Start:
+ *  false (Default) = Momuntum-Fork, true = Sor3nt-Upstream. */
+void wlan_sd_update_set_source(WlanSdUpdate* u, bool use_sor3nt);
+
 /** Fordert Abbruch an und blockt (bis ~5 s) bis der Worker beendet ist. */
 void wlan_sd_update_cancel(WlanSdUpdate* u);
 

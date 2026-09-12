@@ -14,9 +14,11 @@
 #define SD_UPDATE_TAG "WlanSdUpdate"
 // Ein einziges Archiv statt eines gespiegelten Dateibaums: die Karte hat ~3700
 // Dateien, und per-Datei-Download zahlte pro Datei einen TLS-Handshake.
-#define SD_UPDATE_BASE_URL "https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/release/t-embed/latest"
-#define SD_UPDATE_VERSION_URL SD_UPDATE_BASE_URL "/version.txt"
-#define SD_UPDATE_ZIP_URL SD_UPDATE_BASE_URL "/sdcard.zip"
+// Zwei wählbare Quellen (siehe wlan_sd_update_set_source): das Sor3nt-Upstream
+// und der Momuntum-Fork, beide im selben Release-Layout gehostet.
+#define SD_UPDATE_BASE_URL_SOR3NT "https://sor3nt.github.io/release/t-embed/latest"
+#define SD_UPDATE_BASE_URL_MOMUNTUM \
+    "https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/release/t-embed/latest"
 #define SD_UPDATE_LOCAL_VERSION "/ext/version.txt"
 #define SD_UPDATE_LOCAL_ZIP "/ext/update/sdcard.zip"
 #define SD_UPDATE_DEST_ROOT "/ext"
@@ -44,7 +46,12 @@ struct WlanSdUpdate {
     volatile uint32_t total_files;
     char current_file[64];
     char err[64];
+    bool source_sor3nt; // false = Momuntum (Default), true = Sor3nt-Upstream
 };
+
+static const char* sd_update_base_url(const WlanSdUpdate* u) {
+    return u->source_sor3nt ? SD_UPDATE_BASE_URL_SOR3NT : SD_UPDATE_BASE_URL_MOMUNTUM;
+}
 
 static void sd_update_set_file(WlanSdUpdate* u, const char* name) {
     strncpy(u->current_file, name, sizeof(u->current_file) - 1);
@@ -134,10 +141,10 @@ static bool sd_update_read_local_version(char* out, size_t out_sz) {
 }
 
 // true → lokale version.txt existiert und ist identisch mit der Remote-Version.
-static bool sd_update_is_up_to_date(void) {
+static bool sd_update_is_up_to_date(const char* version_url) {
     char remote[64];
     char local[64];
-    if(!sd_update_http_get_text(SD_UPDATE_VERSION_URL, remote, sizeof(remote))) {
+    if(!sd_update_http_get_text(version_url, remote, sizeof(remote))) {
         return false;
     }
     if(!sd_update_read_local_version(local, sizeof(local))) {
@@ -540,11 +547,16 @@ static void sd_update_finish(WlanSdUpdate* u) {
 
 static void sd_update_task(void* arg) {
     WlanSdUpdate* u = arg;
+    const char* base_url = sd_update_base_url(u);
+    char version_url[160];
+    char zip_url[160];
+    snprintf(version_url, sizeof(version_url), "%s/version.txt", base_url);
+    snprintf(zip_url, sizeof(zip_url), "%s/sdcard.zip", base_url);
 
     u->phase = WlanSdUpdateChecking;
     u->percent = 0;
 
-    if(!u->cancel && sd_update_is_up_to_date()) {
+    if(!u->cancel && sd_update_is_up_to_date(version_url)) {
         u->phase = WlanSdUpdateUpToDate;
         sd_update_finish(u);
         return;
@@ -556,7 +568,7 @@ static void sd_update_task(void* arg) {
     }
 
     char remote[64];
-    if(!sd_update_http_get_text(SD_UPDATE_VERSION_URL, remote, sizeof(remote))) {
+    if(!sd_update_http_get_text(version_url, remote, sizeof(remote))) {
         sd_update_fail(u, "version.txt fetch failed");
         sd_update_finish(u);
         return;
@@ -571,10 +583,10 @@ static void sd_update_task(void* arg) {
 
     Storage* storage = furi_record_open(RECORD_STORAGE);
     esp_http_client_config_t cfg;
-    sd_update_http_cfg(&cfg, SD_UPDATE_ZIP_URL);
+    sd_update_http_cfg(&cfg, zip_url);
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     bool ok = client && sd_update_download_file(
-                            u, client, storage, SD_UPDATE_ZIP_URL, SD_UPDATE_LOCAL_ZIP);
+                            u, client, storage, zip_url, SD_UPDATE_LOCAL_ZIP);
     if(client) esp_http_client_cleanup(client);
     furi_record_close(RECORD_STORAGE);
 
@@ -627,6 +639,7 @@ WlanSdUpdate* wlan_sd_update_alloc(void) {
     u->done_files = 0;
     u->total_files = 0;
     u->err[0] = '\0';
+    u->source_sor3nt = false;
     sd_update_set_file(u, "version.txt");
     return u;
 }
@@ -635,6 +648,10 @@ void wlan_sd_update_free(WlanSdUpdate* u) {
     if(!u) return;
     wlan_sd_update_cancel(u);
     free(u);
+}
+
+void wlan_sd_update_set_source(WlanSdUpdate* u, bool use_sor3nt) {
+    u->source_sor3nt = use_sor3nt;
 }
 
 void wlan_sd_update_start(WlanSdUpdate* u) {

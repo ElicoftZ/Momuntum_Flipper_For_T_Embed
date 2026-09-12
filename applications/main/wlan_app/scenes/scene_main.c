@@ -15,6 +15,7 @@ enum MainIndex {
     MainIndexChannelEvilPortal = 15,
     MainIndexWebFs = 17,
     MainIndexProbeSniff = 18,
+    MainIndexUpdateSourceSettings = 19,
 };
 
 static void wlan_app_scene_main_submenu_cb(void* context, uint32_t index) {
@@ -79,6 +80,9 @@ void wlan_app_scene_main_on_enter(void* context) {
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "Web-Filesystem", MainIndexWebFs,
+        wlan_app_scene_main_submenu_cb, app);
+    submenu_add_item(
+        app->submenu, "Update Source", MainIndexUpdateSourceSettings,
         wlan_app_scene_main_submenu_cb, app);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewSubmenu);
@@ -152,6 +156,10 @@ bool wlan_app_scene_main_on_event(void* context, SceneManagerEvent event) {
             break;
         case MainIndexChannelEvilPortal:
             scene_manager_next_scene(app->scene_manager, WlanAppSceneEvilPortalMenu);
+            consumed = true;
+            break;
+        case MainIndexUpdateSourceSettings:
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneUpdateSourceSettings);
             consumed = true;
             break;
         case MainIndexWebFs:

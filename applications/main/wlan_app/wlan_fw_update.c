@@ -13,9 +13,11 @@
 
 #define FW_UPDATE_TAG "WlanFwUpdate"
 // Muss mit dem Release-Layout übereinstimmen (siehe auch wlan_sd_update.c).
-#define FW_BASE_URL "https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/release/t-embed/latest"
-#define FW_VERSION_URL FW_BASE_URL "/version.txt"
-#define FW_BIN_URL FW_BASE_URL "/furi_esp32.bin"
+// Zwei wählbare Quellen (siehe wlan_fw_update_set_source): das Sor3nt-Upstream
+// und der Momuntum-Fork, beide im selben Release-Layout gehostet.
+#define FW_BASE_URL_SOR3NT "https://sor3nt.github.io/release/t-embed/latest"
+#define FW_BASE_URL_MOMUNTUM \
+    "https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/release/t-embed/latest"
 // FW-Marker (/ext/.fw_version) und Staging-Pfad (/ext/update/furi_esp32.bin)
 // kommen aus fw_ota.h — derselbe Ort, den auch der RPC-/qT-Embed-Updater nutzt.
 // Autoritativ fuer "FW aktuell?" ist FURI_ESP32_VERSION (toolbox/fw_version.h),
@@ -36,7 +38,12 @@ struct WlanFwUpdate {
     volatile uint32_t bytes_total;
     char remote_version[32];
     char err[64];
+    bool source_sor3nt; // false = Momuntum (Default), true = Sor3nt-Upstream
 };
+
+static const char* fw_base_url(const WlanFwUpdate* u) {
+    return u->source_sor3nt ? FW_BASE_URL_SOR3NT : FW_BASE_URL_MOMUNTUM;
+}
 
 static void fw_fail(WlanFwUpdate* u, const char* msg) {
     strncpy(u->err, msg, sizeof(u->err) - 1);
@@ -119,13 +126,15 @@ static void fw_check_task(void* arg) {
 
     char remote[32] = {0};
     char local[32] = {0};
+    char version_url[160];
+    snprintf(version_url, sizeof(version_url), "%s/version.txt", fw_base_url(u));
 
     if(u->cancel) {
         u->phase = FwUpdateIdle;
         fw_finish(u);
         return;
     }
-    if(!fw_http_get_text(FW_VERSION_URL, remote, sizeof(remote))) {
+    if(!fw_http_get_text(version_url, remote, sizeof(remote))) {
         if(u->cancel) {
             u->phase = FwUpdateIdle;
         } else {
@@ -233,13 +242,16 @@ static void fw_download_task(void* arg) {
     u->bytes_total = 0;
     u->speed_kbps = 0;
 
+    char bin_url[160];
+    snprintf(bin_url, sizeof(bin_url), "%s/furi_esp32.bin", fw_base_url(u));
+
     bool ok = false;
     for(int attempt = 0; attempt < FW_MAX_RETRY && !u->cancel; attempt++) {
         if(attempt > 0) {
             FURI_LOG_W(FW_UPDATE_TAG, "download retry %d/%d", attempt, FW_MAX_RETRY - 1);
             vTaskDelay(pdMS_TO_TICKS(500));
         }
-        if(fw_download_attempt(u, FW_BIN_URL, FW_LOCAL_BIN)) {
+        if(fw_download_attempt(u, bin_url, FW_LOCAL_BIN)) {
             ok = true;
             break;
         }
@@ -300,6 +312,10 @@ void wlan_fw_update_sync_marker(void) {
     fw_ota_marker_sync();
 }
 
+void wlan_fw_update_set_source(WlanFwUpdate* u, bool use_sor3nt) {
+    u->source_sor3nt = use_sor3nt;
+}
+
 WlanFwUpdate* wlan_fw_update_alloc(void) {
     WlanFwUpdate* u = malloc(sizeof(WlanFwUpdate));
     u->task = NULL;
@@ -312,6 +328,7 @@ WlanFwUpdate* wlan_fw_update_alloc(void) {
     u->bytes_total = 0;
     u->remote_version[0] = '\0';
     u->err[0] = '\0';
+    u->source_sor3nt = false;
     return u;
 }
 

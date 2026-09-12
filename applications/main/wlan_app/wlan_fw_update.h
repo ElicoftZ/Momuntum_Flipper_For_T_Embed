@@ -39,6 +39,10 @@ WlanFwUpdate* wlan_fw_update_alloc(void);
  *  No-op wenn er schon stimmt. Nur Storage-IO, aus jedem Thread aufrufbar. */
 void wlan_fw_update_sync_marker(void);
 
+/** Wählt die Update-Quelle für die folgenden Check/Download-Aufrufe:
+ *  false (Default) = Momuntum-Fork, true = Sor3nt-Upstream. */
+void wlan_fw_update_set_source(WlanFwUpdate* u, bool use_sor3nt);
+
 void wlan_fw_update_free(WlanFwUpdate* u);
 
 /** Startet den Versions-Check (Remote-version.txt vs. FURI_ESP32_VERSION). */
