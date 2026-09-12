@@ -274,6 +274,11 @@ struct WlanApp {
     char webfs_ssid[WLAN_WEBFS_SSID_MAX + 1];
     char webfs_pw[WLAN_WEBFS_PW_MAX + 1];
 
+    // Safe Portal (Evil Portal menu > "Safe: custom HTML"): a plain open AP
+    // serving one read-only page, for demos/pranks with no credential capture.
+    // Name persisted separately from webfs_ssid/pw above.
+    char safe_portal_ssid[WLAN_WEBFS_SSID_MAX + 1];
+
     // SMB Browser (only shown when connected). smb is lazily allocated on
     // first use and freed in wlan_app_free.
     WlanSmb* smb;

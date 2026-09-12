@@ -18,6 +18,7 @@
 
 #define WEBFS_DIR        "/ext/webfs"
 #define WEBFS_CONFIG     "/ext/webfs/config.txt"
+#define WEBFS_SAFE_CONFIG "/ext/webfs/safe_config.txt"
 #define WEBFS_INDEX_PATH "/ext/webfs/index.html"
 #define WEBFS_IO_CHUNK   4096
 
@@ -26,6 +27,7 @@
 static httpd_handle_t s_http = NULL;
 static esp_netif_t* s_ap_netif = NULL;
 static bool s_running = false;
+static bool s_safe = false;
 static bool s_is_ap = false;
 static bool s_evt_registered = false;
 static bool s_bt_was_on = false;
@@ -72,6 +74,41 @@ bool wlan_webfs_config_save(const char* ssid, const char* pw) {
     if(file_stream_open(s, WEBFS_CONFIG, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
         stream_write_format(s, "ssid=%s\n", ssid);
         stream_write_format(s, "password=%s\n", pw);
+        ok = true;
+    }
+    stream_free(s);
+    furi_record_close(RECORD_STORAGE);
+    return ok;
+}
+
+bool wlan_webfs_safe_ssid_load(char* ssid_out) {
+    webfs_copy(ssid_out, WLAN_SAFE_PORTAL_DEFAULT_SSID, WLAN_WEBFS_SSID_MAX + 1);
+
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    Stream* s = file_stream_alloc(storage);
+    if(file_stream_open(s, WEBFS_SAFE_CONFIG, FSAM_READ, FSOM_OPEN_EXISTING)) {
+        FuriString* line = furi_string_alloc();
+        while(stream_read_line(s, line)) {
+            furi_string_trim(line);
+            const char* cstr = furi_string_get_cstr(line);
+            if(strncmp(cstr, "ssid=", 5) == 0) {
+                webfs_copy(ssid_out, cstr + 5, WLAN_WEBFS_SSID_MAX + 1);
+            }
+        }
+        furi_string_free(line);
+    }
+    stream_free(s);
+    furi_record_close(RECORD_STORAGE);
+    return true;
+}
+
+bool wlan_webfs_safe_ssid_save(const char* ssid) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    storage_simply_mkdir(storage, WEBFS_DIR);
+    Stream* s = file_stream_alloc(storage);
+    bool ok = false;
+    if(file_stream_open(s, WEBFS_SAFE_CONFIG, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
+        stream_write_format(s, "ssid=%s\n", ssid);
         ok = true;
     }
     stream_free(s);
@@ -162,7 +199,14 @@ static esp_err_t handler_root(httpd_req_t* req) {
     Storage* st = furi_record_open(RECORD_STORAGE);
     File* f = storage_file_alloc(st);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
-    if(storage_file_open(f, WEBFS_INDEX_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
+    if(s_safe) {
+        httpd_resp_set_hdr(req, "Content-Security-Policy",
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+            "img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'");
+        httpd_resp_set_hdr(req, "Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    }
+    const char* path = s_safe ? "/ext/safe_portal/index.html" : WEBFS_INDEX_PATH;
+    if(storage_file_open(f, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
         uint8_t* buf = malloc(WEBFS_IO_CHUNK);
         if(buf) {
             size_t n;
@@ -177,6 +221,8 @@ static esp_err_t handler_root(httpd_req_t* req) {
         FURI_LOG_W(TAG, "index.html NOT found on SD");
         httpd_resp_sendstr(
             req,
+            s_safe ? "<!doctype html><meta charset=utf-8><h2>Safe demo</h2>"
+            "<p>Place /ext/safe_portal/index.html on the SD card.</p>" :
             "<!doctype html><meta charset=utf-8><h2>Web-Filesystem</h2>"
             "<p>Place <code>/ext/webfs/index.html</code> on the SD card.</p>");
     }
@@ -395,6 +441,16 @@ static bool start_http(void) {
         return false;
     }
 
+    if(s_safe) {
+        const httpd_uri_t page = {.uri = "/", .method = HTTP_GET, .handler = handler_root};
+        if(httpd_register_uri_handler(s_http, &page) != ESP_OK) {
+            httpd_stop(s_http);
+            s_http = NULL;
+            return false;
+        }
+        return true;
+    }
+
     static const httpd_uri_t uris[] = {
         {.uri = "/", .method = HTTP_GET, .handler = handler_root},
         {.uri = "/api/list", .method = HTTP_GET, .handler = handler_list},
@@ -570,10 +626,12 @@ static void webfs_http_stop_worker(void* arg) {
 
 /* ─────────────────────── public API ─────────────────────── */
 
-bool wlan_webfs_start_ap(const char* ssid, const char* password) {
-    if(s_running) return true;
-    if(!ssid || !ssid[0]) return false;
-
+/* Shared by wlan_webfs_start_ap/start_safe so s_safe is only ever set (or
+ * cleared on failure) here, right before the actual bring-up — never by a
+ * caller ahead of time, which could leave it stuck true/false if the AP
+ * failed to come up. webfs_ap_worker already calls esp_wifi_deinit() on
+ * every one of its own failure paths, so no extra teardown is needed here. */
+static bool webfs_ap_bring_up(const char* ssid, const char* password, bool safe) {
     /* Take over the radio: stop STA + BLE. */
     if(wlan_hal_is_started()) {
         wlan_hal_stop();
@@ -583,16 +641,32 @@ bool wlan_webfs_start_ap(const char* ssid, const char* password) {
     if(s_bt_was_on) bt_stop_stack(bt);
     furi_record_close(RECORD_BT);
 
+    s_safe = safe;
     ApArgs sa = {.ssid = ssid, .pw = password, .result = false};
     if(!wlan_hal_run_in_worker(webfs_ap_worker, &sa)) sa.result = false;
 
-    if(!sa.result && s_bt_was_on) {
-        Bt* bt2 = furi_record_open(RECORD_BT);
-        bt_start_stack(bt2);
-        furi_record_close(RECORD_BT);
-        s_bt_was_on = false;
+    if(!sa.result) {
+        s_safe = false;
+        if(s_bt_was_on) {
+            Bt* bt2 = furi_record_open(RECORD_BT);
+            bt_start_stack(bt2);
+            furi_record_close(RECORD_BT);
+            s_bt_was_on = false;
+        }
     }
     return sa.result;
+}
+
+bool wlan_webfs_start_ap(const char* ssid, const char* password) {
+    if(s_running) return true;
+    if(!ssid || !ssid[0]) return false;
+    return webfs_ap_bring_up(ssid, password, false);
+}
+
+bool wlan_webfs_start_safe(const char* ssid) {
+    if(s_running) return false;
+    const char* use_ssid = (ssid && ssid[0]) ? ssid : WLAN_SAFE_PORTAL_DEFAULT_SSID;
+    return webfs_ap_bring_up(use_ssid, "", true);
 }
 
 bool wlan_webfs_start_sta(void) {
@@ -635,6 +709,7 @@ void wlan_webfs_stop(void) {
         /* STA mode: leave the wlan_hal connection + BLE alone, just stop httpd. */
         wlan_hal_run_in_worker(webfs_http_stop_worker, NULL);
     }
+    s_safe = false;
 }
 
 bool wlan_webfs_is_running(void) {

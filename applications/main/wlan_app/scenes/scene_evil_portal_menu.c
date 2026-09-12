@@ -80,6 +80,7 @@ enum EvilPortalMenuIndex {
     EpMenuIdxBridgeSsid,    // text input scene
     EpMenuIdxBridgePwd,     // text input scene
     EpMenuIdxStart,
+    EpMenuIdxSafe,
 };
 
 static const char* const karma_text[2] = {"Off", "On"};
@@ -225,13 +226,14 @@ void wlan_app_scene_evil_portal_menu_on_enter(void* context) {
         item, app->evil_portal_bridge_password[0] ? "(set)" : "(none)");
 
     variable_item_list_add(app->variable_item_list, "Start", 1, NULL, app);
+    variable_item_list_add(app->variable_item_list, "Safe: custom HTML", 1, NULL, app);
 
     variable_item_list_set_enter_callback(
         app->variable_item_list, ep_menu_enter_cb, app);
 
     uint32_t selected =
         scene_manager_get_scene_state(app->scene_manager, WlanAppSceneEvilPortalMenu);
-    if(selected > EpMenuIdxStart) selected = 0;
+    if(selected > EpMenuIdxSafe) selected = 0;
     variable_item_list_set_selected_item(app->variable_item_list, (uint8_t)selected);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewVariableItemList);
@@ -243,6 +245,12 @@ bool wlan_app_scene_evil_portal_menu_on_event(void* context, SceneManagerEvent e
 
     if(event.type == SceneManagerEventTypeCustom) {
         switch(event.event) {
+        case EpMenuIdxSafe:
+            scene_manager_set_scene_state(
+                app->scene_manager, WlanAppSceneEvilPortalMenu, EpMenuIdxSafe);
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneSafePortal);
+            consumed = true;
+            break;
         case EpMenuIdxSsid:
             scene_manager_set_scene_state(
                 app->scene_manager, WlanAppSceneEvilPortalMenu, EpMenuIdxSsid);

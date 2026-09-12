@@ -5,6 +5,8 @@
 #include "../wlan_app.h"
 
 static int s_last_clients = -1;
+static bool s_safe_mode = false;
+static bool s_started = false;
 
 static void webfs_info_button_cb(GuiButtonType result, InputType type, void* context) {
     WlanApp* app = context;
@@ -16,7 +18,8 @@ static void webfs_info_button_cb(GuiButtonType result, InputType type, void* con
 static void webfs_info_render(WlanApp* app, bool ok) {
     Widget* w = app->widget;
     widget_reset(w);
-    widget_add_string_element(w, 64, 2, AlignCenter, AlignTop, FontPrimary, "Web-Filesystem");
+    widget_add_string_element(w, 64, 2, AlignCenter, AlignTop, FontPrimary,
+                              s_safe_mode ? "Safe HTML demo" : "Web-Filesystem");
 
     if(!ok) {
         widget_add_string_element(
@@ -30,7 +33,8 @@ static void webfs_info_render(WlanApp* app, bool ok) {
     char ip[16] = {0};
     wlan_webfs_get_ip(ip, sizeof(ip));
 
-    const char* ssid = ap ? app->webfs_ssid : app->connected_ap.ssid;
+    const char* ssid = s_safe_mode ? app->safe_portal_ssid :
+                          (ap ? app->webfs_ssid : app->connected_ap.ssid);
     snprintf(line, sizeof(line), "SSID: %s", ssid);
     widget_add_string_element(w, 64, 18, AlignCenter, AlignTop, FontSecondary, line);
 
@@ -47,6 +51,10 @@ static void webfs_info_render(WlanApp* app, bool ok) {
 
 /* Stop happens in on_exit; return to the entry scene. */
 static void webfs_info_leave(WlanApp* app) {
+    if(s_safe_mode) {
+        scene_manager_previous_scene(app->scene_manager);
+        return;
+    }
     if(scene_manager_search_and_switch_to_previous_scene(
            app->scene_manager, WlanAppSceneWebFsMenu))
         return;
@@ -62,8 +70,14 @@ void wlan_app_scene_webfs_info_on_enter(void* context) {
     WlanApp* app = context;
     uint32_t mode = scene_manager_get_scene_state(app->scene_manager, WlanAppSceneWebFsInfo);
 
-    bool ok = (mode == 1) ? wlan_webfs_start_ap(app->webfs_ssid, app->webfs_pw) :
+    s_safe_mode = mode == 2;
+    if(s_safe_mode && app->safe_portal_ssid[0] == '\0') {
+        wlan_webfs_safe_ssid_load(app->safe_portal_ssid);
+    }
+    bool ok = s_safe_mode ? wlan_webfs_start_safe(app->safe_portal_ssid) :
+              (mode == 1) ? wlan_webfs_start_ap(app->webfs_ssid, app->webfs_pw) :
                             wlan_webfs_start_sta();
+    s_started = ok;
 
     s_last_clients = -1;
     webfs_info_render(app, ok);
@@ -81,7 +95,7 @@ bool wlan_app_scene_webfs_info_on_event(void* context, SceneManagerEvent event) 
         }
     } else if(event.type == SceneManagerEventTypeTick) {
         // Refresh the client count in AP mode when it changes.
-        if(wlan_webfs_is_running() && wlan_webfs_is_ap()) {
+        if(s_started && wlan_webfs_is_running() && wlan_webfs_is_ap()) {
             int now = wlan_webfs_get_client_count();
             if(now != s_last_clients) {
                 s_last_clients = now;
@@ -98,5 +112,6 @@ bool wlan_app_scene_webfs_info_on_event(void* context, SceneManagerEvent event) 
 
 void wlan_app_scene_webfs_info_on_exit(void* context) {
     UNUSED(context);
-    wlan_webfs_stop();
+    if(s_started) wlan_webfs_stop();
+    s_started = false;
 }

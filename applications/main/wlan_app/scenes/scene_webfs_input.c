@@ -1,5 +1,7 @@
-/* SSID / password entry (TextInput), reused for both fields via scene state
- * (0 = SSID, 1 = password). Persisted to /ext/webfs/config.txt on OK. */
+/* SSID / password / safe-portal-name entry (TextInput), reused via scene
+ * state (0 = SSID, 1 = password, 2 = safe portal name). SSID/password persist
+ * to /ext/webfs/config.txt on OK; the safe portal name persists separately
+ * to /ext/webfs/safe_config.txt so it never touches the real Web-FS config. */
 
 #include "../wlan_app.h"
 
@@ -32,12 +34,22 @@ void wlan_app_scene_webfs_input_on_enter(void* context) {
         text_input_set_minimum_length(ti, 1);
         text_input_set_result_callback(
             ti, webfs_input_result_cb, app, app->webfs_ssid, WLAN_WEBFS_SSID_MAX + 1, false);
-    } else {
+    } else if(target == 1) {
         text_input_set_header_text(ti, "Password (>=8 / empty=open)");
         text_input_set_minimum_length(ti, 0);
         text_input_set_validator(ti, webfs_pw_validator, NULL);
         text_input_set_result_callback(
             ti, webfs_input_result_cb, app, app->webfs_pw, WLAN_WEBFS_PW_MAX + 1, false);
+    } else {
+        text_input_set_header_text(ti, "Portal Name (AP SSID)");
+        text_input_set_minimum_length(ti, 1);
+        text_input_set_result_callback(
+            ti,
+            webfs_input_result_cb,
+            app,
+            app->safe_portal_ssid,
+            WLAN_WEBFS_SSID_MAX + 1,
+            false);
     }
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewTextInput);
@@ -48,7 +60,13 @@ bool wlan_app_scene_webfs_input_on_event(void* context, SceneManagerEvent event)
     bool consumed = false;
     if(event.type == SceneManagerEventTypeCustom) {
         if(event.event == WlanAppCustomEventWebFsInputDone) {
-            wlan_webfs_config_save(app->webfs_ssid, app->webfs_pw);
+            uint32_t target =
+                scene_manager_get_scene_state(app->scene_manager, WlanAppSceneWebFsInput);
+            if(target == 2) {
+                wlan_webfs_safe_ssid_save(app->safe_portal_ssid);
+            } else {
+                wlan_webfs_config_save(app->webfs_ssid, app->webfs_pw);
+            }
             scene_manager_previous_scene(app->scene_manager);
             consumed = true;
         }
