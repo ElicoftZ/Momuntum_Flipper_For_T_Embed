@@ -340,8 +340,8 @@ static bool animation_storage_load_frames(
     FURI_CONST_ASSIGN(icon->frame_rate, 0);
     FURI_CONST_ASSIGN(icon->height, height);
     FURI_CONST_ASSIGN(icon->width, width);
-    icon->frames = malloc(sizeof(const uint8_t*) * icon->frame_count);
-    memset((void*)icon->frames, 0, sizeof(const uint8_t*) * icon->frame_count);
+    icon->frames = calloc(icon->frame_count, sizeof(const uint8_t*));
+    if(!icon->frames) return false;
 
     bool frames_ok = false;
     File* file = storage_file_alloc(storage);
@@ -353,7 +353,7 @@ static bool animation_storage_load_frames(
         CompressTypeHeatshrink, &compress_config_heatshrink_default);
     uint8_t* decoded_frame = malloc(max_filesize - 1U);
 
-    for(int i = 0; i < icon->frame_count; ++i) {
+    for(int i = 0; decoded_frame && i < icon->frame_count; ++i) {
         frames_ok = false;
         furi_string_printf(filename, "%s/%s/frame_%d.bm", directory, name, i);
 
@@ -401,6 +401,11 @@ static bool animation_storage_load_frames(
         /* Freeze-frame cloning copies the full uncompressed size. Keep every
          * external frame zero-padded to that size even when the file is compressed. */
         FURI_CONST_ASSIGN_PTR(icon->frames[i], calloc(1, max_filesize));
+        if(!icon->frames[i]) {
+            FURI_LOG_E(TAG, "Out of memory for \'%s\'", furi_string_get_cstr(filename));
+            storage_file_close(file);
+            break;
+        }
         if(storage_file_read(file, (void*)icon->frames[i], file_info.size) != file_info.size) {
             FURI_LOG_E(TAG, "Read failed: \'%s\'", furi_string_get_cstr(filename));
             storage_file_close(file);
@@ -434,6 +439,21 @@ static bool animation_storage_load_frames(
         frames_ok = true;
     }
 
+    /* A gap here used to be a furi_check, which halts the system. On a
+     * malformed asset pack that means a crash on every boot, escapable only by
+     * pulling the SD card -- so treat it as a failed load and fall back to the
+     * built-in animations instead. */
+    if(frames_ok && animation->icon_animation.frames) {
+        for(int i = 0; i < animation->icon_animation.frame_count; ++i) {
+            if(!animation->icon_animation.frames[i]) {
+                frames_ok = false;
+                break;
+            }
+        }
+    } else {
+        frames_ok = false;
+    }
+
     if(!frames_ok) {
         FURI_LOG_E(
             TAG,
@@ -443,11 +463,6 @@ static bool animation_storage_load_frames(
             height,
             file_info.size);
         animation_storage_free_frames(animation);
-    } else {
-        furi_check(animation->icon_animation.frames);
-        for(int i = 0; i < animation->icon_animation.frame_count; ++i) {
-            furi_check(animation->icon_animation.frames[i]);
-        }
     }
 
     storage_file_free(file);
@@ -475,12 +490,16 @@ static bool animation_storage_load_bubbles(BubbleAnimation* animation, FlipperFo
         }
         animation->frame_bubble_sequences =
             calloc(animation->frame_bubble_sequences_count, sizeof(FrameBubble*));
+        if(!animation->frame_bubble_sequences) break;
 
         int32_t current_slot = 0;
+        bool alloc_failed = false;
         for(int i = 0; i < animation->frame_bubble_sequences_count; ++i) {
             FURI_CONST_ASSIGN_PTR(
                 animation->frame_bubble_sequences[i], calloc(1, sizeof(FrameBubble)));
+            if(!animation->frame_bubble_sequences[i]) alloc_failed = true;
         }
+        if(alloc_failed) break;
 
         const FrameBubble* bubble = animation->frame_bubble_sequences[0];
         int8_t index = -1;
@@ -497,6 +516,10 @@ static bool animation_storage_load_bubbles(BubbleAnimation* animation, FlipperFo
             if(current_slot == index) {
                 FURI_CONST_ASSIGN_PTR(bubble->next_bubble, calloc(1, sizeof(FrameBubble)));
                 bubble = bubble->next_bubble;
+                if(!bubble) {
+                    parse_error = true;
+                    break;
+                }
             } else if(current_slot == index + 1) {
                 ++index;
                 bubble = animation->frame_bubble_sequences[index];
