@@ -17,7 +17,7 @@ A port of the [Flipper Zero](https://flipperzero.one/) firmware — with the **M
 - **OTA firmware updates** — update over WiFi from *Settings → Update Firmware*; keeps SD-card files in sync. No cable, no toolchain. [ Thank to Sor3nt for adding feature in his original port ]
 - **Control Centre** — the lock menu is now a full quick-settings panel (Bluetooth, WiFi, Dark mode, Wake, PC Link, USB Storage, Web-Filesystem, Mesh, Dual Boot) with **brightness & volume sliders**.
 - **Wardriving** — passive WiFi + BLE + Sub-GHz logger.
-- **New WiFi tools** — AirSnitch, Probe Sniffer, Smart Deauth, SMB Browser, Web-Filesystem, Android TV Remote.
+- **New WiFi tools** — AirSnitch, Probe Sniffer, Smart Deauth, SMB Browser, Web-Filesystem, Android TV Remote.[ Thank to Sor3nt for adding feature in his original port ]
 - **BLE Detector** & **Macro Pad** (USB/BLE HID recorder).
 - **Streaming** — unified music & video (AirPlay, Chromecast, DLNA). [ Thank to Sor3nt for adding feature in his original port ]
 - **U2F / FIDO2 (CTAP2)** security key — PIN & passkeys.
