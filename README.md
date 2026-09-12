@@ -11,21 +11,41 @@
 
 A port of the [Flipper Zero](https://flipperzero.one/) firmware — with the **Momentum** feature set — to the **LilyGo T-Embed CC1101** and other ESP32 boards. It brings the Flipper Zero UI, services, and application framework to affordable ESP32 hardware — no Flipper Zero required.
 
-## ✨ New in v2
+## ✨ New in v2 — written for this fork
 
-- **Dual Boot** — install and switch between multiple firmwares from a boot menu, with a hardware side-button recovery escape hatch.
-- **OTA firmware updates** — update over WiFi from *Settings → Update Firmware*; keeps SD-card files in sync. No cable, no toolchain. [ Thank to Sor3nt for adding feature in his original port ]
-- **Control Centre** — the lock menu is now a full quick-settings panel (Bluetooth, WiFi, Dark mode, Wake, PC Link, USB Storage, Web-Filesystem, Mesh, Dual Boot) with **brightness & volume sliders**.
-- **Wardriving** — passive WiFi + BLE + Sub-GHz logger.
-- **New WiFi tools** — AirSnitch, Probe Sniffer, Smart Deauth, SMB Browser, Web-Filesystem, Android TV Remote.[ Thank to Sor3nt for adding feature in his original port ]
-- **BLE Detector** & **Macro Pad** (USB/BLE HID recorder).
-- **Streaming** — unified music & video (AirPlay, Chromecast, DLNA). [ Thank to Sor3nt for adding feature in his original port ]
-- **U2F / FIDO2 (CTAP2)** security key — PIN & passkeys.
-- **New apps & games** — Hotspot Arcade, NFC Magic, MIFARE Fuzzer, NFC/RFID Detector, RFID2 Reader, Reverse Shell, Roulette, WMBuster, TagTinker. [ Thank to Sor3nt for adding apps in his original port ]
-- **Interface** & **Spoofing** settings — main-menu customization; device name / shell color.
+Added for the LilyGo T-Embed by [ElicoftZ](https://github.com/ElicoftZ). These are original
+to this fork — present in neither the Sor3nt port nor Momentum. Per-feature provenance is
+verified in [CREDITS.md](CREDITS.md).
+
+- **Dual Boot** — install and switch between multiple firmwares from a boot menu, with a hardware side-button recovery escape hatch. Dynamic multi-boot partition layout with interrupted-update recovery.
+- **Power Profiler** — live power-draw trace from the BQ27220 fuel gauge.
+- **Wardriving** — passive WiFi + BLE + Sub-GHz logger to PSRAM, built on the port's WiFi stack.
+- **BLE Detector** — rapid Bluetooth device scanning & profiling, with unbounded scan lists.
+- **Macro Pad** — USB/BLE HID macro recorder & playback.
+- **Mic & audio tools** — microphone level, sonar, waterfall and logger, tone generator, ultrasonic, voice notes.
+- **Hotspot Arcade** — ESP-IDF integration of [tarikbc](https://github.com/tarikbc/hotspot-arcade)'s arcade (the game itself is © tarikbc, MIT).
+- **Settings backup**, plus the under-the-hood NimBLE integration the wireless apps depend on.
+
+## 🔀 Inherited from the Sor3nt ESP32 port
+
+These come from [Sor3nt/Flipper-Zero-ESP32-Port](https://github.com/Sor3nt/Flipper-Zero-ESP32-Port),
+the port this repository is forked from — **not written here**:
+
+- **WiFi suite** — Evil Portal, AirSnitch, Probe Sniffer, Smart Deauth, SMB Browser, Web-Filesystem, Android TV Remote.
+- **OTA firmware updates** — *Settings → Update Firmware*, over WiFi, with SD-card sync.
+- **Streaming** — unified music & video (AirPlay, Chromecast, DLNA).
+- **U2F / FIDO2 (CTAP2)** security key, dolphin passport, and the Interface / Spoofing settings.
+- **ESP-NOW** and **NRF24** tooling.
+- **Community apps** — NFC Magic, MIFARE Fuzzer, NFC/RFID Detector, RFID2 Reader, Reverse Shell, Roulette, WMBuster, TagTinker — plus the full base Flipper app set (NFC, SubGHz, Infrared, BadUSB, …).
+
+The **Momentum** feature set that came in through the merge — the Momentum settings app,
+Control Centre, dolphin levels, passport and menu styles — originates with
+[Momentum Firmware](https://github.com/Next-Flip/Momentum-Firmware).
+
+> Exact per-directory breakdown (**19 written here · 3 from Momentum · 175 from the port**,
+> across 197 directories) is in [CREDITS.md](CREDITS.md).
 
 See [RELEASE_NOTES_v2.md](RELEASE_NOTES_v2.md) for the full v2 changelog.
-
 ## Supported Boards
 
 | Board | MCU | Display | Input | SubGHz | NFC | IR | SD Card |
