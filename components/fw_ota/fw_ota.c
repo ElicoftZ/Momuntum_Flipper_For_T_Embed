@@ -54,10 +54,25 @@ static void fw_ota_trim(char* s) {
     if(start) memmove(s, s + start, strlen(s + start) + 1);
 }
 
+#ifdef CONFIG_MOMENTUM_MULTIBOOT
+/* The dual-boot pool owns ota_1..ota_15 and holds the user's other firmwares,
+ * so esp_ota_get_next_update_partition() must never pick the target here: it
+ * round-robins and would overwrite an installed firmware. Only this dedicated
+ * slot is update scratch. */
+#define FW_OTA_MULTIBOOT_LABEL "otaupd"
+
+static const esp_partition_t* fw_ota_multiboot_slot(void) {
+    return esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, FW_OTA_MULTIBOOT_LABEL);
+}
+#endif
+
 bool fw_ota_is_supported(void) {
 #ifdef CONFIG_MOMENTUM_MULTIBOOT
-    /* OTA partitions contain the user's other firmwares, not update scratch. */
-    return false;
+    /* Writing the slot we are executing from is impossible, so an image booted
+     * out of otaupd must go back to factory before it can update again. */
+    const esp_partition_t* slot = fw_ota_multiboot_slot();
+    return slot && slot != esp_ota_get_running_partition();
 #else
     return esp_ota_get_next_update_partition(NULL) != NULL;
 #endif
@@ -158,10 +173,14 @@ bool fw_ota_flash_file(
     char* err,
     size_t err_size) {
 #ifdef CONFIG_MOMENTUM_MULTIBOOT
-    fw_ota_set_err(err, err_size, "Use USB to update protected Momentum");
-    return false;
-#endif
+    const esp_partition_t* next = fw_ota_multiboot_slot();
+    if(next && next == esp_ota_get_running_partition()) {
+        fw_ota_set_err(err, err_size, "Boot base Momentum to update");
+        return false;
+    }
+#else
     const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
+#endif
     if(!next) {
         fw_ota_set_err(err, err_size, "OTA not supported (no ota slot)");
         return false;

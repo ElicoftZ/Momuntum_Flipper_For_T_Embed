@@ -6,12 +6,14 @@
 #define MB_TABLE_ADDRESS 0x8000U
 #define MB_BACKUP_ADDRESS 0x12000U
 #define MB_PENDING_ADDRESS 0x13000U
-#define MB_SYSTEM_COUNT 8U
+#define MB_SYSTEM_COUNT 9U
 #define MB_SECTOR_SIZE 0x1000U
-#define MB_POOL_START 0x420000U
+#define MB_POOL_START 0x920000U
 #define MB_POOL_END 0xf20000U
 #define MB_ALIGNMENT 0x10000U
-#define MB_MAX_APPS 16U
+/* Subtype 0x10 (ota_0) belongs to the fixed otaupd slot, so the pool runs
+ * 0x11..0x1f and holds one image fewer than the 16 OTA subtypes allow. */
+#define MB_MAX_APPS 15U
 #define MB_MAX_ENTRIES 95U
 
 typedef struct {

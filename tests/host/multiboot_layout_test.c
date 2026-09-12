@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     size_t count = MB_SYSTEM_COUNT;
     MbEntry added;
     assert(mb_layout_valid(table, count));
-    assert(mb_layout_largest_gap(table, count) == 11U * 1024U * 1024U);
+    assert(mb_layout_largest_gap(table, count) == 6U * 1024U * 1024U);
     assert(!mb_layout_add(table, &count, 0, &added));
     assert(!mb_layout_add(table, &count, UINT32_MAX, &added));
     assert(mb_layout_add(table, &count, 1, &added) && added.size == MB_ALIGNMENT);
@@ -30,6 +30,9 @@ int main(int argc, char** argv) {
     assert(mb_layout_valid(table, count));
     assert(!mb_layout_remove(table, &count, 0x20000));
     assert(!mb_layout_remove(table, &count, 0x9000));
+    /* The reserved updater slot is type 0 / subtype 0x10, so only the pool
+     * offset gate keeps mb_layout_remove() off it. */
+    assert(!mb_layout_remove(table, &count, 0x520000));
     memcpy(table, initial, sizeof(table)); count = MB_SYSTEM_COUNT;
     assert(mb_layout_add(table, &count, MB_POOL_END - MB_POOL_START, &added));
     assert(!mb_layout_add(table, &count, 1, &added));
@@ -53,7 +56,7 @@ int main(int argc, char** argv) {
         const size_t old_count = count;
         uint32_t removed = 0;
         if(count > MB_SYSTEM_COUNT && rand() % 3 == 0) {
-            size_t index = 6 + (size_t)rand() % (count - MB_SYSTEM_COUNT);
+            size_t index = 7 + (size_t)rand() % (count - MB_SYSTEM_COUNT);
             removed = table[index].offset;
             assert(mb_layout_remove(table, &count, removed));
         } else {
@@ -71,6 +74,6 @@ int main(int argc, char** argv) {
             assert(found);
         }
     }
-    puts("PASS: dynamic sizing, gap reuse, full flash, 16-slot limit, protected system entries, 20,000 fragmented install/remove histories");
+    puts("PASS: dynamic sizing, gap reuse, full flash, 15-slot limit, protected system entries, 20,000 fragmented install/remove histories");
     return 0;
 }

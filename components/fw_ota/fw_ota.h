@@ -16,8 +16,11 @@ extern "C" {
  *   - OTA-Updater-App     (applications/system/ota_updater, Vollbild-Fortschritt)
  *
  *  Layout-Voraussetzung: Dual-OTA-Partitionstabelle (partitions_ota_16mb.csv,
- *  ota_0/ota_1/otadata). Auf Single-App-Layouts liefert fw_ota_is_supported()
- *  false — dann bleibt nur der USB-/Web-Flasher (esptool).
+ *  ota_0/ota_1/otadata) ODER das Multiboot-Layout mit dem reservierten
+ *  "otaupd"-Slot (partitions_multiboot_16mb.csv). Auf Single-App-Layouts
+ *  liefert fw_ota_is_supported() false — dann bleibt nur der USB-/Web-Flasher
+ *  (esptool). Im Multiboot-Layout ist otaupd das einzige Ziel; der Dual-Boot-
+ *  Pool (ota_1..ota_15) wird nie ueberschrieben.
  *
  *  Threading: fw_ota_flash_file() MUSS aus einem xTaskCreate-Task mit
  *  INTERNEM DRAM-Stack laufen (esp_ota_write deaktiviert kurz den Flash-Cache;

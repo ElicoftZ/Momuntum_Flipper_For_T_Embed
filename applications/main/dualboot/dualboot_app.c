@@ -250,7 +250,10 @@ static void dualboot_refresh_installed(DualBoot* app) {
     app->installed_count = 0;
     for(unsigned subtype = 0x10; subtype <= 0x1f; ++subtype) {
         const esp_partition_t* part = esp_partition_find_first(ESP_PARTITION_TYPE_APP, subtype, NULL);
-        if(!part || part == esp_ota_get_running_partition()) continue;
+        /* Below the pool sits the fixed otaupd slot (ota_0), which is updater
+         * scratch rather than an installed firmware - never a boot tile. */
+        if(!part || part->address < MB_POOL_START || part == esp_ota_get_running_partition())
+            continue;
         DualBootInstalled* slot = &app->slots[app->installed_count++];
         memset(slot, 0, sizeof(*slot));
         slot->partition = part;
