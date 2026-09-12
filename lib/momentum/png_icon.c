@@ -24,12 +24,12 @@ typedef struct {
     size_t written;
 } PngInflateSink;
 
-/* tinfl flusht seinen internen 32-KB-Puffer hier durch; 0 bricht ab. Der
- * Callback-Weg ist Absicht: tinfl_decompress_mem_to_mem() setzt intern
- * TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF und loest LZ77-Rueckwaertsreferenzen
- * direkt im Zielpuffer auf -- bei einem ~1 KB grossen Icon-Puffer liest eine
- * Distanz, die ueber das bisher Dekodierte hinausgeht, VOR den Pufferanfang.
- * Diese Variante nutzt stattdessen das interne 32-KB-Woerterbuch. */
+/* tinfl flushes its internal 32 KB buffer through here; returning 0 aborts.
+ * The callback path is deliberate: tinfl_decompress_mem_to_mem() sets
+ * TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF and resolves LZ77 back-references
+ * directly in the output buffer -- with a ~1 KB icon buffer, a distance that
+ * reaches past what has been decoded so far reads BEFORE the buffer start.
+ * This path uses the internal 32 KB dictionary instead. */
 static int png_put_buf(const void* buf, int len, void* user) {
     PngInflateSink* sink = user;
     if(len <= 0) return 1;
