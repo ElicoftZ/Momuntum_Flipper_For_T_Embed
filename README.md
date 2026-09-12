@@ -21,7 +21,7 @@ A port of the [Flipper Zero](https://flipperzero.one/) firmware — with the **M
 - **BLE Detector** & **Macro Pad** (USB/BLE HID recorder).
 - **Streaming** — unified music & video (AirPlay, Chromecast, DLNA). [ Thank to Sor3nt for adding feature in his original port ]
 - **U2F / FIDO2 (CTAP2)** security key — PIN & passkeys.
-- **New apps & games** — Hotspot Arcade, NFC Magic, MIFARE Fuzzer, NFC/RFID Detector, RFID2 Reader, Reverse Shell, Roulette, WMBuster, TagTinker. [ Thank to Sor3nt for adding feature in his original port ]
+- **New apps & games** — Hotspot Arcade, NFC Magic, MIFARE Fuzzer, NFC/RFID Detector, RFID2 Reader, Reverse Shell, Roulette, WMBuster, TagTinker. [ Thank to Sor3nt for adding apps in his original port ]
 - **Interface** & **Spoofing** settings — main-menu customization; device name / shell color.
 
 See [RELEASE_NOTES_v2.md](RELEASE_NOTES_v2.md) for the full v2 changelog.
