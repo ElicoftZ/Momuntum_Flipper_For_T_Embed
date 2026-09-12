@@ -14,14 +14,14 @@ A port of the [Flipper Zero](https://flipperzero.one/) firmware — with the **M
 ## ✨ New in v2
 
 - **Dual Boot** — install and switch between multiple firmwares from a boot menu, with a hardware side-button recovery escape hatch.
-- **OTA firmware updates** — update over WiFi from *Settings → Update Firmware*; keeps SD-card files in sync. No cable, no toolchain. [ Thank to Sor3nt for adding feature in orginal]
+- **OTA firmware updates** — update over WiFi from *Settings → Update Firmware*; keeps SD-card files in sync. No cable, no toolchain. [ Thank to Sor3nt for adding feature in his original port ]
 - **Control Centre** — the lock menu is now a full quick-settings panel (Bluetooth, WiFi, Dark mode, Wake, PC Link, USB Storage, Web-Filesystem, Mesh, Dual Boot) with **brightness & volume sliders**.
 - **Wardriving** — passive WiFi + BLE + Sub-GHz logger.
 - **New WiFi tools** — AirSnitch, Probe Sniffer, Smart Deauth, SMB Browser, Web-Filesystem, Android TV Remote.
 - **BLE Detector** & **Macro Pad** (USB/BLE HID recorder).
-- **Streaming** — unified music & video (AirPlay, Chromecast, DLNA). [ Thank to Sor3nt for adding feature in orginal]
+- **Streaming** — unified music & video (AirPlay, Chromecast, DLNA). [ Thank to Sor3nt for adding feature in his original port ]
 - **U2F / FIDO2 (CTAP2)** security key — PIN & passkeys.
-- **New apps & games** — Hotspot Arcade, NFC Magic, MIFARE Fuzzer, NFC/RFID Detector, RFID2 Reader, Reverse Shell, Roulette, WMBuster, TagTinker. [ Thank to Sor3nt for adding add in orginal port]
+- **New apps & games** — Hotspot Arcade, NFC Magic, MIFARE Fuzzer, NFC/RFID Detector, RFID2 Reader, Reverse Shell, Roulette, WMBuster, TagTinker. [ Thank to Sor3nt for adding feature in his original port ]
 - **Interface** & **Spoofing** settings — main-menu customization; device name / shell color.
 
 See [RELEASE_NOTES_v2.md](RELEASE_NOTES_v2.md) for the full v2 changelog.
