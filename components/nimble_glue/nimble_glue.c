@@ -6,6 +6,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
+#include <esp_bt.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
 
@@ -93,6 +94,21 @@ static void nimble_glue_on_sync(void) {
     void* context = nimble_glue_state.sync_context;
     SemaphoreHandle_t sync_sem = nimble_glue_state.sync_sem;
     nimble_glue_unlock();
+
+    if(rc == 0) {
+        /* Force the controller default TX power to the S3 maximum so every BLE
+         * transmission runs at full power: advertising, active-scan requests,
+         * and connections. DEFAULT is the fallback for any TX type not set
+         * explicitly, so it also covers scan and connection TX. Per-app code
+         * (e.g. BLE spam) may still raise ADV on its own session. */
+#ifdef ESP_PWR_LVL_P21
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P21);
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P21);
+#else
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P20);
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P20);
+#endif
+    }
 
     if(sync_sem) {
         xSemaphoreGive(sync_sem);

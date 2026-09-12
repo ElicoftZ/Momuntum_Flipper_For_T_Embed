@@ -667,6 +667,12 @@ static void wlan_worker_fn(void* arg) {
             if(err != ESP_OK) {
                 ESP_LOGE(TAG, "wifi_start: %s", esp_err_to_name(err));
                 ok = false;
+            } else {
+                /* Request the PHY's maximum TX power (84 = 21 dBm). The driver
+                 * clamps this to CONFIG_ESP_PHY_MAX_WIFI_TX_POWER (20 dBm, the
+                 * S3 ceiling). esp_wifi_start() already defaults to that ceiling,
+                 * so this only guarantees no path left TX power reduced. */
+                esp_wifi_set_max_tx_power(84);
             }
             break;
 
