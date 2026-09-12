@@ -13,8 +13,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define DETECTOR_MAX_RESULTS 32
-#define DETECTOR_MAX_RAW 96
+/* Starting sizes only: both lists grow on demand in PSRAM, so a busy room is
+ * no longer truncated at a fixed cap. The uint16_t counters are the real limit. */
+#define DETECTOR_RESULTS_CHUNK 32
+#define DETECTOR_RAW_CHUNK 96
+#define DETECTOR_COUNT_MAX 0xfffeu
 #define DETECTOR_EVENT_SELECT 1u
 #define DETECTOR_EVENT_UP 2u
 #define DETECTOR_EVENT_DOWN 3u
@@ -51,13 +54,38 @@ typedef struct {
     bool in_results;
     DetectorKind filter;
     uint16_t selected;
-    DetectorRecord records[DetectorKindCount][DETECTOR_MAX_RESULTS];
+    DetectorRecord* records[DetectorKindCount];
     uint16_t counts[DetectorKindCount];
-    DetectorRawDevice raw[DETECTOR_MAX_RAW];
+    uint16_t caps[DetectorKindCount];
+    DetectorRawDevice* raw;
     uint16_t raw_count;
+    uint16_t raw_cap;
+    /* The GAP callback appends on the NimBLE task while the app tick walks the
+     * same array; a realloc without this could move it mid-iteration. */
+    FuriMutex* raw_mutex;
 } BleDetectorApp;
 
 static BleDetectorApp* detector_app;
+
+/* Grow a scan list in place: PSRAM first, internal heap as fallback, mirroring
+ * how the app struct itself is allocated. On failure the existing buffer is
+ * kept and the caller just stops recording new devices. */
+static bool
+    detector_grow(void** buffer, uint16_t* cap, uint16_t needed, size_t item, uint16_t chunk) {
+    if(needed <= *cap) return true;
+    uint32_t next = *cap ? (uint32_t)*cap * 2u : chunk;
+    while(next < needed) next *= 2u;
+    if(next > DETECTOR_COUNT_MAX) next = DETECTOR_COUNT_MAX;
+    if(needed > next) return false;
+    const size_t bytes = (size_t)next * item;
+    void* grown = heap_caps_realloc(*buffer, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if(!grown) grown = heap_caps_realloc(*buffer, bytes, MALLOC_CAP_8BIT);
+    if(!grown) return false;
+    memset((uint8_t*)grown + (size_t)*cap * item, 0, bytes - (size_t)*cap * item);
+    *buffer = grown;
+    *cap = (uint16_t)next;
+    return true;
+}
 
 static int detector_gap_event(struct ble_gap_event* event, void* context) {
     BleDetectorApp* app = context;
@@ -66,6 +94,7 @@ static int detector_gap_event(struct ble_gap_event* event, void* context) {
         uint8_t display_addr[6];
         for(size_t i = 0; i < 6; ++i) display_addr[i] = disc->addr.val[5 - i];
         int found = -1;
+        furi_mutex_acquire(app->raw_mutex, FuriWaitForever);
         for(uint16_t i = 0; i < app->raw_count; ++i) {
             if(!memcmp(app->raw[i].addr, display_addr, 6) &&
                app->raw[i].addr_type == disc->addr.type) {
@@ -74,7 +103,15 @@ static int detector_gap_event(struct ble_gap_event* event, void* context) {
             }
         }
         if(found < 0) {
-            if(app->raw_count >= DETECTOR_MAX_RAW) return 0;
+            if(!detector_grow(
+                   (void**)&app->raw,
+                   &app->raw_cap,
+                   app->raw_count + 1,
+                   sizeof(DetectorRawDevice),
+                   DETECTOR_RAW_CHUNK)) {
+                furi_mutex_release(app->raw_mutex);
+                return 0;
+            }
             found = app->raw_count++;
             memset(&app->raw[found], 0, sizeof(DetectorRawDevice));
             memcpy(app->raw[found].addr, display_addr, 6);
@@ -91,6 +128,7 @@ static int detector_gap_event(struct ble_gap_event* event, void* context) {
             raw->adv_len = length;
             memcpy(raw->adv, disc->data, length);
         }
+        furi_mutex_release(app->raw_mutex);
     } else if(event->type == BLE_GAP_EVENT_DISC_COMPLETE) {
         detector_app->scanning = false;
     }
@@ -121,8 +159,11 @@ static bool detector_radio_start(BleDetectorApp* app) {
         }
         return false;
     }
-    memset(app->raw, 0, sizeof(app->raw));
+    furi_mutex_acquire(app->raw_mutex, FuriWaitForever);
+    if(app->raw && app->raw_cap)
+        memset(app->raw, 0, (size_t)app->raw_cap * sizeof(DetectorRawDevice));
     app->raw_count = 0;
+    furi_mutex_release(app->raw_mutex);
     return true;
 }
 
@@ -207,7 +248,13 @@ static void detector_store(DetectorKind kind, DetectorRawDevice* device, Detecto
         }
     }
     if(found < 0) {
-        if(count >= DETECTOR_MAX_RESULTS) return;
+        if(!detector_grow(
+               (void**)&detector_app->records[kind],
+               &detector_app->caps[kind],
+               count + 1,
+               sizeof(DetectorRecord),
+               DETECTOR_RESULTS_CHUNK))
+            return;
         found = count++;
         memset(&detector_app->records[kind][found], 0, sizeof(DetectorRecord));
         memcpy(detector_app->records[kind][found].addr, device->addr, 6);
@@ -223,15 +270,17 @@ static void detector_store(DetectorKind kind, DetectorRawDevice* device, Detecto
 
 static void detector_sync_results(BleDetectorApp* app) {
     if(!app->radio_ready || !app->scanning) return;
-    uint16_t count = app->raw_count;
-    DetectorRawDevice* devices = app->raw;
-    for(uint16_t i = 0; i < count; ++i) {
+    /* Held across the walk because the GAP callback may grow (and therefore
+     * move) raw[] from the NimBLE task at any moment. */
+    furi_mutex_acquire(app->raw_mutex, FuriWaitForever);
+    for(uint16_t i = 0; i < app->raw_count; ++i) {
         DetectorMatch match;
-        if(!detector_parse_device(&devices[i], &match)) continue;
+        if(!detector_parse_device(&app->raw[i], &match)) continue;
         for(DetectorKind kind = DetectorFlipper; kind < DetectorKindCount; ++kind) {
-            if(match.kinds & DETECTOR_BIT(kind)) detector_store(kind, &devices[i], &match);
+            if(match.kinds & DETECTOR_BIT(kind)) detector_store(kind, &app->raw[i], &match);
         }
     }
+    furi_mutex_release(app->raw_mutex);
     // All Scan is a separate list containing one row per detected category.
     for(DetectorKind kind = DetectorFlipper; kind < DetectorKindCount; ++kind) {
         uint16_t source_count = app->counts[kind];
@@ -246,7 +295,13 @@ static void detector_sync_results(BleDetectorApp* app) {
                     break;
                 }
             }
-            if(found < 0 && all_count < DETECTOR_MAX_RESULTS) {
+            if(found < 0 &&
+               detector_grow(
+                   (void**)&app->records[DetectorAll],
+                   &app->caps[DetectorAll],
+                   all_count + 1,
+                   sizeof(DetectorRecord),
+                   DETECTOR_RESULTS_CHUNK)) {
                 found = all_count++;
                 memset(&app->records[DetectorAll][found], 0, sizeof(DetectorRecord));
                 memcpy(app->records[DetectorAll][found].addr, source->addr, 6);
@@ -355,6 +410,8 @@ int32_t ble_detector_app(void* args) {
     BleDetectorApp* app = heap_caps_calloc(1, sizeof(*app), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if(!app) app = calloc(1, sizeof(*app));
     furi_check(app);
+    app->raw_mutex = furi_mutex_alloc(FuriMutexTypeNormal);
+    furi_check(app->raw_mutex);
     detector_app = app;
     app->filter = DetectorAll;
     app->gui = furi_record_open(RECORD_GUI);
@@ -389,6 +446,10 @@ int32_t ble_detector_app(void* args) {
     view_free(app->results_view);
     view_dispatcher_free(app->dispatcher);
     furi_record_close(RECORD_GUI);
+    for(DetectorKind kind = DetectorAll; kind < DetectorKindCount; ++kind)
+        heap_caps_free(app->records[kind]);
+    heap_caps_free(app->raw);
+    furi_mutex_free(app->raw_mutex);
     heap_caps_free(app);
     return 0;
 }
