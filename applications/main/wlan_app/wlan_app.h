@@ -255,8 +255,9 @@ struct WlanApp {
 
     WlanNetcut* netcut;
 
-    // SD-Content-Update (Delta-Sync über files.txt). Worker + View werden von
-    // der kombinierten Update-Scene (scene_fw_update) als zweite Phase genutzt.
+    // SD-Content-Update (lädt sdcard.zip und entpackt es auf /ext). Worker +
+    // View werden von der kombinierten Update-Scene (scene_fw_update) als
+    // zweite Phase genutzt.
     WlanSdUpdate* sd_update;
     View* view_sd_update;
 

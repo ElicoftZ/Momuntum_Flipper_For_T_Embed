@@ -9,20 +9,24 @@
 #include <freertos/task.h>
 #include <esp_http_client.h>
 #include <esp_heap_caps.h>
+#include <miniz.h>
 
 #define SD_UPDATE_TAG "WlanSdUpdate"
-// sdcard/-Ordner wird unter dieser Basis gespiegelt veröffentlicht.
+// Ein einziges Archiv statt eines gespiegelten Dateibaums: die Karte hat ~3700
+// Dateien, und per-Datei-Download zahlte pro Datei einen TLS-Handshake.
 #define SD_UPDATE_BASE_URL "https://elicoftz.github.io/Momuntum_Flipper_For_T_Embed/release/t-embed/latest"
 #define SD_UPDATE_VERSION_URL SD_UPDATE_BASE_URL "/version.txt"
-#define SD_UPDATE_FILES_URL SD_UPDATE_BASE_URL "/files.txt"
+#define SD_UPDATE_ZIP_URL SD_UPDATE_BASE_URL "/sdcard.zip"
 #define SD_UPDATE_LOCAL_VERSION "/ext/version.txt"
+#define SD_UPDATE_LOCAL_ZIP "/ext/update/sdcard.zip"
 #define SD_UPDATE_DEST_ROOT "/ext"
-#define SD_UPDATE_MAX_MANIFEST (4u * 1024u * 1024u)
 #define SD_UPDATE_CHUNK 8192
-#define SD_UPDATE_LOCAL_MANIFEST "/ext/files.txt"
 // Anzahl Versuche pro Datei bei Read-Timeout/Verbindungsabbruch. Jeder Retry
 // setzt per HTTP-Range an der bereits geschriebenen Byte-Position fort.
 #define SD_UPDATE_MAX_RETRY 4
+// Groesster komprimierter Eintrag der Karte liegt bei ~1,7 MB; Puffer im PSRAM.
+#define SD_UPDATE_MAX_ENTRY (2u * 1024u * 1024u)
+#define SD_UPDATE_MAX_CD (2u * 1024u * 1024u)
 
 static void* sd_malloc(size_t n) {
     void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
@@ -81,8 +85,6 @@ static void sd_update_http_cfg(esp_http_client_config_t* cfg, const char* url) {
     cfg->use_global_ca_store = false;
     cfg->buffer_size = SD_UPDATE_CHUNK;
     cfg->buffer_size_tx = 1024;
-    // Verbindung/TLS-Session über mehrere Dateien wiederverwenden, sonst
-    // zahlt jede Datei einen kompletten TLS-Handshake (sehr langsam).
     cfg->keep_alive_enable = true;
 }
 
@@ -114,58 +116,6 @@ static bool sd_update_http_get_text(const char* url, char* out, size_t out_sz) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     return ok;
-}
-
-// Lädt das (Text-)Manifest in einen malloc-Puffer. Caller frees.
-static char* sd_update_http_get_alloc(const char* url, size_t* out_len) {
-    esp_http_client_config_t cfg;
-    sd_update_http_cfg(&cfg, url);
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if(!client) return NULL;
-
-    char* buf = NULL;
-    size_t cap = 0, len = 0;
-    bool ok = false;
-
-    if(esp_http_client_open(client, 0) == ESP_OK) {
-        esp_http_client_fetch_headers(client);
-        if(esp_http_client_get_status_code(client) == 200) {
-            ok = true;
-            while(true) {
-                if(len + 1 >= cap) {
-                    size_t ncap = cap ? cap * 2 : 32768;
-                    if(ncap > SD_UPDATE_MAX_MANIFEST) {
-                        ok = false;
-                        break;
-                    }
-                    char* nb = heap_caps_realloc(buf, ncap, MALLOC_CAP_SPIRAM);
-                    if(!nb) {
-                        ok = false;
-                        break;
-                    }
-                    buf = nb;
-                    cap = ncap;
-                }
-                int r = esp_http_client_read(client, buf + len, cap - 1 - len);
-                if(r < 0) {
-                    ok = false;
-                    break;
-                }
-                if(r == 0) break;
-                len += (size_t)r;
-            }
-        }
-    }
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-
-    if(!ok || len == 0) {
-        if(buf) free(buf);
-        return NULL;
-    }
-    buf[len] = '\0';
-    *out_len = len;
-    return buf;
 }
 
 static bool sd_update_read_local_version(char* out, size_t out_sz) {
@@ -337,7 +287,8 @@ static bool sd_update_download_file(
     return false;
 }
 
-// Path-Traversal-Schutz; baut /ext/<rel>.
+// Path-Traversal-Schutz; baut /ext/<rel>. Gilt auch für Zip-Einträge, deren
+// Namen aus dem Archiv stammen ("zip slip").
 static bool sd_update_safe_dest(const char* rel, char* out, size_t out_sz) {
     while(*rel == '/') rel++;
     if(!*rel) return false;
@@ -346,207 +297,235 @@ static bool sd_update_safe_dest(const char* rel, char* out, size_t out_sz) {
     return n > 0 && (size_t)n < out_sz;
 }
 
-static uint32_t sd_update_count_lines(const char* s) {
-    uint32_t n = 0;
-    for(; *s; ++s)
-        if(*s == '\n') n++;
-    return n ? n : 1;
+// ---------------------------------------------------------------------------
+// ZIP-Entpacker
+//
+// Die Karte wird als ein einziges sdcard.zip ausgeliefert (dasselbe Archiv, das
+// der Web-Flasher anbietet) statt als gespiegelter Dateibaum mit Manifest. Der
+// Deflate-Decoder tinfl liegt im ESP32-S3-ROM und kostet daher keinen Flash.
+// Zip-Einträge sind RAW Deflate — TINFL_FLAG_PARSE_ZLIB_HEADER darf nicht
+// gesetzt werden, sonst scheitert jeder Eintrag.
+// ---------------------------------------------------------------------------
+
+#define ZIP_EOCD_SIG 0x06054b50u
+#define ZIP_CD_SIG 0x02014b50u
+#define ZIP_LOCAL_SIG 0x04034b50u
+// 64 KB maximaler Zip-Kommentar + 22 B EOCD.
+#define ZIP_EOCD_MAX_SCAN (66u * 1024u)
+
+static uint16_t zip_rd16(const uint8_t* p) {
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
 
-// Ein Manifest-Eintrag (Zeiger zeigen in den jeweiligen Puffer).
+static uint32_t zip_rd32(const uint8_t* p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[3] << 24);
+}
+
 typedef struct {
-    const char* path; // nul-terminiert
-    const char* sha;  // 64 Zeichen, nul-terminiert
-} SdManifestEntry;
+    File* out;
+    bool ok;
+} ZipSink;
 
-// Parst "<64 sha> <size> <pfad>" aus einer (mutierbaren) Zeile. Liefert false
-// bei Formatfehler. sha/pfad werden in-place nul-terminiert.
-static bool sd_update_parse_line(
-    char* line, const char** sha, uint64_t* size, const char** path) {
-    size_t ll = strlen(line);
-    while(ll && (line[ll - 1] == '\r' || line[ll - 1] == ' ')) line[--ll] = '\0';
-    if(ll < 67 || line[64] != ' ') return false;
-    line[64] = '\0';
-    *sha = line;
-    char* p = line + 65;
-    while(*p == ' ') p++;
-    uint64_t sz = 0;
-    while(*p >= '0' && *p <= '9') sz = sz * 10u + (uint64_t)(*p++ - '0');
-    if(*p != ' ') return false;
-    if(size) *size = sz;
-    p++;
-    while(*p == ' ') p++;
-    if(!*p) return false;
-    *path = p;
-    return true;
+// tinfl flusht seinen internen 32-KB-Puffer hier durch; 0 bricht ab.
+static int zip_put_buf(const void* buf, int len, void* user) {
+    ZipSink* s = user;
+    if(!s->ok) return 0;
+    if(len <= 0) return 1;
+    if(storage_file_write(s->out, buf, (size_t)len) != (size_t)len) {
+        s->ok = false;
+        return 0;
+    }
+    return 1;
 }
 
-static int sd_manifest_cmp(const void* a, const void* b) {
-    return strcmp(((const SdManifestEntry*)a)->path, ((const SdManifestEntry*)b)->path);
+static bool zip_read_at(File* f, uint32_t off, void* buf, size_t len) {
+    if(!storage_file_seek(f, off, true)) return false;
+    return storage_file_read(f, buf, len) == len;
 }
 
-// Lädt /ext/files.txt und baut ein sortiertes Array. *out_buf muss vom Caller
-// freigegeben werden. Liefert false wenn keine lokale Manifest-Datei da ist.
-static bool sd_update_load_local_manifest(
-    Storage* storage, char** out_buf, SdManifestEntry** out_entries, uint32_t* out_count) {
-    *out_buf = NULL;
-    *out_entries = NULL;
-    *out_count = 0;
+// Sucht das End-of-Central-Directory rückwärts vom Dateiende.
+static bool zip_find_eocd(
+    File* f, uint32_t fsize, uint32_t* cd_off, uint32_t* cd_size, uint32_t* count) {
+    uint32_t scan = fsize < ZIP_EOCD_MAX_SCAN ? fsize : ZIP_EOCD_MAX_SCAN;
+    if(scan < 22) return false;
 
-    FileInfo fi;
-    if(storage_common_stat(storage, SD_UPDATE_LOCAL_MANIFEST, &fi) != FSE_OK) return false;
-    if(fi.size == 0 || fi.size > SD_UPDATE_MAX_MANIFEST) return false;
-
-    char* buf = sd_malloc((size_t)fi.size + 1);
+    uint8_t* buf = sd_malloc(scan);
     if(!buf) return false;
 
-    File* f = storage_file_alloc(storage);
-    if(!storage_file_open(f, SD_UPDATE_LOCAL_MANIFEST, FSAM_READ, FSOM_OPEN_EXISTING)) {
-        storage_file_free(f);
-        free(buf);
-        return false;
-    }
-    size_t rd = storage_file_read(f, buf, (size_t)fi.size);
-    storage_file_close(f);
-    storage_file_free(f);
-    buf[rd] = '\0';
-
-    uint32_t cap = sd_update_count_lines(buf);
-    SdManifestEntry* arr = sd_malloc(sizeof(SdManifestEntry) * cap);
-    if(!arr) {
-        free(buf);
-        return false;
-    }
-
-    uint32_t n = 0;
-    char* save = NULL;
-    for(char* line = strtok_r(buf, "\n", &save); line && n < cap;
-        line = strtok_r(NULL, "\n", &save)) {
-        const char *sha, *path;
-        if(sd_update_parse_line(line, &sha, NULL, &path)) {
-            arr[n].sha = sha;
-            arr[n].path = path;
-            n++;
-        }
-    }
-    qsort(arr, n, sizeof(SdManifestEntry), sd_manifest_cmp);
-
-    *out_buf = buf;
-    *out_entries = arr;
-    *out_count = n;
-    return true;
-}
-
-static const char* sd_manifest_lookup(
-    SdManifestEntry* arr, uint32_t n, const char* path) {
-    SdManifestEntry key = {.path = path, .sha = NULL};
-    SdManifestEntry* hit = bsearch(&key, arr, n, sizeof(SdManifestEntry), sd_manifest_cmp);
-    return hit ? hit->sha : NULL;
-}
-
-static void sd_update_save_manifest(Storage* storage, const char* data, size_t len) {
-    File* f = storage_file_alloc(storage);
-    if(storage_file_open(f, SD_UPDATE_LOCAL_MANIFEST, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
-        storage_file_write(f, data, len);
-        storage_file_close(f);
-    }
-    storage_file_free(f);
-}
-
-// Delta-Sync: vergleicht das (frische) Remote-Manifest mit dem zuletzt
-// gespeicherten lokalen /ext/files.txt; lädt nur neue/geänderte Dateien.
-static bool sd_update_sync(WlanSdUpdate* u, const char* manifest, size_t mlen) {
-    uint32_t total = sd_update_count_lines(manifest);
-    uint32_t done = 0;
-    u->total_files = total;
-    u->done_files = 0;
-
-    Storage* storage = furi_record_open(RECORD_STORAGE);
-    storage_common_mkdir(storage, SD_UPDATE_DEST_ROOT);
-
-    char* lbuf = NULL;
-    SdManifestEntry* lentries = NULL;
-    uint32_t lcount = 0;
-    bool have_local =
-        sd_update_load_local_manifest(storage, &lbuf, &lentries, &lcount);
-
-    esp_http_client_config_t cfg;
-    sd_update_http_cfg(&cfg, SD_UPDATE_BASE_URL "/files.txt");
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-
-    bool ok = (client != NULL);
-    const char* cur = manifest;
-    char line[300];
-
-    while(ok && *cur) {
-        if(u->cancel) {
-            ok = false;
+    bool ok = false;
+    if(zip_read_at(f, fsize - scan, buf, scan)) {
+        for(int32_t i = (int32_t)scan - 22; i >= 0; --i) {
+            if(zip_rd32(buf + i) != ZIP_EOCD_SIG) continue;
+            *count = zip_rd16(buf + i + 10);
+            *cd_size = zip_rd32(buf + i + 12);
+            *cd_off = zip_rd32(buf + i + 16);
+            ok = true;
             break;
         }
-        const char* nl = strchr(cur, '\n');
-        size_t ln = nl ? (size_t)(nl - cur) : strlen(cur);
-        if(ln >= sizeof(line)) ln = sizeof(line) - 1;
-        memcpy(line, cur, ln);
-        line[ln] = '\0';
-        cur = nl ? nl + 1 : cur + strlen(cur);
+    }
+    free(buf);
+    return ok;
+}
 
-        done++;
-        u->done_files = done;
-        u->percent = (uint8_t)((uint64_t)done * 100u / total);
+// Entpackt einen Eintrag nach dest. cbuf wird beim ersten Aufruf angelegt und
+// über alle Einträge wiederverwendet (Caller gibt ihn frei).
+static bool sd_update_write_entry(
+    WlanSdUpdate* u,
+    Storage* storage,
+    File* zf,
+    uint32_t local_header,
+    uint16_t method,
+    uint32_t csize,
+    const char* dest,
+    uint8_t** cbuf) {
+    uint8_t lh[30];
+    if(!zip_read_at(zf, local_header, lh, sizeof(lh)) || zip_rd32(lh) != ZIP_LOCAL_SIG) {
+        sd_update_fail(u, "zip entry header bad");
+        return false;
+    }
+    // Das Extra-Feld im Local-Header darf vom Central-Directory abweichen —
+    // die Datenposition muss deshalb aus dem Local-Header kommen.
+    const uint32_t data = local_header + 30u + zip_rd16(lh + 26) + zip_rd16(lh + 28);
 
-        const char *want_sha, *rel;
-        uint64_t want_size = 0;
-        if(!sd_update_parse_line(line, &want_sha, &want_size, &rel)) continue;
+    if(csize > SD_UPDATE_MAX_ENTRY) {
+        sd_update_fail(u, "zip entry too large");
+        return false;
+    }
+    if(!*cbuf) {
+        *cbuf = sd_malloc(SD_UPDATE_MAX_ENTRY);
+        if(!*cbuf) {
+            sd_update_fail(u, "out of memory");
+            return false;
+        }
+    }
+    if(csize && !zip_read_at(zf, data, *cbuf, csize)) {
+        sd_update_fail(u, "zip read failed");
+        return false;
+    }
 
-        char dest[256];
-        if(!sd_update_safe_dest(rel, dest, sizeof(dest))) continue;
+    sd_update_mkdirs(storage, dest);
+    ZipSink sink = {.out = storage_file_alloc(storage), .ok = true};
+    if(!storage_file_open(sink.out, dest, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
+        storage_file_free(sink.out);
+        sd_update_fail(u, "write failed");
+        return false;
+    }
 
-        bool need = true;
+    bool ok;
+    if(method == 0) { // STORE
+        ok = csize == 0 || storage_file_write(sink.out, *cbuf, csize) == csize;
+    } else if(method == 8) { // DEFLATE, raw
+        size_t in_size = csize;
+        ok = tinfl_decompress_mem_to_callback(*cbuf, &in_size, zip_put_buf, &sink, 0) != 0 &&
+             sink.ok;
+    } else {
+        ok = false;
+    }
+
+    storage_file_close(sink.out);
+    storage_file_free(sink.out);
+    if(!ok) sd_update_fail(u, "extract failed");
+    return ok;
+}
+
+static bool sd_update_extract_zip(WlanSdUpdate* u, const char* zip_path) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    File* zf = storage_file_alloc(storage);
+    uint8_t* cd = NULL;
+    uint8_t* cbuf = NULL;
+    bool ok = false;
+
+    do {
         FileInfo fi;
-        bool exists = storage_common_stat(storage, dest, &fi) == FSE_OK;
-        const char* lsha = have_local ? sd_manifest_lookup(lentries, lcount, rel) : NULL;
-        if(lsha && exists && strcmp(lsha, want_sha) == 0) {
-            need = false; // laut lokalem Manifest unverändert
-        } else if(!have_local && exists && fi.size == want_size) {
-            // Erstlauf ohne lokales Manifest: vorhandene Datei mit passender
-            // Größe als aktuell annehmen (kein Hashing → schnell). Nach dem
-            // Lauf wird das Manifest persistiert → danach exakter SHA-Diff.
-            need = false;
+        if(storage_common_stat(storage, zip_path, &fi) != FSE_OK || fi.size < 22) {
+            sd_update_fail(u, "sdcard.zip missing");
+            break;
+        }
+        if(!storage_file_open(zf, zip_path, FSAM_READ, FSOM_OPEN_EXISTING)) {
+            sd_update_fail(u, "sdcard.zip open failed");
+            break;
         }
 
-        if(!need) continue;
+        uint32_t cd_off = 0, cd_size = 0, count = 0;
+        if(!zip_find_eocd(zf, (uint32_t)fi.size, &cd_off, &cd_size, &count) || count == 0 ||
+           cd_size == 0 || cd_size > SD_UPDATE_MAX_CD) {
+            sd_update_fail(u, "zip directory missing");
+            break;
+        }
 
-        sd_update_set_file(u, rel);
-        u->speed_kbps = 0;
+        cd = sd_malloc(cd_size);
+        if(!cd || !zip_read_at(zf, cd_off, cd, cd_size)) {
+            sd_update_fail(u, "zip directory read failed");
+            break;
+        }
 
-        char url[400];
-        snprintf(url, sizeof(url), "%s/%s", SD_UPDATE_BASE_URL, rel);
-        FURI_LOG_I(SD_UPDATE_TAG, "fetch %s", rel);
-        if(!sd_update_download_file(u, client, storage, url, dest)) {
-            if(u->cancel) {
+        storage_common_mkdir(storage, SD_UPDATE_DEST_ROOT);
+        u->total_files = count;
+        u->done_files = 0;
+
+        ok = true;
+        uint32_t pos = 0;
+        for(uint32_t i = 0; i < count && ok && !u->cancel; ++i) {
+            if(pos + 46u > cd_size || zip_rd32(cd + pos) != ZIP_CD_SIG) {
+                sd_update_fail(u, "zip directory corrupt");
                 ok = false;
                 break;
             }
-            char m[64];
-            snprintf(m, sizeof(m), "Download failed: %.32s", rel);
-            sd_update_fail(u, m);
-            ok = false;
-            break;
+            const uint16_t method = zip_rd16(cd + pos + 10);
+            const uint32_t csize = zip_rd32(cd + pos + 20);
+            const uint16_t nlen = zip_rd16(cd + pos + 28);
+            const uint16_t elen = zip_rd16(cd + pos + 30);
+            const uint16_t clen = zip_rd16(cd + pos + 32);
+            const uint32_t local_header = zip_rd32(cd + pos + 42);
+            if(pos + 46u + nlen > cd_size) {
+                sd_update_fail(u, "zip directory corrupt");
+                ok = false;
+                break;
+            }
+
+            char rel[256];
+            const uint16_t rn = nlen < sizeof(rel) - 1 ? nlen : (uint16_t)(sizeof(rel) - 1);
+            memcpy(rel, cd + pos + 46, rn);
+            rel[rn] = '\0';
+            pos += 46u + nlen + elen + clen;
+
+            u->done_files = i + 1;
+            u->percent = (uint8_t)((uint64_t)(i + 1) * 100u / count);
+
+            if(rn == 0 || rel[rn - 1] == '/') continue; // Verzeichniseintrag
+            // version.txt ist der "fertig"-Marker und wird erst nach dem
+            // letzten Eintrag geschrieben — sonst sieht ein Abbruch auf halber
+            // Strecke wie eine aktuelle Karte aus und wird nie wiederholt.
+            if(strcmp(rel, "version.txt") == 0) continue;
+
+            char dest[256];
+            if(!sd_update_safe_dest(rel, dest, sizeof(dest))) continue;
+            sd_update_set_file(u, rel);
+
+            ok = sd_update_write_entry(
+                u, storage, zf, local_header, method, csize, dest, &cbuf);
         }
-    }
+        if(u->cancel) ok = false;
+    } while(0);
 
-    if(client) esp_http_client_cleanup(client);
-    if(lentries) free(lentries);
-    if(lbuf) free(lbuf);
-
-    // Nur bei vollständigem Erfolg das Manifest persistieren (sonst beim
-    // nächsten Lauf erneut diffen).
-    if(ok && !u->cancel) {
-        sd_update_save_manifest(storage, manifest, mlen);
-    }
-
+    if(cbuf) free(cbuf);
+    if(cd) free(cd);
+    storage_file_close(zf);
+    storage_file_free(zf);
     furi_record_close(RECORD_STORAGE);
     return ok;
+}
+
+// Der "fertig"-Marker. Bewusst zuletzt geschrieben (siehe oben).
+static void sd_update_write_local_version(Storage* storage, const char* version) {
+    File* f = storage_file_alloc(storage);
+    if(storage_file_open(f, SD_UPDATE_LOCAL_VERSION, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
+        storage_file_write(f, version, strlen(version));
+        storage_file_write(f, "\n", 1);
+        storage_file_close(f);
+    }
+    storage_file_free(f);
 }
 
 // ---------------------------------------------------------------------------
@@ -576,29 +555,58 @@ static void sd_update_task(void* arg) {
         return;
     }
 
+    char remote[64];
+    if(!sd_update_http_get_text(SD_UPDATE_VERSION_URL, remote, sizeof(remote))) {
+        sd_update_fail(u, "version.txt fetch failed");
+        sd_update_finish(u);
+        return;
+    }
+    sd_update_trim(remote);
+
     u->phase = WlanSdUpdateDownloading;
     u->percent = 0;
+    u->done_files = 0;
+    u->total_files = 0;
+    sd_update_set_file(u, "sdcard.zip");
 
-    size_t mlen = 0;
-    char* manifest = sd_update_http_get_alloc(SD_UPDATE_FILES_URL, &mlen);
-    if(!manifest) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    esp_http_client_config_t cfg;
+    sd_update_http_cfg(&cfg, SD_UPDATE_ZIP_URL);
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    bool ok = client && sd_update_download_file(
+                            u, client, storage, SD_UPDATE_ZIP_URL, SD_UPDATE_LOCAL_ZIP);
+    if(client) esp_http_client_cleanup(client);
+    furi_record_close(RECORD_STORAGE);
+
+    if(!ok) {
         if(u->cancel) {
             u->phase = WlanSdUpdateIdle;
-        } else {
-            sd_update_fail(u, "files.txt fetch failed");
+        } else if(u->phase != WlanSdUpdateError) {
+            sd_update_fail(u, "sdcard.zip download failed");
         }
         sd_update_finish(u);
         return;
     }
 
-    bool ok = sd_update_sync(u, manifest, mlen);
-    free(manifest);
+    u->phase = WlanSdUpdateExtracting;
+    u->percent = 0;
+    u->speed_kbps = 0;
+    ok = sd_update_extract_zip(u, SD_UPDATE_LOCAL_ZIP);
 
-    if(ok) {
+    Storage* st = furi_record_open(RECORD_STORAGE);
+    // Das Archiv ist ~13 MB: in jedem Fall wieder entfernen, damit ein
+    // gescheiterter Lauf die Karte nicht volllaufen lässt.
+    storage_common_remove(st, SD_UPDATE_LOCAL_ZIP);
+    if(ok && !u->cancel) sd_update_write_local_version(st, remote);
+    furi_record_close(RECORD_STORAGE);
+
+    if(ok && !u->cancel) {
         u->percent = 100;
         u->phase = WlanSdUpdateDone;
     } else if(u->cancel && u->phase != WlanSdUpdateError) {
         u->phase = WlanSdUpdateIdle;
+    } else if(u->phase != WlanSdUpdateError) {
+        sd_update_fail(u, "extract failed");
     }
 
     sd_update_finish(u);

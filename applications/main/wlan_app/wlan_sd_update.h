@@ -40,6 +40,6 @@ const char* wlan_sd_update_get_current_file(const WlanSdUpdate* u);
 /** Aktuelle Download-Geschwindigkeit in kB/s (0 wenn nicht ladend). */
 uint32_t wlan_sd_update_get_speed_kbps(const WlanSdUpdate* u);
 
-/** Bearbeitete bzw. Gesamtanzahl Manifest-Einträge (für "<n>/<max>"). */
+/** Bearbeitete bzw. Gesamtanzahl Archiv-Einträge (für "<n>/<max>"). */
 uint32_t wlan_sd_update_get_done(const WlanSdUpdate* u);
 uint32_t wlan_sd_update_get_total(const WlanSdUpdate* u);
