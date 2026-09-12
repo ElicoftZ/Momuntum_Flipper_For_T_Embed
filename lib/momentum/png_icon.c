@@ -18,6 +18,27 @@ static void* png_alloc(size_t size) {
     return buffer ? buffer : malloc(size);
 }
 
+typedef struct {
+    uint8_t* out;
+    size_t capacity;
+    size_t written;
+} PngInflateSink;
+
+/* tinfl flusht seinen internen 32-KB-Puffer hier durch; 0 bricht ab. Der
+ * Callback-Weg ist Absicht: tinfl_decompress_mem_to_mem() setzt intern
+ * TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF und loest LZ77-Rueckwaertsreferenzen
+ * direkt im Zielpuffer auf -- bei einem ~1 KB grossen Icon-Puffer liest eine
+ * Distanz, die ueber das bisher Dekodierte hinausgeht, VOR den Pufferanfang.
+ * Diese Variante nutzt stattdessen das interne 32-KB-Woerterbuch. */
+static int png_put_buf(const void* buf, int len, void* user) {
+    PngInflateSink* sink = user;
+    if(len <= 0) return 1;
+    if((size_t)len > sink->capacity - sink->written) return 0;
+    memcpy(sink->out + sink->written, buf, (size_t)len);
+    sink->written += (size_t)len;
+    return 1;
+}
+
 static uint32_t png_read_be32(const uint8_t* data) {
     return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) |
            ((uint32_t)data[2] << 8) | data[3];
@@ -168,8 +189,11 @@ bool momentum_png_icon_load(
     const size_t raw_size = (row_bytes + 1U) * parsed_height;
     raw = png_alloc(raw_size);
     if(!raw) goto done;
-    if(tinfl_decompress_mem_to_mem(
-           raw, raw_size, idat, idat_size, TINFL_FLAG_PARSE_ZLIB_HEADER) != raw_size) {
+    PngInflateSink sink = {.out = raw, .capacity = raw_size, .written = 0};
+    size_t idat_consumed = idat_size;
+    if(!tinfl_decompress_mem_to_callback(
+           idat, &idat_consumed, png_put_buf, &sink, TINFL_FLAG_PARSE_ZLIB_HEADER) ||
+       sink.written != raw_size) {
         goto done;
     }
     if(!png_unfilter(raw, parsed_height, row_bytes)) goto done;
