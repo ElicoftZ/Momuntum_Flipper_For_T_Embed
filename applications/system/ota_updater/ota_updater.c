@@ -29,6 +29,7 @@
 #include <notification/notification.h>
 #include <notification/notification_messages.h>
 #include <storage/storage.h>
+#include <assets_icons.h>
 #include <fw_ota/fw_ota.h>
 
 #include <freertos/FreeRTOS.h>
@@ -102,6 +103,17 @@ static const NotificationSequence seq_backlight_enforce_auto = {
 static void ota_view_draw(Canvas* canvas, void* _model) {
     OtaModel* m = _model;
     canvas_clear(canvas);
+
+    if(m->phase == OtaPhaseDone) {
+        /* Full-screen finish shot instead of the progress chrome, so the last
+         * thing seen before the reboot matches the stock Flipper update. */
+        canvas_draw_icon(canvas, 48, 4, &I_DolphinDone_80x58);
+        canvas_set_font(canvas, FontPrimary);
+        canvas_draw_str_aligned(canvas, 2, 22, AlignLeft, AlignBottom, "Installed!");
+        canvas_set_font(canvas, FontSecondary);
+        canvas_draw_str_aligned(canvas, 2, 34, AlignLeft, AlignBottom, "Rebooting...");
+        return;
+    }
 
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str_aligned(canvas, 64, 10, AlignCenter, AlignBottom, "FIRMWARE UPDATE");

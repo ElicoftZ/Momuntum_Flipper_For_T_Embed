@@ -2,6 +2,7 @@
 #include "../wlan_fw_update.h"
 #include "../wlan_sd_update.h"
 
+#include <assets_icons.h>
 #include <esp_system.h> // esp_restart
 
 // Kombiniertes Update (Menüpunkt "Update"): prüft ZUERST die Firmware
@@ -174,8 +175,11 @@ static void upd_show_sd_done(WlanApp* app) {
 
 static void upd_show_fw_reboot(WlanApp* app) {
     popup_reset(app->popup);
-    popup_set_header(app->popup, "Firmware", 64, 10, AlignCenter, AlignTop);
-    popup_set_text(app->popup, "Installed!\nRebooting...", 64, 32, AlignCenter, AlignCenter);
+    /* Dolphin on the right with the text down the left, the same split
+     * bad_usb_scene_done uses to fit an 80x58 icon on a 128x64 screen. */
+    popup_set_icon(app->popup, 48, 4, &I_DolphinDone_80x58);
+    popup_set_header(app->popup, "Installed!", 2, 19, AlignLeft, AlignBottom);
+    popup_set_text(app->popup, "Rebooting...", 2, 24, AlignLeft, AlignTop);
     popup_set_context(app->popup, app);
     popup_set_callback(app->popup, upd_reboot_popup_cb);
     popup_set_timeout(app->popup, UPD_DONE_POPUP_MS);
