@@ -1,0 +1,40 @@
+# Copy these lines into your own port's sdkconfig.defaults (or merge them
+# with `idf.py menuconfig`, Serial Flasher Config section) before building
+# the app image you intend to install through this project's Dual Boot.
+#
+# Run `idf.py set-target esp32s3` first — that's a project-structure choice,
+# not an sdkconfig line, and this project's recovery bootloader and
+# multiboot layout only support ESP32-S3 (components/multiboot/multiboot.c
+# gates every operation on it; nothing else is validated or supported).
+#
+# These particular values match what this project's own bootloader is
+# built and flashed with, byte for byte (see this repo's own sdkconfig).
+# Flash mode matters because it is a property of the physical SPI
+# controller/flash chip, decided once by the bootloader, not something
+# dualboot's install step can adapt per app — building anything other than
+# DIO risks it failing to boot in that slot depending on whether your
+# specific chip's Quad-Enable status bit happens to already be set. DIO
+# needs no such bit and is guaranteed to match. See framework/README.md for
+# the full reasoning if you want to use QIO anyway.
+
+CONFIG_ESPTOOLPY_FLASH_MODE_AUTO_DETECT=y
+# CONFIG_ESPTOOLPY_FLASHMODE_QIO is not set
+# CONFIG_ESPTOOLPY_FLASHMODE_QOUT is not set
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+# CONFIG_ESPTOOLPY_FLASHMODE_DOUT is not set
+CONFIG_ESPTOOLPY_FLASHMODE="dio"
+
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHFREQ="80m"
+
+# Only relevant if you build/flash a merged image and let the installer
+# extract the app from it (see README "Two ways to ship your firmware").
+# It has no effect on a raw app-only .bin — the installer places that at
+# whatever offset it allocates in the pool, independent of this value.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# Matches this board's octal PSRAM wiring (8 MB OPI PSRAM). Wrong PSRAM
+# mode is a separate failure from flash mode and just as fatal at boot.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
