@@ -1,0 +1,27 @@
+ESP32Marauder-derived BLE Spam payloads
+
+Source: https://github.com/justcallmekoko/ESP32Marauder
+Author: justcallmekoko ("Just Call Me Koko")
+Ported from: esp32_marauder/WiFiScan.cpp, WiFiScan::GetUniversalAdvertisementData()
+License: MIT License (included as LICENSE_MARAUDER)
+
+Ported source (this port):
+ble_spam_payloads.h — the "ESP32Marauder payload set" section: mar_apple_device_ids,
+mar_apple_actions, ble_spam_random_name, ble_spam_random_name_mixed,
+ble_spam_build_mar_apple_action, ble_spam_build_mar_apple_device,
+ble_spam_build_mar_sour_apple, ble_spam_build_mar_google,
+ble_spam_build_mar_samsung_watch, ble_spam_build_mar_swiftpair,
+ble_spam_build_mar_flipper.
+Attack wiring in scene_running.c, scene_spam_menu.c and ble_spam_app.h
+(BleSpamAttackSourApple, BleSpamAttackAppleJuice, BleSpamAttackFlipperZero).
+
+Modified for this port:
+- Rewritten as plain C, matching this app's existing builder signature style
+  (uint8_t build_fn(uint8_t* buf, ...) -> payload length) instead of the
+  original C++ class/method structure.
+- furi_hal_random_get()/furi_hal_random_fill_buf() replace Arduino's
+  random()/esp_fill_random() for the randomized fields.
+
+Everything else in this app (Apple/Samsung/Google/Microsoft builders not
+listed above, the WhisperPair scanner in whisper_pair/, and the rest of the
+scene/UI code) predates this and is unrelated to ESP32Marauder.

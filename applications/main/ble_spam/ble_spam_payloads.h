@@ -767,6 +767,7 @@ static inline uint8_t ble_spam_build_pair_spam(uint8_t* buf, const char* name) {
 // Ported from justcallmekoko/ESP32Marauder, esp32_marauder/WiFiScan.cpp,
 // WiFiScan::GetUniversalAdvertisementData(). Marauder emits raw AD structures
 // without a Flags field, so these builders match that byte-for-byte.
+// MIT licensed - see NOTICE_MARAUDER and LICENSE_MARAUDER next to this file.
 // ===========================================================================
 
 static const uint16_t mar_apple_device_ids[] = {
