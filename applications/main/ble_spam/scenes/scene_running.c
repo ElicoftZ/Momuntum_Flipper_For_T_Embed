@@ -25,6 +25,9 @@ static const char* attack_short_names[] = {
     [BleSpamAttackPairSpam] = "Pair Spam",
     [BleSpamAttackPairSpamRickroll] = "Pair Spam Rickroll",
     [BleSpamAttackPairSpamCustom] = "Pair Spam Custom",
+    [BleSpamAttackSourApple] = "Sour Apple",
+    [BleSpamAttackAppleJuice] = "Apple Juice",
+    [BleSpamAttackFlipperZero] = "FlipperZero",
 };
 
 static const uint32_t speed_steps[] = {50, 100, 150, 200, 300, 500};
@@ -152,6 +155,22 @@ static uint8_t build_next_payload(BleSpamApp* app, uint8_t* buf) {
         len = ble_spam_build_pair_spam(buf, name);
         break;
     }
+    case BleSpamAttackSourApple:
+        name = "Sour Apple";
+        len = ble_spam_build_mar_sour_apple(buf);
+        break;
+    case BleSpamAttackAppleJuice: {
+        uint16_t idx = app->current_index % APPLE_DEVICE_COUNT;
+        name = apple_devices[idx].name;
+        len = ble_spam_build_mar_apple_device(buf, apple_devices[idx].device_id);
+        app->current_index = idx + 1;
+        break;
+    }
+    case BleSpamAttackFlipperZero:
+        ble_spam_random_name(generated_name, 6);
+        name = generated_name;
+        len = ble_spam_build_mar_flipper(buf, generated_name);
+        break;
     default:
         break;
     }

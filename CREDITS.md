@@ -52,7 +52,7 @@ and 25 of the 34 community apps.
 | archive | MERGED | OFW |
 | bad_usb | MERGED | OFW |
 | **ble_detector** | **MINE** | BLE scanning/profiling, unbounded scan lists |
-| ble_spam | MERGED | embeds WhisperPair — [zalexdev](https://github.com/zalexdev/wpair-app), Apache-2.0 |
+| ble_spam | MERGED | embeds WhisperPair — [zalexdev](https://github.com/zalexdev/wpair-app), Apache-2.0; some payloads ported from [justcallmekoko/ESP32Marauder](https://github.com/justcallmekoko/ESP32Marauder), MIT |
 | clock_app | MERGED | OFW |
 | doom | MERGED | doomgeneric — [ozkl](https://github.com/ozkl/doomgeneric) / id Software, GPLv2 |
 | **dualboot** | **MINE** | multi-firmware boot menu, side-button recovery |

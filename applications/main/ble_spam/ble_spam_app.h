@@ -31,6 +31,9 @@ typedef enum {
     BleSpamAttackPairSpam,
     BleSpamAttackPairSpamRickroll,
     BleSpamAttackPairSpamCustom,
+    BleSpamAttackSourApple,
+    BleSpamAttackAppleJuice,
+    BleSpamAttackFlipperZero,
     BleSpamAttackCount,
 } BleSpamAttackType;
 

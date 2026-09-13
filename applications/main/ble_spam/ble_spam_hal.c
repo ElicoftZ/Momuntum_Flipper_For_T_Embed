@@ -21,6 +21,7 @@ static struct ble_gap_adv_params s_adv_params = {
     .disc_mode = BLE_GAP_DISC_MODE_GEN,
     .itvl_min = 0x20,
     .itvl_max = 0x40,
+    .channel_map = BLE_GAP_ADV_DFLT_CHANNEL_MAP,
 };
 
 static int spam_gap_event_handler(struct ble_gap_event* event, void* context) {

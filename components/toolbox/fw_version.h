@@ -1,5 +1,5 @@
 #pragma once
 
-#define FURI_ESP32_VERSION      "2.2.6"
+#define FURI_ESP32_VERSION      "2.2.7"
 #define FURI_ESP32_VERSION_NAME "Sor3nt Stuff"
 #define FURI_ESP32_VERSION_FULL FURI_ESP32_VERSION " - " FURI_ESP32_VERSION_NAME
