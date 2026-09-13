@@ -1352,6 +1352,12 @@ bool wlan_hal_resume_user_radio(void) {
         wlan_hal_prepare_radio_memory();
         return true;
     }
+    /* This runs every time any app closes (desktop's AfterAppFinished), which
+     * would otherwise silently restart WiFi the moment the user closes their
+     * first app post-update - defeating the whole point of the hold after
+     * one navigation. Let it expire on its own; any deliberate
+     * wlan_hal_start() (manual toggle, a foreground app) clears it. */
+    if(wlan_hal_is_held_after_update()) return true;
     /* A manual sync which started WiFi while Settings was open will leave the
      * connected STA running when the persistent user switch is enabled. */
     if(s_manual_time_sync_active) return true;
