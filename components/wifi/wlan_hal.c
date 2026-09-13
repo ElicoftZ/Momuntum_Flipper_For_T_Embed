@@ -1124,7 +1124,16 @@ void wlan_hal_prepare_radio_memory(void) {
 
     if(wlan_hal_consume_post_update_hold()) {
         s_post_update_held = true;
-        ESP_LOGI(TAG, "Post-update boot: holding WiFi off so Bluetooth inits first");
+        /* Persist WiFi off, not just for this one boot: after an OTA the user
+         * wants Bluetooth to keep working across resets until they turn WiFi
+         * back on themselves, instead of WiFi auto-returning on the next
+         * reboot and starving BLE again. Turning it on from Control Centre
+         * saves enabled=true again as normal. */
+        if(s_user_enabled) {
+            s_user_enabled = false;
+            wlan_hal_save_user_setting();
+        }
+        ESP_LOGI(TAG, "Post-update boot: WiFi persisted off so Bluetooth keeps working");
         return;
     }
 
