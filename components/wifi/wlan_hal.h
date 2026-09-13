@@ -55,6 +55,14 @@ void wlan_hal_prepare_radio_memory(void);
  *  boot after that. */
 void wlan_hal_hold_wifi_after_reboot(void);
 
+/** For an operation that needs WiFi's internal DRAM freed while it runs (a
+ *  memory-hungry write, or a BLE takeover). Fully stops and deinits WiFi and
+ *  releases its worker stack if it was running - wlan_hal_suspend_user_radio()
+ *  alone does not go this far. Pair with wlan_hal_resume_user_radio() when
+ *  done; safe to call even if WiFi was already off. Deliberately does not
+ *  touch BLE state - the caller owns that. */
+bool wlan_hal_yield_for_memory(void);
+
 /** Ensure the small hardware-AES DMA reserve is held before the WLAN app
  * allocates its GUI objects. */
 bool wlan_hal_prepare_foreground_session(void);

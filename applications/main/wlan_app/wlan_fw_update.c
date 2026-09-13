@@ -9,6 +9,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_http_client.h>
+#include <esp_heap_caps.h>
 #include <fw_ota/fw_ota.h>
 #include <wifi/wlan_hal.h>
 
@@ -290,8 +291,25 @@ static void fw_flash_task(void* arg) {
     u->bytes_done = 0;
     u->speed_kbps = 0;
 
+    FURI_LOG_E(
+        FW_UPDATE_TAG,
+        "[diag] pre-yield internal free=%u largest=%u",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    // The download's own WiFi session is still fully up at this point. Free
+    // its driver memory before the flash write, which needs a contiguous
+    // internal-DRAM chunk of its own (FW_CHUNK, see fw_ota.c).
+    wlan_hal_yield_for_memory();
+    FURI_LOG_E(
+        FW_UPDATE_TAG,
+        "[diag] post-yield internal free=%u largest=%u",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+
     char err[64] = {0};
-    if(fw_ota_flash_file(FW_LOCAL_BIN, fw_flash_progress, u, err, sizeof(err))) {
+    bool ok = fw_ota_flash_file(FW_LOCAL_BIN, fw_flash_progress, u, err, sizeof(err));
+    wlan_hal_resume_user_radio();
+    if(ok) {
         // FW-Marker /ext/.fw_version auf die neue Version setzen, damit nach dem
         // Reboot die FW als aktuell erkannt wird (SD-Version bleibt getrennt).
         if(u->remote_version[0]) {

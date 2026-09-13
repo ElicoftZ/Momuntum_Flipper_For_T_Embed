@@ -1212,6 +1212,26 @@ static void wlan_hal_cancel_manual_time_sync(void) {
     }
 }
 
+bool wlan_hal_yield_for_memory(void) {
+    wlan_hal_cancel_boot_time_sync();
+    wlan_hal_cancel_manual_time_sync();
+    /* Not gated on s_started: a caller may run after something already did a
+     * weak stop_internal(false) (driver still init'd, memory still held), so
+     * checking s_started here would silently no-op exactly when there's still
+     * memory to free. Mirrors wlan_hal_power_down()'s own s_cmd_queue guard,
+     * which is already safe to call unconditionally. Deliberately does not
+     * touch BLE state - the caller doesn't take BLE here, it just needs the
+     * memory; wlan_hal_resume_user_radio() is the matching resume call. */
+    wlan_auth_memory_release();
+    if(s_cmd_queue) {
+        wlan_hal_stop_internal(true);
+    } else {
+        s_started = false;
+    }
+    wlan_release_worker();
+    return true;
+}
+
 void wlan_hal_stop(void) {
     wlan_hal_cancel_boot_time_sync();
     wlan_hal_cancel_manual_time_sync();
