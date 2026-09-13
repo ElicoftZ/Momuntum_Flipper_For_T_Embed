@@ -28,7 +28,7 @@ typedef struct {
     uint8_t addr_type;
     int8_t rssi;
     uint32_t last_seen;
-    uint16_t kinds;
+    uint32_t kinds;
     char name[32];
 } DetectorRecord;
 

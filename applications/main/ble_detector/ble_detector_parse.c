@@ -5,6 +5,9 @@ const char* const detector_labels[DetectorKindCount] = {
     "All Scan", "Flipper Zero", "Flock camera", "Axon body camera",
     "Credit card skimmer", "Meta Quest / glasses", "Samsung SmartTag",
     "Apple AirTag", "AirPods", "Microsoft", "Google Pixel Buds",
+    "Tile tracker", "Beats headphones", "Apple iPhone / Watch",
+    "Xiaomi devices", "Galaxy Buds", "Garmin wearables",
+    "Fitbit wearables", "GoPro camera",
 };
 
 static uint16_t le16(const uint8_t* p) {
@@ -20,6 +23,7 @@ static void service(DetectorMatch* m, uint16_t uuid) {
     if(uuid >= 0x3080 && uuid <= 0x3083) signature(m, DetectorFlipper);
     if(uuid == 0xFD5F) signature(m, DetectorMeta);
     if(uuid == 0xFD5A) signature(m, DetectorSmartTag);
+    if(uuid == 0xFEED || uuid == 0xFD84) signature(m, DetectorTile);
 }
 
 static bool contains(const uint8_t* p, size_t size, const char* text) {
@@ -52,6 +56,12 @@ static void name_hints(DetectorMatch* m) {
     if(strstr(name, "airpods")) m->kinds |= DETECTOR_BIT(DetectorAirPods);
     if(!strncmp(name, "microsoft", 9)) m->kinds |= DETECTOR_BIT(DetectorMicrosoft);
     if(strstr(name, "pixel buds")) m->kinds |= DETECTOR_BIT(DetectorPixelBuds);
+    if(strstr(name, "beats")) m->kinds |= DETECTOR_BIT(DetectorBeats);
+    if(strstr(name, "xiaomi") || strstr(name, "redmi")) m->kinds |= DETECTOR_BIT(DetectorXiaomi);
+    if(strstr(name, "galaxy buds")) m->kinds |= DETECTOR_BIT(DetectorGalaxyBuds);
+    if(!strncmp(name, "garmin", 6)) m->kinds |= DETECTOR_BIT(DetectorGarmin);
+    if(strstr(name, "fitbit")) m->kinds |= DETECTOR_BIT(DetectorFitbit);
+    if(strstr(name, "gopro")) m->kinds |= DETECTOR_BIT(DetectorGoPro);
 }
 
 bool ble_detector_parse(const uint8_t* data, size_t length, DetectorMatch* match) {
@@ -86,22 +96,35 @@ bool ble_detector_parse(const uint8_t* data, size_t length, DetectorMatch* match
             if(uuid == 0xFE2C && n == 5) {
                 uint32_t model = ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 8) | p[4];
                 if(model == 6 || model == 12934265 || model == 10148625) signature(&m, DetectorPixelBuds);
+                if(model == 0x0082DA || model == 0x00FA72) signature(&m, DetectorGalaxyBuds);
             }
             if(contains(p + 2, n - 2, "BWCDEVICE")) signature(&m, DetectorAxon);
         } else if(type == 0xFF && n >= 2) {
             uint16_t company = le16(p);
             if(company == 0x0006) signature(&m, DetectorMicrosoft);
             if(company == 0x09C8) signature(&m, DetectorFlock);
-            if(company == 0x004C && n >= 4 && p[3] <= n - 4) {
-                // Find My is shared by third-party accessories: UI labels this as a candidate.
-                if(p[2] == 0x12 && p[3] == 0x19) signature(&m, DetectorAirTag);
-                if(p[2] == 0x07 && p[3] == 0x19) {
-                    uint16_t model = ((uint16_t)p[5] << 8) | p[6];
-                    switch(model) {
-                    case 0x0220: case 0x0F20: case 0x1320: case 0x0E20: case 0x1420:
-                    case 0x2420: case 0x2820: case 0x2920: case 0x0A20: case 0x2B20:
-                        signature(&m, DetectorAirPods); break;
-                    default: break;
+            if(company == 0x038F) signature(&m, DetectorXiaomi);
+            if(company == 0x0087) signature(&m, DetectorGarmin);
+            if(company == 0x02F2) signature(&m, DetectorGoPro);
+            if(company == 0x067C) signature(&m, DetectorTile);
+            if(company == 0x004C && n >= 4) {
+                // Nearby Info is broadcast by Apple host devices (iPhone, Watch, iPad, Mac).
+                if(p[2] == 0x10) signature(&m, DetectorAppleHost);
+                if(p[3] <= n - 4) {
+                    // Find My is shared by third-party accessories: UI labels this as a candidate.
+                    if(p[2] == 0x12 && p[3] == 0x19) signature(&m, DetectorAirTag);
+                    if(p[2] == 0x07 && p[3] == 0x19) {
+                        uint16_t model = ((uint16_t)p[5] << 8) | p[6];
+                        switch(model) {
+                        case 0x0220: case 0x0F20: case 0x1320: case 0x0E20: case 0x1420:
+                        case 0x2420: case 0x2820: case 0x2920: case 0x0A20: case 0x2B20:
+                            signature(&m, DetectorAirPods); break;
+                        case 0x0320: case 0x0520: case 0x0620: case 0x0920: case 0x0B20:
+                        case 0x0C20: case 0x1020: case 0x1120: case 0x1220: case 0x1620:
+                        case 0x1720: case 0x2520: case 0x2620: case 0x2C20: case 0x2F20:
+                            signature(&m, DetectorBeats); break;
+                        default: break;
+                        }
                     }
                 }
             }

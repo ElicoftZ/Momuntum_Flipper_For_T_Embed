@@ -15,13 +15,21 @@ typedef enum {
     DetectorAirPods,
     DetectorMicrosoft,
     DetectorPixelBuds,
+    DetectorTile,
+    DetectorBeats,
+    DetectorAppleHost,
+    DetectorXiaomi,
+    DetectorGalaxyBuds,
+    DetectorGarmin,
+    DetectorFitbit,
+    DetectorGoPro,
     DetectorKindCount,
 } DetectorKind;
 
 #define DETECTOR_BIT(kind) (1u << (kind))
 typedef struct {
-    uint16_t kinds;
-    uint16_t signatures;
+    uint32_t kinds;
+    uint32_t signatures;
     char name[32];
 } DetectorMatch;
 
