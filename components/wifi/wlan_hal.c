@@ -1160,6 +1160,16 @@ static void wlan_hal_cancel_manual_time_sync(void) {
     }
 }
 
+bool wlan_hal_yield_for_memory(void) {
+    wlan_hal_cancel_boot_time_sync();
+    wlan_hal_cancel_manual_time_sync();
+    if(!s_started) return false;
+    wlan_auth_memory_release();
+    wlan_hal_stop_internal(true);
+    wlan_release_worker();
+    return true;
+}
+
 void wlan_hal_stop(void) {
     wlan_hal_cancel_boot_time_sync();
     wlan_hal_cancel_manual_time_sync();

@@ -61,6 +61,15 @@ bool wlan_hal_start_manual_time_sync(void);
 void wlan_hal_suspend_user_radio(void);
 bool wlan_hal_resume_user_radio(void);
 
+/** For a feature that needs WiFi's internal DRAM freed while it runs (a BLE
+ *  takeover, or another memory-hungry operation like flashing). Fully stops
+ *  and deinits WiFi and releases its worker stack if it was running -
+ *  wlan_hal_suspend_user_radio() alone does not go this far. Pair with
+ *  wlan_hal_resume_user_radio() when done; safe to call even if WiFi was
+ *  already off. Deliberately does not touch BLE state - the caller owns
+ *  that. */
+bool wlan_hal_yield_for_memory(void);
+
 /** Fully stop/deinit STA for a WiFi mode change while keeping the user's WiFi
  *  switch intact. */
 void wlan_hal_stop_for_reconfigure(void);

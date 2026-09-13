@@ -880,11 +880,13 @@ static void wardrive_nimble_release(WardrivingApp* app) {
         furi_record_close(RECORD_BT);
     }
     app->bt_was_enabled = false;
+    wlan_hal_resume_user_radio();
 }
 
 /* Shared takeover: suspend the default Bt profile and bring up a bare NimBLE
  * host under our own name, ready for either scanning or beacon advertising. */
 static bool wardrive_nimble_take(WardrivingApp* app, const char* name) {
+    wlan_hal_yield_for_memory();
     Bt* bt = furi_record_open(RECORD_BT);
     app->bt_was_enabled = bt_is_enabled(bt);
     bt_stop_stack(bt);

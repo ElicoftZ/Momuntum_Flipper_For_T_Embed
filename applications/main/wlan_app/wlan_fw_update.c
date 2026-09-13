@@ -10,6 +10,7 @@
 #include <freertos/task.h>
 #include <esp_http_client.h>
 #include <fw_ota/fw_ota.h>
+#include <wifi/wlan_hal.h>
 
 #define FW_UPDATE_TAG "WlanFwUpdate"
 // Muss mit dem Release-Layout übereinstimmen (siehe auch wlan_sd_update.c).
@@ -290,7 +291,10 @@ static void fw_flash_task(void* arg) {
     u->speed_kbps = 0;
 
     char err[64] = {0};
-    if(fw_ota_flash_file(FW_LOCAL_BIN, fw_flash_progress, u, err, sizeof(err))) {
+    wlan_hal_yield_for_memory();
+    const bool flashed = fw_ota_flash_file(FW_LOCAL_BIN, fw_flash_progress, u, err, sizeof(err));
+    wlan_hal_resume_user_radio();
+    if(flashed) {
         // FW-Marker /ext/.fw_version auf die neue Version setzen, damit nach dem
         // Reboot die FW als aktuell erkannt wird (SD-Version bleibt getrennt).
         if(u->remote_version[0]) {

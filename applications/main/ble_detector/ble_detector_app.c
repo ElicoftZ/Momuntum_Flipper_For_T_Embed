@@ -10,6 +10,7 @@
 #include <host/ble_gap.h>
 #include <host/ble_hs.h>
 #include <nimble_glue.h>
+#include <wifi/wlan_hal.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -136,6 +137,7 @@ static int detector_gap_event(struct ble_gap_event* event, void* context) {
 }
 
 static bool detector_radio_start(BleDetectorApp* app) {
+    wlan_hal_yield_for_memory();
     Bt* bt = furi_record_open(RECORD_BT);
     app->bt_was_enabled = bt_is_enabled(bt);
     bt_stop_stack(bt);
@@ -200,6 +202,7 @@ static void detector_radio_stop(BleDetectorApp* app) {
     }
     app->radio_ready = false;
     app->bt_was_enabled = false;
+    wlan_hal_resume_user_radio();
 }
 
 static const char* detector_distance(int8_t rssi) {
