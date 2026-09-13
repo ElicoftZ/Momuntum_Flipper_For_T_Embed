@@ -333,7 +333,8 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         } else {
             wlan_hal_resume_user_radio();
         }
-        desktop_set_wifi_icon_state(desktop, wlan_hal_is_user_enabled());
+        desktop_set_wifi_icon_state(
+            desktop, wlan_hal_is_user_enabled() && !wlan_hal_is_held_after_update());
         /* Locale and Momentum midnight format can change while Settings owns
          * the screen. Refresh both the cached format and the clock immediately
          * instead of waiting for the next changed minute. */

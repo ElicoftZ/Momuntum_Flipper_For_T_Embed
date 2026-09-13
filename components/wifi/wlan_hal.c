@@ -129,6 +129,12 @@ static bool s_started = false;
 static bool s_bt_suspended = false;
 static bool s_user_enabled = false;
 static bool s_user_setting_loaded = false;
+/* True for the rest of THIS boot only, from the moment the post-update hold
+ * is consumed until WiFi actually starts for any reason (manual toggle, a
+ * foreground app, etc.) - lets the status icon show "off" for a setting that
+ * is enabled but deliberately not running yet. Not persisted; the persisted
+ * one-shot flag itself is cleared the instant it's read, at boot. */
+static bool s_post_update_held = false;
 static volatile bool s_boot_time_sync_active = false;
 static volatile bool s_boot_time_sync_cancel = false;
 static volatile bool s_manual_time_sync_active = false;
@@ -1055,7 +1061,12 @@ static bool wlan_start_attempt(void) {
     return result;
 }
 
+bool wlan_hal_is_held_after_update(void) {
+    return s_post_update_held;
+}
+
 bool wlan_hal_start(void) {
+    s_post_update_held = false;
     if(s_started) return true;
     /* An auth reserve cannot help if it prevents the driver from starting. */
     wlan_auth_memory_release();
@@ -1112,6 +1123,7 @@ void wlan_hal_prepare_radio_memory(void) {
     wlan_hal_load_user_setting();
 
     if(wlan_hal_consume_post_update_hold()) {
+        s_post_update_held = true;
         ESP_LOGI(TAG, "Post-update boot: holding WiFi off so Bluetooth inits first");
         return;
     }

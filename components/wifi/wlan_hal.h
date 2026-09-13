@@ -55,6 +55,12 @@ void wlan_hal_prepare_radio_memory(void);
  *  boot after that. */
 void wlan_hal_hold_wifi_after_reboot(void);
 
+/** True from the moment wlan_hal_prepare_radio_memory() consumes the
+ *  post-update hold until WiFi actually starts for any reason, for the rest
+ *  of this boot only. Lets status displays show "off" for a persistently
+ *  enabled setting that is deliberately not running yet. */
+bool wlan_hal_is_held_after_update(void);
+
 /** For an operation that needs WiFi's internal DRAM freed while it runs (a
  *  memory-hungry write, or a BLE takeover). Fully stops and deinits WiFi and
  *  releases its worker stack if it was running - wlan_hal_suspend_user_radio()
