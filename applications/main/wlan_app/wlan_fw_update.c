@@ -10,6 +10,7 @@
 #include <freertos/task.h>
 #include <esp_http_client.h>
 #include <fw_ota/fw_ota.h>
+#include <wifi/wlan_hal.h>
 
 #define FW_UPDATE_TAG "WlanFwUpdate"
 // Muss mit dem Release-Layout übereinstimmen (siehe auch wlan_sd_update.c).
@@ -296,6 +297,10 @@ static void fw_flash_task(void* arg) {
         if(u->remote_version[0]) {
             fw_ota_marker_write(u->remote_version);
         }
+        // Bluetooth features (BLE Detector, Wardriving, ...) can fail to init
+        // with WiFi's driver memory still reserved. Hold WiFi off on the very
+        // next boot so they work immediately after updating.
+        wlan_hal_hold_wifi_after_reboot();
         u->percent = 100;
         u->phase = FwUpdateDone;
     } else {

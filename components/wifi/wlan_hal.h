@@ -47,6 +47,14 @@ bool wlan_hal_is_boot_time_sync_active(void);
  *  and while BLE is active. */
 void wlan_hal_prepare_radio_memory(void);
 
+/** Skip wlan_hal_prepare_radio_memory()'s WiFi auto-reconnect exactly once,
+ *  on the very next boot, without changing the user's persistent enable
+ *  setting. Call this right before rebooting into freshly-flashed firmware
+ *  (after a successful OTA install) so Bluetooth features have full memory
+ *  headroom immediately post-update; WiFi resumes normally starting the
+ *  boot after that. */
+void wlan_hal_hold_wifi_after_reboot(void);
+
 /** Ensure the small hardware-AES DMA reserve is held before the WLAN app
  * allocates its GUI objects. */
 bool wlan_hal_prepare_foreground_session(void);

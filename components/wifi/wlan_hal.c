@@ -42,6 +42,13 @@
 #define WLAN_RADIO_SETTINGS_PATH "/int/.wlan_radio.settings"
 #define WLAN_RADIO_SETTINGS_MAGIC 0x57
 #define WLAN_RADIO_SETTINGS_VERSION 1
+/* One-shot: skip WiFi's boot-time auto-reconnect on exactly the next boot,
+ * without touching the persistent WlanRadioSettings.enabled above. Set right
+ * before rebooting into freshly-flashed firmware so Bluetooth features have
+ * full memory headroom immediately post-update; cleared as soon as it's read. */
+#define WLAN_POST_UPDATE_HOLD_PATH "/int/.wifi_post_update_hold"
+#define WLAN_POST_UPDATE_HOLD_MAGIC 0x50
+#define WLAN_POST_UPDATE_HOLD_VERSION 1
 /* The S3 hardware-AES driver uses two 1600-byte internal DMA bounce buffers
  * during a WPA2/WPA3 handshake. Keep a contiguous block before normal apps
  * fragment RAM, then release it immediately before association. 3584 bytes
@@ -51,6 +58,10 @@
 typedef struct {
     bool enabled;
 } WlanRadioSettings;
+
+typedef struct {
+    bool hold;
+} WlanPostUpdateHold;
 
 typedef enum {
     WCMD_INIT_RESERVE,
@@ -241,6 +252,42 @@ static void wlan_hal_save_user_setting(void) {
            WLAN_RADIO_SETTINGS_VERSION)) {
         ESP_LOGE(TAG, "Could not persist WiFi radio setting");
     }
+}
+
+void wlan_hal_hold_wifi_after_reboot(void) {
+    WlanPostUpdateHold hold = {.hold = true};
+    if(!saved_struct_save(
+           WLAN_POST_UPDATE_HOLD_PATH,
+           &hold,
+           sizeof(hold),
+           WLAN_POST_UPDATE_HOLD_MAGIC,
+           WLAN_POST_UPDATE_HOLD_VERSION)) {
+        ESP_LOGE(TAG, "Could not persist post-update WiFi hold");
+    }
+}
+
+/* Returns true exactly once per hold - clears it immediately so a later boot
+ * (or this one, if reserve/start fails and something retries) behaves
+ * normally again. */
+static bool wlan_hal_consume_post_update_hold(void) {
+    WlanPostUpdateHold hold = {.hold = false};
+    bool was_held = saved_struct_load(
+                        WLAN_POST_UPDATE_HOLD_PATH,
+                        &hold,
+                        sizeof(hold),
+                        WLAN_POST_UPDATE_HOLD_MAGIC,
+                        WLAN_POST_UPDATE_HOLD_VERSION) &&
+                    hold.hold;
+    if(was_held) {
+        hold.hold = false;
+        saved_struct_save(
+            WLAN_POST_UPDATE_HOLD_PATH,
+            &hold,
+            sizeof(hold),
+            WLAN_POST_UPDATE_HOLD_MAGIC,
+            WLAN_POST_UPDATE_HOLD_VERSION);
+    }
+    return was_held;
 }
 
 #define WLAN_TRUSTED_TIME_MIN 1704067200ULL /* 2024-01-01 UTC */
@@ -1063,6 +1110,11 @@ static bool wlan_hal_reserve_radio_memory(void) {
 
 void wlan_hal_prepare_radio_memory(void) {
     wlan_hal_load_user_setting();
+
+    if(wlan_hal_consume_post_update_hold()) {
+        ESP_LOGI(TAG, "Post-update boot: holding WiFi off so Bluetooth inits first");
+        return;
+    }
 
     /* Keep Wi‑Fi completely off until the user enables it from Control.
      * Reserving the worker stack and the driver's DMA pools while the switch
