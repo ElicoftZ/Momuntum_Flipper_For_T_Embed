@@ -150,8 +150,10 @@ static void rpc_system_system_update_process(const PB_Main* request, void* conte
     if(!path || !path[0] || path[0] != '/' || strlen(path) >= RPC_UPDATE_PATH_MAX) {
         code = PB_System_UpdateResponse_UpdateResultCode_ManifestPathInvalid;
     } else if(!fw_ota_is_supported()) {
-        /* Kein Update-Slot (Single-App-Layout, oder wir laufen bereits aus
-         * otaupd) → nur USB-/Web-Flasher. */
+        /* Kein Update-Slot: Single-App-Layout, oder wir laufen aus einem
+         * Dual-Boot-Pool-Slot (kein A/B-Endpunkt) → nur USB-/Web-Flasher.
+         * factory<->otaupd pingt jetzt hin und her, daher kein Zwang mehr,
+         * vorher nach factory zu booten. */
         code = PB_System_UpdateResponse_UpdateResultCode_StageMissing;
     } else {
         Loader* loader = furi_record_open(RECORD_LOADER);

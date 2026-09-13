@@ -15,6 +15,7 @@
 #include <esp_partition.h>
 #include <esp_app_format.h>
 #include <esp_app_desc.h>
+#include <esp_image_format.h>
 #include <esp_heap_caps.h>
 #include <sdkconfig.h>
 
@@ -30,6 +31,9 @@
 
 // Chunk-Groesse fuer den Flash-Pfad; der Puffer liegt zwingend in internem DRAM.
 #define FW_OTA_CHUNK 8192
+// Erase-Blockgroesse fuer den Roh-Flash-Pfad (factory-Ziel). In 64-KB-Schritten
+// mit vTaskDelay(1), damit ein mehrere-MB-Erase den Task-WDT nicht ausloest.
+#define FW_OTA_ERASE_BLOCK 0x10000u
 
 // Magic fuer das RTC-NOINIT-Flag (RTC_NOINIT bleibt ueber esp_restart erhalten,
 // ist nach Power-On aber Zufall — daher Magic statt bool).
@@ -57,22 +61,39 @@ static void fw_ota_trim(char* s) {
 #ifdef CONFIG_MOMENTUM_MULTIBOOT
 /* The dual-boot pool owns ota_1..ota_15 and holds the user's other firmwares,
  * so esp_ota_get_next_update_partition() must never pick the target here: it
- * round-robins and would overwrite an installed firmware. Only this dedicated
- * slot is update scratch. */
+ * round-robins and would overwrite an installed firmware. Updates ping-pong
+ * only between factory (0x20000) and this dedicated otaupd slot. */
 #define FW_OTA_MULTIBOOT_LABEL "otaupd"
 
 static const esp_partition_t* fw_ota_multiboot_slot(void) {
     return esp_partition_find_first(
         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, FW_OTA_MULTIBOOT_LABEL);
 }
+
+static const esp_partition_t* fw_ota_factory_slot(void) {
+    return esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+}
+
+/* A/B target = the slot we are NOT running from. Booted from factory -> otaupd
+ * (written via the esp_ota API); booted from otaupd -> factory (written raw,
+ * because FACTORY is not an esp_ota subtype and esp_ota_begin rejects it).
+ * Either way the running image is preserved, so there is no "boot back to
+ * base" step -- main updates otaupd, otaupd updates main, repeat. */
+static const esp_partition_t* fw_ota_multiboot_target(void) {
+    const esp_partition_t* otaupd = fw_ota_multiboot_slot();
+    const esp_partition_t* factory = fw_ota_factory_slot();
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    if(!otaupd || !factory || !running) return NULL;
+    if(running == otaupd) return factory;
+    if(running == factory) return otaupd;
+    return NULL; /* running from a pool slot: not an A/B endpoint */
+}
 #endif
 
 bool fw_ota_is_supported(void) {
 #ifdef CONFIG_MOMENTUM_MULTIBOOT
-    /* Writing the slot we are executing from is impossible, so an image booted
-     * out of otaupd must go back to factory before it can update again. */
-    const esp_partition_t* slot = fw_ota_multiboot_slot();
-    return slot && slot != esp_ota_get_running_partition();
+    return fw_ota_multiboot_target() != NULL;
 #else
     return esp_ota_get_next_update_partition(NULL) != NULL;
 #endif
@@ -166,6 +187,113 @@ FwOtaImageStatus fw_ota_inspect_image(const char* path, FwOtaImageInfo* out) {
     return status;
 }
 
+#ifdef CONFIG_MOMENTUM_MULTIBOOT
+/* Raw write path for the factory target. esp_ota_begin() rejects a FACTORY
+ * partition, so this erases + writes it directly (the same technique the
+ * dual-boot installer uses on pool slots) and only re-points the boot
+ * selector after the written image validates. otadata keeps selecting the
+ * running slot until esp_ota_set_boot_partition() succeeds, so an aborted or
+ * corrupt write leaves the device booting the current firmware -- never a
+ * half-written factory. */
+static bool fw_ota_flash_raw(
+    const esp_partition_t* part,
+    const char* path,
+    FwOtaProgressCb progress,
+    void* progress_ctx,
+    char* err,
+    size_t err_size) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    FileInfo fi;
+    if(storage_common_stat(storage, path, &fi) != FSE_OK || fi.size == 0) {
+        furi_record_close(RECORD_STORAGE);
+        fw_ota_set_err(err, err_size, "firmware file missing");
+        return false;
+    }
+    const uint32_t total = (uint32_t)fi.size;
+    if(total > part->size) {
+        furi_record_close(RECORD_STORAGE);
+        fw_ota_set_err(err, err_size, "image too big for base slot");
+        return false;
+    }
+
+    File* f = storage_file_alloc(storage);
+    uint8_t* chunk = NULL;
+    bool ok = false;
+
+    do {
+        if(!storage_file_open(f, path, FSAM_READ, FSOM_OPEN_EXISTING)) {
+            fw_ota_set_err(err, err_size, "open bin failed");
+            break;
+        }
+        chunk = heap_caps_malloc(FW_OTA_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if(!chunk) {
+            fw_ota_set_err(err, err_size, "out of memory");
+            break;
+        }
+
+        // Erase only the span we will write, rounded up to the erase block, in
+        // 64-KB steps with a yield so the WDT survives a multi-MB image.
+        uint32_t erase_size = (total + FW_OTA_ERASE_BLOCK - 1) & ~(FW_OTA_ERASE_BLOCK - 1);
+        if(erase_size > part->size) erase_size = part->size;
+        esp_err_t e = ESP_OK;
+        for(uint32_t off = 0; off < erase_size; off += FW_OTA_ERASE_BLOCK) {
+            uint32_t blk = (erase_size - off) > FW_OTA_ERASE_BLOCK ? FW_OTA_ERASE_BLOCK :
+                                                                     (erase_size - off);
+            e = esp_partition_erase_range(part, off, blk);
+            if(e != ESP_OK) {
+                fw_ota_set_err(err, err_size, "erase base failed");
+                break;
+            }
+            vTaskDelay(1);
+        }
+        if(e != ESP_OK) break;
+
+        ok = true;
+        uint32_t written = 0;
+        if(progress) progress(0, total, progress_ctx);
+        while(written < total) {
+            size_t want = (total - written) > FW_OTA_CHUNK ? FW_OTA_CHUNK : (size_t)(total - written);
+            size_t r = storage_file_read(f, chunk, want);
+            if(r == 0) {
+                fw_ota_set_err(err, err_size, "read error");
+                ok = false;
+                break;
+            }
+            e = esp_partition_write(part, written, chunk, r);
+            if(e != ESP_OK) {
+                fw_ota_set_err(err, err_size, "write base failed");
+                ok = false;
+                break;
+            }
+            written += (uint32_t)r;
+            if(progress) progress(written, total, progress_ctx);
+        }
+    } while(0);
+
+    if(chunk) free(chunk);
+    storage_file_close(f);
+    storage_file_free(f);
+    furi_record_close(RECORD_STORAGE);
+    if(!ok) return false;
+
+    // Validate the written image before touching the boot selector.
+    esp_image_metadata_t meta = {0};
+    const esp_partition_pos_t pos = {.offset = part->address, .size = part->size};
+    if(esp_image_verify(ESP_IMAGE_VERIFY, &pos, &meta) != ESP_OK) {
+        fw_ota_set_err(err, err_size, "image validation failed");
+        return false;
+    }
+    // For a FACTORY partition this just erases otadata, so the bootloader
+    // falls back to factory on the next boot.
+    if(esp_ota_set_boot_partition(part) != ESP_OK) {
+        fw_ota_set_err(err, err_size, "set boot partition failed");
+        return false;
+    }
+    FURI_LOG_I(TAG, "flashed %s to %s (raw), boot set", path, part->label);
+    return true;
+}
+#endif
+
 bool fw_ota_flash_file(
     const char* path,
     FwOtaProgressCb progress,
@@ -173,18 +301,22 @@ bool fw_ota_flash_file(
     char* err,
     size_t err_size) {
 #ifdef CONFIG_MOMENTUM_MULTIBOOT
-    const esp_partition_t* next = fw_ota_multiboot_slot();
-    if(next && next == esp_ota_get_running_partition()) {
-        fw_ota_set_err(err, err_size, "Boot base Momentum to update");
-        return false;
-    }
-#else
-    const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
-#endif
+    const esp_partition_t* next = fw_ota_multiboot_target();
     if(!next) {
         fw_ota_set_err(err, err_size, "OTA not supported (no ota slot)");
         return false;
     }
+    /* FACTORY can't go through esp_ota_begin -- write it raw instead. */
+    if(next->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+        return fw_ota_flash_raw(next, path, progress, progress_ctx, err, err_size);
+    }
+#else
+    const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
+    if(!next) {
+        fw_ota_set_err(err, err_size, "OTA not supported (no ota slot)");
+        return false;
+    }
+#endif
 
     Storage* storage = furi_record_open(RECORD_STORAGE);
     FileInfo fi;
