@@ -88,7 +88,10 @@ static void wifi_icon_timer_cb(void* context) {
     Wifi* wifi = context;
     /* Sichtbar solange WiFi global an ist; Glyph wechselt mit dem Verbindungs-
      * zustand. Nur bei echten Änderungen den ViewPort anfassen/neu zeichnen. */
-    bool enabled = wlan_hal_is_user_enabled();
+    /* While the post-update hold is active WiFi is deliberately not running
+     * even though the persistent switch is on, so show the icon as off - the
+     * hold clears the instant WiFi actually starts, and the timer picks that up. */
+    bool enabled = wlan_hal_is_user_enabled() && !wlan_hal_is_held_after_update();
     bool connected = wlan_hal_is_connected();
     if(enabled != wifi->icon_enabled) {
         wifi->icon_enabled = enabled;
