@@ -5,14 +5,12 @@
 #include <gui/view.h>
 #include <gui/view_dispatcher.h>
 #include <gui/modules/submenu.h>
-#include <gui/modules/variable_item_list.h>
 #include <input/input.h>
 #include <storage/storage.h>
 
 #include <wifi/wlan_hal.h>
 #include <btshim.h>
 #include "../wlan_app/wlan_oui.h"
-#include "../ble_spam/ble_spam_payloads.h"
 
 #include <esp_heap_caps.h>
 #include <esp_log.h>
@@ -32,11 +30,9 @@
 
 #define WARD_VIEW_MENU 0U
 #define WARD_VIEW_SCAN 1U
-#define WARD_VIEW_SETTINGS 2U
 
 #define WARD_EVENT_SCROLL_UP   100U
 #define WARD_EVENT_SCROLL_DOWN 101U
-#define WARD_EVENT_SETTINGS    200U
 
 #define WARD_MAX_ENTRIES       512U
 #define WARD_VISIBLE_ENTRIES   2U
@@ -46,34 +42,19 @@
 #define WARD_SUB_MERGE_HZ      500000U
 
 #define WARD_LOG_DIR EXT_PATH("wardriving")
-#define WARD_FINDMY_CONFIG EXT_PATH("apps_data/wardriving/findmy.txt")
-#define WARD_APDB_PATH EXT_PATH("apps_data/wardriving/apdb.bin")
-#define WARD_APDB_MAGIC "WRAPDB1\0"
-#define WARD_APDB_HEADER 16U
-#define WARD_APDB_RECORD 14U
 
 typedef enum {
     WardriveModeNone = 0,
     WardriveModeSubGhz = 1,
     WardriveModeBle = 2,
     WardriveModeWifi = 3,
-    WardriveModeEmulate = 4,
 } WardriveMode;
-
-/* Tracker brands the FindMy setting can tag during a BLE wardrive. */
-typedef enum {
-    WardriveTrackerNone = 0,
-    WardriveTrackerAirTag,
-    WardriveTrackerGoogle,
-    WardriveTrackerSamsung,
-} WardriveTracker;
 
 typedef struct {
     char name[33];
     char id[24];
     char details[20];
     char vendor[32];
-    char brand[12];
     int16_t rssi;
     int16_t best_rssi;
     uint16_t channel;
@@ -87,9 +68,6 @@ typedef struct {
     uint16_t found;
     uint32_t dropped;
     bool running;
-    bool have_location;
-    float latitude;
-    float longitude;
     char status[32];
     WardriveEntry rows[WARD_VISIBLE_ENTRIES];
     uint8_t row_count;
@@ -103,14 +81,10 @@ struct WardrivingApp {
     ViewDispatcher* view_dispatcher;
     Submenu* submenu;
     View* scan_view;
-    VariableItemList* settings;
     FuriMutex* lock;
     FuriThread* worker;
 
     File* log_file;
-    File* findmy_file;
-    File* apdb_file;
-    File* location_file;
     WardriveEntry* entries;
     WlanOuiTable* oui;
     WardriveMode mode;
@@ -119,17 +93,9 @@ struct WardrivingApp {
     uint16_t scroll;
     uint32_t dropped;
     uint32_t log_rows_since_sync;
-    uint32_t findmy_rows_since_sync;
-    uint32_t apdb_count;
-    bool have_location;
-    float last_lat;
-    float last_lon;
     bool follow_latest;
     bool scan_view_active;
-    bool settings_view_active;
     bool log_failed;
-    bool save_map;
-    WardriveTracker emu_tag_type;
     char status[32];
     char log_path[128];
 
@@ -140,7 +106,6 @@ struct WardrivingApp {
     bool bt_was_enabled;
     bool menu_view_added;
     bool scan_view_added;
-    bool settings_view_added;
 };
 
 static WardrivingApp* wardrive_ble_owner = NULL;
@@ -157,8 +122,6 @@ static const char* wardrive_mode_label(WardriveMode mode) {
         return "BLE";
     case WardriveModeWifi:
         return "WiFi";
-    case WardriveModeEmulate:
-        return "Emulate";
     default:
         return "Wardrive";
     }
@@ -172,55 +135,9 @@ static const char* wardrive_mode_filename(WardriveMode mode) {
         return "ble";
     case WardriveModeWifi:
         return "wifi";
-    case WardriveModeEmulate:
-        return "emulate";
     default:
         return "scan";
     }
-}
-
-static const char* wardrive_tracker_label(WardriveTracker tracker) {
-    switch(tracker) {
-    case WardriveTrackerAirTag:
-        return "AirTag";
-    case WardriveTrackerGoogle:
-        return "Google";
-    case WardriveTrackerSamsung:
-        return "Samsung";
-    default:
-        return "";
-    }
-}
-
-/* Tags a raw advertisement as an AirTag/Google/Samsung tracker. Apple FindMy
- * uses mfg 0x004C + type 0x12, Samsung SmartTag mfg 0x0075 / service 0xFD5A,
- * and Google covers both the Find My Device company id 0x00E0 and Fast Pair
- * service 0xFE2C. The last matching field wins. Detection is always on: BLE
- * wardriving logs every device, and tracker hits are tagged as they arrive. */
-static WardriveTracker wardrive_tracker_identify(const uint8_t* data, uint8_t data_len) {
-    WardriveTracker found = WardriveTrackerNone;
-    if(!data) return found;
-    for(uint8_t pos = 0; pos + 1 < data_len;) {
-        const uint8_t field_len = data[pos];
-        if(field_len == 0 || pos + field_len >= data_len) break;
-        const uint8_t type = data[pos + 1];
-        const uint8_t* p = &data[pos + 2];
-        const uint8_t n = field_len - 1;
-        if(type == 0xFF && n >= 2) {
-            const uint16_t company = (uint16_t)(p[0] | (p[1] << 8));
-            if(company == 0x004C && n >= 3 && p[2] == 0x12) found = WardriveTrackerAirTag;
-            else if(company == 0x0075) found = WardriveTrackerSamsung;
-            else if(company == 0x00E0) found = WardriveTrackerGoogle;
-        } else if((type == 0x02 || type == 0x03) && n >= 2) {
-            for(uint8_t i = 0; i + 1 < n; i += 2) {
-                const uint16_t uuid = (uint16_t)(p[i] | (p[i + 1] << 8));
-                if(uuid == 0xFD5A) found = WardriveTrackerSamsung;
-                else if(uuid == 0xFE2C) found = WardriveTrackerGoogle;
-            }
-        }
-        pos += field_len + 1;
-    }
-    return found;
 }
 
 static void wardrive_set_status(WardrivingApp* app, const char* status) {
@@ -228,45 +145,6 @@ static void wardrive_set_status(WardrivingApp* app, const char* status) {
     if(furi_mutex_acquire(app->lock, FuriWaitForever) != FuriStatusOk) return;
     strlcpy(app->status, status ? status : "", sizeof(app->status));
     furi_mutex_release(app->lock);
-}
-
-static void wardrive_findmy_load(WardrivingApp* app) {
-    app->save_map = false;
-    app->emu_tag_type = WardriveTrackerAirTag;
-    if(!app->storage) return;
-
-    File* file = storage_file_alloc(app->storage);
-    if(!file) return;
-    if(storage_file_open(file, WARD_FINDMY_CONFIG, FSAM_READ, FSOM_OPEN_EXISTING)) {
-        char buf[64];
-        const size_t read = storage_file_read(file, buf, sizeof(buf) - 1);
-        buf[read] = '\0';
-        const char* p;
-        if((p = strstr(buf, "save="))) app->save_map = p[5] == '1';
-        if((p = strstr(buf, "type="))) {
-            const int type = p[5] - '0';
-            if(type == WardriveTrackerAirTag || type == WardriveTrackerGoogle ||
-               type == WardriveTrackerSamsung)
-                app->emu_tag_type = (WardriveTracker)type;
-        }
-    }
-    storage_file_close(file);
-    storage_file_free(file);
-}
-
-static void wardrive_findmy_save(WardrivingApp* app) {
-    if(!app || !app->storage) return;
-    storage_simply_mkdir(app->storage, EXT_PATH("apps_data/wardriving"));
-    File* file = storage_file_alloc(app->storage);
-    if(!file) return;
-    if(storage_file_open(file, WARD_FINDMY_CONFIG, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
-        char buf[48];
-        const int len =
-            snprintf(buf, sizeof(buf), "save=%d\ntype=%d\n", app->save_map, app->emu_tag_type);
-        if(len > 0) storage_file_write(file, buf, (size_t)len);
-        storage_file_close(file);
-    }
-    storage_file_free(file);
 }
 
 static void wardrive_sanitize_text(char* text) {
@@ -308,9 +186,6 @@ static bool wardrive_add_or_update(WardrivingApp* app, const WardriveEntry* cand
         }
         if(entry->name[0] == '\0' && candidate->name[0] != '\0') {
             strlcpy(entry->name, candidate->name, sizeof(entry->name));
-        }
-        if(entry->brand[0] == '\0' && candidate->brand[0] != '\0') {
-            strlcpy(entry->brand, candidate->brand, sizeof(entry->brand));
         }
         if(strncmp(candidate->vendor, "Adv: ", 5) == 0 ||
            (strncmp(entry->vendor, "Adv: ", 5) != 0 &&
@@ -361,257 +236,6 @@ static bool wardrive_csv_field(File* file, const char* text) {
         if(p > run && !wardrive_file_write(file, run, (size_t)(p - run))) return false;
     }
     return wardrive_file_write(file, "\"", 1);
-}
-
-/* Opened lazily on the first saved tracker hit so a plain wardrive never
- * creates the file. Runs on the worker thread, next to the main log writes. */
-static bool wardrive_findmy_open(WardrivingApp* app) {
-    if(app->findmy_file) return true;
-    if(!app->storage || storage_sd_status(app->storage) != FSE_OK) return false;
-    if(!storage_simply_mkdir(app->storage, WARD_LOG_DIR)) return false;
-
-    DateTime now;
-    furi_hal_rtc_get_datetime(&now);
-    char path[128];
-    snprintf(
-        path,
-        sizeof(path),
-        WARD_LOG_DIR "/findmy_%04u%02u%02u_%02u%02u%02u.csv",
-        now.year,
-        now.month,
-        now.day,
-        now.hour,
-        now.minute,
-        now.second);
-
-    app->findmy_file = storage_file_alloc(app->storage);
-    if(!app->findmy_file) return false;
-    if(!storage_file_open(app->findmy_file, path, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
-        storage_file_free(app->findmy_file);
-        app->findmy_file = NULL;
-        return false;
-    }
-    static const char header[] = "timestamp,brand,name,id,rssi,best_rssi,channel\n";
-    if(!wardrive_file_write(app->findmy_file, header, sizeof(header) - 1) ||
-       !storage_file_sync(app->findmy_file)) {
-        storage_file_close(app->findmy_file);
-        storage_file_free(app->findmy_file);
-        app->findmy_file = NULL;
-        return false;
-    }
-    FURI_LOG_I(TAG, "FindMy log %s", path);
-    return true;
-}
-
-static void wardrive_findmy_close(WardrivingApp* app) {
-    if(!app || !app->findmy_file) return;
-    storage_file_sync(app->findmy_file);
-    storage_file_close(app->findmy_file);
-    storage_file_free(app->findmy_file);
-    app->findmy_file = NULL;
-    app->findmy_rows_since_sync = 0;
-}
-
-static void wardrive_findmy_log(WardrivingApp* app, const WardriveEntry* entry) {
-    if(!app->save_map || !entry->brand[0] || !wardrive_findmy_open(app)) return;
-
-    char prefix[64];
-    const int prefix_len = snprintf(
-        prefix, sizeof(prefix), "%lu,%s,", (unsigned long)entry->first_seen, entry->brand);
-    if(prefix_len <= 0 || (size_t)prefix_len >= sizeof(prefix)) return;
-    if(!wardrive_file_write(app->findmy_file, prefix, (size_t)prefix_len) ||
-       !wardrive_csv_field(app->findmy_file, entry->name[0] ? entry->name : "(unknown)") ||
-       !wardrive_file_write(app->findmy_file, ",", 1) ||
-       !wardrive_csv_field(app->findmy_file, entry->id))
-        return;
-
-    char suffix[48];
-    const int suffix_len = snprintf(
-        suffix, sizeof(suffix), ",%d,%d,%u\n", entry->rssi, entry->best_rssi, entry->channel);
-    if(suffix_len <= 0 || (size_t)suffix_len >= sizeof(suffix)) return;
-    if(!wardrive_file_write(app->findmy_file, suffix, (size_t)suffix_len)) return;
-
-    app->findmy_rows_since_sync++;
-    if(app->findmy_rows_since_sync >= WARD_LOG_SYNC_ROWS) {
-        storage_file_sync(app->findmy_file);
-        app->findmy_rows_since_sync = 0;
-    }
-}
-
-/* Pure RSSI-weighted centroid so the position math can be host-tested. Weights
- * are linear in signal strength (stronger APs pull the estimate more). */
-static bool wardrive_position_estimate(
-    const float* lats,
-    const float* lons,
-    const int8_t* rssi,
-    uint16_t count,
-    float* out_lat,
-    float* out_lon) {
-    double weight_sum = 0.0;
-    double lat_sum = 0.0;
-    double lon_sum = 0.0;
-    for(uint16_t i = 0; i < count; ++i) {
-        double weight = (double)rssi[i] + 100.0;
-        if(weight <= 0.0) weight = 1.0;
-        weight_sum += weight;
-        lat_sum += weight * (double)lats[i];
-        lon_sum += weight * (double)lons[i];
-    }
-    if(weight_sum <= 0.0) return false;
-    *out_lat = (float)(lat_sum / weight_sum);
-    *out_lon = (float)(lon_sum / weight_sum);
-    return true;
-}
-
-/* Offline AP geolocation database: header + fixed records sorted by BSSID.
- * Lookups binary-search the SD file in place so multi-million entry databases
- * do not need to fit in RAM. Built by tools/build_apdb.py. */
-static bool wardrive_apdb_open(WardrivingApp* app) {
-    if(app->apdb_file) return true;
-    if(!app->storage) return false;
-
-    app->apdb_file = storage_file_alloc(app->storage);
-    if(!app->apdb_file) return false;
-
-    uint8_t header[WARD_APDB_HEADER];
-    if(!storage_file_open(app->apdb_file, WARD_APDB_PATH, FSAM_READ, FSOM_OPEN_EXISTING) ||
-       storage_file_read(app->apdb_file, header, sizeof(header)) != sizeof(header) ||
-       memcmp(header, WARD_APDB_MAGIC, 8) != 0) {
-        storage_file_close(app->apdb_file);
-        storage_file_free(app->apdb_file);
-        app->apdb_file = NULL;
-        return false;
-    }
-    memcpy(&app->apdb_count, header + 8, sizeof(app->apdb_count));
-    FURI_LOG_I(TAG, "AP DB loaded: %lu entries", (unsigned long)app->apdb_count);
-    return true;
-}
-
-static void wardrive_apdb_close(WardrivingApp* app) {
-    if(!app || !app->apdb_file) return;
-    storage_file_close(app->apdb_file);
-    storage_file_free(app->apdb_file);
-    app->apdb_file = NULL;
-    app->apdb_count = 0;
-}
-
-static bool
-    wardrive_apdb_lookup(WardrivingApp* app, const uint8_t bssid[6], float* lat, float* lon) {
-    if(!app->apdb_file || app->apdb_count == 0) return false;
-    uint32_t lo = 0;
-    uint32_t hi = app->apdb_count;
-    uint8_t record[WARD_APDB_RECORD];
-    while(lo < hi) {
-        const uint32_t mid = lo + (hi - lo) / 2;
-        if(!storage_file_seek(app->apdb_file, WARD_APDB_HEADER + mid * WARD_APDB_RECORD, true) ||
-           storage_file_read(app->apdb_file, record, sizeof(record)) != sizeof(record))
-            return false;
-        const int cmp = memcmp(bssid, record, 6);
-        if(cmp == 0) {
-            int32_t lat_e7 = 0;
-            int32_t lon_e7 = 0;
-            memcpy(&lat_e7, record + 6, sizeof(lat_e7));
-            memcpy(&lon_e7, record + 10, sizeof(lon_e7));
-            *lat = (float)lat_e7 / 10000000.0f;
-            *lon = (float)lon_e7 / 10000000.0f;
-            return true;
-        }
-        if(cmp < 0) hi = mid;
-        else lo = mid + 1;
-    }
-    return false;
-}
-
-/* Track file for PC mapping: one row per scan that produced an estimate. */
-static bool wardrive_location_open(WardrivingApp* app) {
-    if(app->location_file) return true;
-    if(!app->storage || storage_sd_status(app->storage) != FSE_OK) return false;
-    if(!storage_simply_mkdir(app->storage, WARD_LOG_DIR)) return false;
-
-    DateTime now;
-    furi_hal_rtc_get_datetime(&now);
-    char path[128];
-    snprintf(
-        path,
-        sizeof(path),
-        WARD_LOG_DIR "/location_%04u%02u%02u_%02u%02u%02u.csv",
-        now.year,
-        now.month,
-        now.day,
-        now.hour,
-        now.minute,
-        now.second);
-
-    app->location_file = storage_file_alloc(app->storage);
-    if(!app->location_file) return false;
-    if(!storage_file_open(app->location_file, path, FSAM_WRITE, FSOM_CREATE_ALWAYS)) {
-        storage_file_free(app->location_file);
-        app->location_file = NULL;
-        return false;
-    }
-    static const char header[] = "timestamp,latitude,longitude,matched_aps\n";
-    if(!wardrive_file_write(app->location_file, header, sizeof(header) - 1) ||
-       !storage_file_sync(app->location_file)) {
-        storage_file_close(app->location_file);
-        storage_file_free(app->location_file);
-        app->location_file = NULL;
-        return false;
-    }
-    FURI_LOG_I(TAG, "Location log %s", path);
-    return true;
-}
-
-static void wardrive_location_close(WardrivingApp* app) {
-    if(!app || !app->location_file) return;
-    storage_file_sync(app->location_file);
-    storage_file_close(app->location_file);
-    storage_file_free(app->location_file);
-    app->location_file = NULL;
-}
-
-static void wardrive_location_log(WardrivingApp* app, float lat, float lon, uint16_t matched) {
-    if(!wardrive_location_open(app)) return;
-    char row[96];
-    const int len = snprintf(
-        row,
-        sizeof(row),
-        "%lu,%.6f,%.6f,%u\n",
-        (unsigned long)furi_hal_rtc_get_timestamp(),
-        (double)lat,
-        (double)lon,
-        matched);
-    if(len > 0 && (size_t)len < sizeof(row)) {
-        wardrive_file_write(app->location_file, row, (size_t)len);
-        storage_file_sync(app->location_file);
-    }
-}
-
-static void wardrive_wifi_locate(
-    WardrivingApp* app,
-    const wifi_ap_record_t* records,
-    uint16_t count) {
-    float lats[64];
-    float lons[64];
-    int8_t rssi[64];
-    uint16_t matched = 0;
-    for(uint16_t i = 0; i < count && matched < COUNT_OF(lats); ++i) {
-        float lat = 0;
-        float lon = 0;
-        if(!wardrive_apdb_lookup(app, records[i].bssid, &lat, &lon)) continue;
-        lats[matched] = lat;
-        lons[matched] = lon;
-        rssi[matched] = records[i].rssi;
-        matched++;
-    }
-    if(matched == 0) return;
-
-    float lat = 0;
-    float lon = 0;
-    if(!wardrive_position_estimate(lats, lons, rssi, matched, &lat, &lon)) return;
-    app->have_location = true;
-    app->last_lat = lat;
-    app->last_lon = lon;
-    wardrive_location_log(app, lat, lon, matched);
 }
 
 static bool wardrive_log_open(WardrivingApp* app) {
@@ -688,8 +312,6 @@ static bool wardrive_log_entry(WardrivingApp* app, const WardriveEntry* entry) {
        !wardrive_file_write(app->log_file, "\n", 1)) {
         return false;
     }
-
-    wardrive_findmy_log(app, entry);
 
     app->log_rows_since_sync++;
     if(app->log_rows_since_sync >= WARD_LOG_SYNC_ROWS) {
@@ -848,10 +470,6 @@ static int wardrive_ble_gap_callback(struct ble_gap_event* event, void* context)
         entry.best_rssi = disc->rssi;
         entry.first_seen = furi_hal_rtc_get_timestamp();
         entry.last_seen = entry.first_seen;
-        strlcpy(
-            entry.brand,
-            wardrive_tracker_label(wardrive_tracker_identify(disc->data, disc->length_data)),
-            sizeof(entry.brand));
         wardrive_add_or_update(app, &entry);
         break;
     }
@@ -867,43 +485,6 @@ static int wardrive_ble_gap_callback(struct ble_gap_event* event, void* context)
     return 0;
 }
 
-/* Shared teardown for whichever NimBLE feature (scan or beacon) currently owns
- * the radio. NimBLE and WiFi share the radio through ESP-IDF coexistence, so
- * WiFi remains running throughout; only the default Bt profile is suspended
- * and restored here. */
-static void wardrive_nimble_release(WardrivingApp* app) {
-    if(!app) return;
-    nimble_glue_stop();
-    if(app->bt_was_enabled) {
-        Bt* bt = furi_record_open(RECORD_BT);
-        bt_start_stack(bt);
-        furi_record_close(RECORD_BT);
-    }
-    app->bt_was_enabled = false;
-}
-
-/* Shared takeover: suspend the default Bt profile and bring up a bare NimBLE
- * host under our own name, ready for either scanning or beacon advertising. */
-static bool wardrive_nimble_take(WardrivingApp* app, const char* name) {
-    Bt* bt = furi_record_open(RECORD_BT);
-    app->bt_was_enabled = bt_is_enabled(bt);
-    bt_stop_stack(bt);
-    furi_record_close(RECORD_BT);
-    furi_delay_ms(50);
-
-    esp_err_t err = nimble_glue_init(name);
-    if(err != ESP_OK) goto fail;
-    nimble_glue_configure_security(false, false, false, BLE_HS_IO_NO_INPUT_OUTPUT);
-    err = nimble_glue_start(NULL, NULL);
-    if(err != ESP_OK) goto fail;
-    return true;
-
-fail:
-    FURI_LOG_E(TAG, "NimBLE takeover failed: %s", esp_err_to_name(err));
-    wardrive_nimble_release(app);
-    return false;
-}
-
 static void wardrive_ble_stack_stop(WardrivingApp* app) {
     if(!app) return;
 
@@ -912,11 +493,30 @@ static void wardrive_ble_stack_stop(WardrivingApp* app) {
         for(uint8_t i = 0; i < 20 && app->ble_scan_started; ++i) furi_delay_ms(10);
     }
     wardrive_ble_owner = NULL;
-    wardrive_nimble_release(app);
+    nimble_glue_stop();
+
+    /* NimBLE and WiFi share the radio through ESP-IDF coexistence, so WiFi
+     * remains running throughout the scan. Restore the normal BLE profile. */
+    if(app->bt_was_enabled) {
+        Bt* bt = furi_record_open(RECORD_BT);
+        bt_start_stack(bt);
+        furi_record_close(RECORD_BT);
+    }
+    app->bt_was_enabled = false;
 }
 
 static bool wardrive_ble_stack_start(WardrivingApp* app) {
-    if(!wardrive_nimble_take(app, "Wardrive BLE")) return false;
+    Bt* bt = furi_record_open(RECORD_BT);
+    app->bt_was_enabled = bt_is_enabled(bt);
+    bt_stop_stack(bt);
+    furi_record_close(RECORD_BT);
+    furi_delay_ms(50);
+
+    esp_err_t err = nimble_glue_init("Wardrive BLE");
+    if(err != ESP_OK) goto fail;
+    nimble_glue_configure_security(false, false, false, BLE_HS_IO_NO_INPUT_OUTPUT);
+    err = nimble_glue_start(NULL, NULL);
+    if(err != ESP_OK) goto fail;
 
     wardrive_ble_owner = app;
     app->ble_scan_started = false;
@@ -932,87 +532,16 @@ static bool wardrive_ble_stack_start(WardrivingApp* app) {
     int rc = ble_gap_disc(
         nimble_glue_own_address_type(), BLE_HS_FOREVER, &scan_params, wardrive_ble_gap_callback, app);
     if(rc != 0) {
-        FURI_LOG_E(TAG, "BLE scanner start failed: rc=%d", rc);
-        wardrive_ble_owner = NULL;
-        wardrive_nimble_release(app);
-        return false;
+        err = ESP_FAIL;
+        goto fail;
     }
     app->ble_scan_started = true;
     return true;
-}
 
-/* Builds the raw advertising payload for the selected emulated tag into
- * `buf` (must hold EXTRA_BEACON_MAX_DATA_SIZE bytes) and returns its length,
- * or 0 if the type has no payload (Google - see wardrive_worker_emulate). */
-static uint8_t wardrive_build_emu_payload(WardriveTracker type, uint8_t* buf) {
-    if(type == WardriveTrackerAirTag) {
-        /* Same static AirTag frame as find_my_flipper's default payload
-         * (applications/system/find_my_flipper/findmy_state.c) - no live
-         * battery byte, that's cosmetic and not needed for tag recognition. */
-        uint8_t* p = buf;
-        *p++ = 0x1E; // Length
-        *p++ = 0xFF; // Manufacturer Specific Data
-        *p++ = 0x4C; // Company ID (Apple, Inc.)
-        *p++ = 0x00; // ...
-        *p++ = 0x12; // Type (FindMy)
-        *p++ = 0x19; // Length
-        *p++ = 0x00; // Battery Status set to Full
-        for(size_t i = 0; i < 22; ++i) *p++ = 0x00; // Placeholder public key
-        *p++ = 0x00; // Version
-        *p++ = 0x00; // Hint
-        return 31;
-    }
-    if(type == WardriveTrackerSamsung) {
-        return ble_spam_build_samsung_buds(buf, 0xFF, 0xFF, 0xFF);
-    }
-    return 0;
-}
-
-static bool wardrive_emu_beacon_start(WardrivingApp* app) {
-    if(!wardrive_nimble_take(app, "Wardrive Emulate")) return false;
-
-    /* furi_hal_bt_extra_beacon_start() requires NimBLE to already be synced;
-     * nimble_glue_start() does not guarantee that's immediate. Poll briefly
-     * rather than assume, since a false return here is silent (not an
-     * error/assert) per components/furi_hal/furi_hal_bt.c. */
-    bool synced = false;
-    for(uint8_t i = 0; i < 50 && !synced; ++i) {
-        synced = nimble_glue_is_synced();
-        if(!synced) furi_delay_ms(10);
-    }
-    if(!synced) {
-        FURI_LOG_E(TAG, "NimBLE never synced for beacon");
-        wardrive_nimble_release(app);
-        return false;
-    }
-
-    uint8_t data[EXTRA_BEACON_MAX_DATA_SIZE];
-    const uint8_t len = wardrive_build_emu_payload(app->emu_tag_type, data);
-    if(len == 0) {
-        wardrive_nimble_release(app);
-        return false;
-    }
-
-    GapExtraBeaconConfig config = {
-        .min_adv_interval_ms = 5000,
-        .max_adv_interval_ms = 5150,
-        .adv_channel_map = GapAdvChannelMapAll,
-        .adv_power_level = GapAdvPowerLevel_0dBm + 6,
-        .address_type = GapAddressTypePublic,
-        .address = {0x66, 0x55, 0x44, 0x33, 0x22, 0x11},
-    };
-    if(!furi_hal_bt_extra_beacon_set_config(&config) ||
-       !furi_hal_bt_extra_beacon_set_data(data, len) || !furi_hal_bt_extra_beacon_start()) {
-        FURI_LOG_E(TAG, "Beacon configure/start failed");
-        wardrive_nimble_release(app);
-        return false;
-    }
-    return true;
-}
-
-static void wardrive_emu_beacon_stop(WardrivingApp* app) {
-    if(furi_hal_bt_extra_beacon_is_active()) furi_hal_bt_extra_beacon_stop();
-    wardrive_nimble_release(app);
+fail:
+    FURI_LOG_E(TAG, "BLE scanner start failed: %s", esp_err_to_name(err));
+    wardrive_ble_stack_stop(app);
+    return false;
 }
 
 static void wardrive_sub_record(WardrivingApp* app, uint32_t frequency, float rssi) {
@@ -1064,7 +593,6 @@ static void wardrive_worker_wifi(WardrivingApp* app) {
         wardrive_set_status(app, scanned ? (count ? "Scanning" : "No APs - retrying") :
                                              "WiFi scan failed - retrying");
         for(uint16_t i = 0; i < count; ++i) wardrive_wifi_record(app, &records[i]);
-        wardrive_wifi_locate(app, records, count);
         free(records);
         if(!wardrive_flush_unlogged(app)) break;
         for(uint8_t i = 0; i < 5 && !app->stop_requested; ++i) furi_delay_ms(50);
@@ -1124,23 +652,6 @@ static void wardrive_worker_subghz(WardrivingApp* app) {
     furi_hal_subghz_sleep();
 }
 
-static void wardrive_worker_emulate(WardrivingApp* app) {
-    if(app->emu_tag_type == WardriveTrackerGoogle) {
-        wardrive_set_status(app, "Google emulation unsupported");
-        return;
-    }
-
-    wardrive_set_status(app, "Starting beacon...");
-    if(!wardrive_emu_beacon_start(app)) {
-        wardrive_set_status(app, "Beacon start failed");
-        return;
-    }
-
-    wardrive_set_status(app, "Emulating - Back stops");
-    while(!app->stop_requested) furi_delay_ms(200);
-    wardrive_emu_beacon_stop(app);
-}
-
 static int32_t wardrive_worker(void* context) {
     WardrivingApp* app = context;
     if(!app) return -1;
@@ -1154,9 +665,6 @@ static int32_t wardrive_worker(void* context) {
         break;
     case WardriveModeWifi:
         wardrive_worker_wifi(app);
-        break;
-    case WardriveModeEmulate:
-        wardrive_worker_emulate(app);
         break;
     default:
         break;
@@ -1183,9 +691,6 @@ static void wardrive_session_stop(WardrivingApp* app) {
         app->worker = NULL;
     }
     wardrive_log_close(app);
-    wardrive_findmy_close(app);
-    wardrive_location_close(app);
-    wardrive_apdb_close(app);
     if(app->entries) {
         heap_caps_free(app->entries);
         app->entries = NULL;
@@ -1213,7 +718,6 @@ static bool wardrive_session_start(WardrivingApp* app, WardriveMode mode) {
         app->scroll = 0;
         app->dropped = 0;
         app->log_rows_since_sync = 0;
-        app->findmy_rows_since_sync = 0;
         app->follow_latest = true;
         app->log_failed = false;
         app->status[0] = '\0';
@@ -1222,15 +726,7 @@ static bool wardrive_session_start(WardrivingApp* app, WardriveMode mode) {
     app->stop_requested = false;
     if(mode == WardriveModeWifi || mode == WardriveModeBle) app->oui = wlan_oui_load();
 
-    app->have_location = false;
-    app->last_lat = 0;
-    app->last_lon = 0;
-    if(mode == WardriveModeWifi && !wardrive_apdb_open(app)) {
-        wardrive_set_status(app, "AP DB missing - no location");
-    }
-
-    /* Emulation never logs entries, so skip creating an (empty) session CSV. */
-    if(mode != WardriveModeEmulate && !wardrive_log_open(app)) {
+    if(!wardrive_log_open(app)) {
         wardrive_set_status(app, "SD card/log failed");
         heap_caps_free(app->entries);
         app->entries = NULL;
@@ -1294,46 +790,23 @@ static void wardrive_scan_draw(Canvas* canvas, void* context) {
                 sizeof(line),
                 "%c %.20s",
                 i == 0 ? '>' : ' ',
-                entry->brand[0] ? entry->brand :
-                (entry->vendor[0] ?
-                     ((strncmp(entry->vendor, "OUI: ", 5) == 0 ||
-                       strncmp(entry->vendor, "Adv: ", 5) == 0) ? entry->vendor + 5 : "Unknown brand") :
-                     (entry->name[0] ? entry->name : "(unknown)")));
+                entry->vendor[0] ?
+                    ((strncmp(entry->vendor, "OUI: ", 5) == 0 ||
+                      strncmp(entry->vendor, "Adv: ", 5) == 0) ? entry->vendor + 5 : "Unknown brand") :
+                    (entry->name[0] ? entry->name : "(unknown)"));
             canvas_draw_str(canvas, 1, name_y, line);
             snprintf(line, sizeof(line), "%s", entry->id);
             canvas_draw_str(canvas, 1, id_y, line);
             snprintf(line, sizeof(line), "%.24s", entry->name[0] ? entry->name : entry->vendor);
             canvas_draw_str(canvas, 1, 42, line);
-            snprintf(
-                line,
-                sizeof(line),
-                "%ddBm ch%u %.12s",
-                entry->rssi,
-                entry->channel,
-                entry->brand[0] ? entry->brand : entry->details);
+            snprintf(line, sizeof(line), "%ddBm ch%u %.12s", entry->rssi, entry->channel, entry->details);
             canvas_draw_str(canvas, 1, 52, line);
         }
     }
 
     canvas_set_font(canvas, FontSecondary);
-    if(model->have_location) {
-        snprintf(
-            line,
-            sizeof(line),
-            "%.5f,%.5f",
-            (double)model->latitude,
-            (double)model->longitude);
-        canvas_draw_str_aligned(canvas, 127, 63, AlignRight, AlignBottom, line);
-    } else {
-        canvas_draw_str_aligned(
-            canvas,
-            127,
-            63,
-            AlignRight,
-            AlignBottom,
-            !model->running || strstr(model->status, "failed") ? model->status :
-                                                                 "Up/Down  Back=Stop");
-    }
+    canvas_draw_str_aligned(canvas, 127, 63, AlignRight, AlignBottom,
+        !model->running || strstr(model->status, "failed") ? model->status : "Up/Down  Back=Stop");
 }
 
 static bool wardrive_scan_input(InputEvent* event, void* context) {
@@ -1362,9 +835,6 @@ static void wardrive_refresh_view(WardrivingApp* app) {
         model->found = app->count;
         model->dropped = app->dropped;
         model->running = app->worker_active;
-        model->have_location = app->have_location;
-        model->latitude = app->last_lat;
-        model->longitude = app->last_lon;
         strlcpy(model->status, app->status, sizeof(model->status));
         model->row_count = 0;
 
@@ -1386,45 +856,6 @@ static void wardrive_refresh_view(WardrivingApp* app) {
     view_commit_model(app->scan_view, true);
 }
 
-static void wardrive_settings_apply_text(VariableItem* item, bool value) {
-    variable_item_set_current_value_index(item, value ? 1 : 0);
-    variable_item_set_current_value_text(item, value ? "Yes" : "No");
-}
-
-static void wardrive_settings_save_map_changed(VariableItem* item) {
-    WardrivingApp* app = variable_item_get_context(item);
-    app->save_map = variable_item_get_current_value_index(item) != 0;
-    wardrive_settings_apply_text(item, app->save_map);
-    wardrive_findmy_save(app);
-}
-
-static void wardrive_settings_tag_type_changed(VariableItem* item) {
-    WardrivingApp* app = variable_item_get_context(item);
-    /* Index 0/1/2 -> AirTag/Google/Samsung (WardriveTrackerNone is not offered). */
-    app->emu_tag_type = (WardriveTracker)(variable_item_get_current_value_index(item) + 1);
-    variable_item_set_current_value_text(item, wardrive_tracker_label(app->emu_tag_type));
-    wardrive_findmy_save(app);
-}
-
-static void wardrive_settings_enter(WardrivingApp* app) {
-    VariableItemList* list = app->settings;
-    variable_item_list_reset(list);
-    variable_item_list_set_header(list, "FindMy Settings");
-
-    /* AirTag/Google/Samsung tagging is always on during BLE wardriving, so the
-     * only choice here is whether tagged hits also get a map row. */
-    VariableItem* item = variable_item_list_add(
-        list, "Save map on detect", 2, wardrive_settings_save_map_changed, app);
-    wardrive_settings_apply_text(item, app->save_map);
-
-    /* Which tag FindMy Emulate broadcasts. Google is listed for symmetry with
-     * the detector but is not implemented - see wardrive_worker_emulate(). */
-    VariableItem* emu_item = variable_item_list_add(
-        list, "Emulate Tag", 3, wardrive_settings_tag_type_changed, app);
-    variable_item_set_current_value_index(emu_item, app->emu_tag_type - 1);
-    variable_item_set_current_value_text(emu_item, wardrive_tracker_label(app->emu_tag_type));
-}
-
 static void wardrive_menu_callback(void* context, uint32_t index) {
     WardrivingApp* app = context;
     if(!app) return;
@@ -1435,7 +866,7 @@ static bool wardrive_custom_event(void* context, uint32_t event) {
     WardrivingApp* app = context;
     if(!app) return false;
 
-    if(event >= WardriveModeSubGhz && event <= WardriveModeEmulate) {
+    if(event >= WardriveModeSubGhz && event <= WardriveModeWifi) {
         app->scan_view_active = true;
         app->mode = (WardriveMode)event;
         wardrive_set_status(app, "Opening SD log...");
@@ -1443,13 +874,6 @@ static bool wardrive_custom_event(void* context, uint32_t event) {
         view_dispatcher_switch_to_view(app->view_dispatcher, WARD_VIEW_SCAN);
         wardrive_session_start(app, (WardriveMode)event);
         wardrive_refresh_view(app);
-        return true;
-    }
-
-    if(event == WARD_EVENT_SETTINGS) {
-        app->settings_view_active = true;
-        wardrive_settings_enter(app);
-        view_dispatcher_switch_to_view(app->view_dispatcher, WARD_VIEW_SETTINGS);
         return true;
     }
 
@@ -1478,11 +902,6 @@ static bool wardrive_custom_event(void* context, uint32_t event) {
 static bool wardrive_back_event(void* context) {
     WardrivingApp* app = context;
     if(!app) return false;
-    if(app->settings_view_active) {
-        app->settings_view_active = false;
-        view_dispatcher_switch_to_view(app->view_dispatcher, WARD_VIEW_MENU);
-        return true;
-    }
     if(!app->scan_view_active) return false;
 
     wardrive_session_stop(app);
@@ -1512,22 +931,14 @@ static WardrivingApp* wardrive_app_alloc(void) {
     app->view_dispatcher = view_dispatcher_alloc();
     app->submenu = submenu_alloc();
     app->scan_view = view_alloc();
-    app->settings = variable_item_list_alloc();
-    if(!app->gui || !app->storage || !app->view_dispatcher || !app->submenu || !app->scan_view ||
-       !app->settings) {
+    if(!app->gui || !app->storage || !app->view_dispatcher || !app->submenu || !app->scan_view) {
         return app;
     }
-
-    wardrive_findmy_load(app);
 
     submenu_set_header(app->submenu, "Wardriving");
     submenu_add_item(
         app->submenu, "Sub-GHz Wardriving", WardriveModeSubGhz, wardrive_menu_callback, app);
     submenu_add_item(app->submenu, "BLE Wardriving", WardriveModeBle, wardrive_menu_callback, app);
-    submenu_add_item(app->submenu, "WiFi Wardriving", WardriveModeWifi, wardrive_menu_callback, app);
-    submenu_add_item(
-        app->submenu, "FindMy Emulate", WardriveModeEmulate, wardrive_menu_callback, app);
-    submenu_add_item(app->submenu, "FindMy Settings", WARD_EVENT_SETTINGS, wardrive_menu_callback, app);
 
     view_allocate_model(app->scan_view, ViewModelTypeLocking, sizeof(WardriveViewModel));
     view_set_context(app->scan_view, app);
@@ -1543,15 +954,12 @@ static WardrivingApp* wardrive_app_alloc(void) {
     app->menu_view_added = true;
     view_dispatcher_add_view(app->view_dispatcher, WARD_VIEW_SCAN, app->scan_view);
     app->scan_view_added = true;
-    view_dispatcher_add_view(
-        app->view_dispatcher, WARD_VIEW_SETTINGS, variable_item_list_get_view(app->settings));
-    app->settings_view_added = true;
     return app;
 }
 
 static bool wardrive_app_ready(const WardrivingApp* app) {
     return app && app->lock && app->gui && app->storage && app->view_dispatcher && app->submenu &&
-           app->scan_view && app->settings;
+           app->scan_view;
 }
 
 static void wardrive_app_free(WardrivingApp* app) {
@@ -1561,12 +969,9 @@ static void wardrive_app_free(WardrivingApp* app) {
     if(app->view_dispatcher) {
         if(app->menu_view_added) view_dispatcher_remove_view(app->view_dispatcher, WARD_VIEW_MENU);
         if(app->scan_view_added) view_dispatcher_remove_view(app->view_dispatcher, WARD_VIEW_SCAN);
-        if(app->settings_view_added)
-            view_dispatcher_remove_view(app->view_dispatcher, WARD_VIEW_SETTINGS);
     }
     if(app->submenu) submenu_free(app->submenu);
     if(app->scan_view) view_free(app->scan_view);
-    if(app->settings) variable_item_list_free(app->settings);
     if(app->view_dispatcher) view_dispatcher_free(app->view_dispatcher);
     if(app->storage) furi_record_close(RECORD_STORAGE);
     if(app->gui) furi_record_close(RECORD_GUI);

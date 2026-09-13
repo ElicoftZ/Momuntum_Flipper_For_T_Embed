@@ -11,12 +11,6 @@ wifi_identity = ward.split("    const char* vendor = (ap->bssid[0]", 1)[1].split
     "    entry.rssi = ap->rssi;", 1)[0]
 update = ward.split('        if(strncmp(candidate->vendor, "Adv: ", 5)', 1)[1].split(
     "        furi_mutex_release(app->lock);", 1)[0]
-tracker_fn = "static WardriveTracker wardrive_tracker_identify" + ward.split(
-    "static WardriveTracker wardrive_tracker_identify", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
-centroid_fn = "static bool wardrive_position_estimate" + ward.split(
-    "static bool wardrive_position_estimate", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
-payload_fn = "static uint8_t wardrive_build_emu_payload" + ward.split(
-    "static uint8_t wardrive_build_emu_payload", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
 harness = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -24,12 +18,6 @@ harness = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-typedef enum {
-    WardriveTrackerNone = 0,
-    WardriveTrackerAirTag,
-    WardriveTrackerGoogle,
-    WardriveTrackerSamsung,
-} WardriveTracker;
 #define ESP_OK 0
 #define BLE_ADDR_PUBLIC 0
 #define ESP_LOGE(...) ((void)0)
@@ -86,14 +74,6 @@ static Entry identify_wifi(uint8_t first, bool database) {
     const char* vendor = (ap->bssid[0]''' + wifi_identity + r'''
     return entry;
 }
-static uint8_t ble_spam_build_samsung_buds(uint8_t* buf, uint8_t r, uint8_t g, uint8_t b) {
-    memset(buf, 0xAB, 31);
-    buf[0] = 0x1B; buf[1] = 0xFF; buf[2] = 0x75; buf[3] = r; buf[4] = g; buf[5] = b;
-    return 31;
-}
-/*TRACKER_FN*/
-/*CENTROID_FN*/
-/*PAYLOAD_FN*/
 int main(void) {
     wifi_ap_record_t* p;
     uint16_t n;
@@ -129,43 +109,9 @@ int main(void) {
     assert(strcmp(unknown.vendor, "Adv: Apple") == 0);
     for(size_t i = 0; i < sizeof apple; ++i)
         assert(strcmp(identify(1, apple, i, true).vendor, "Random MAC / unknown") == 0);
-    uint8_t airtag[] = {4, 0xFF, 0x4C, 0x00, 0x12};
-    uint8_t apple_other[] = {3, 0xFF, 0x4C, 0x00};
-    uint8_t samsung_mfg[] = {3, 0xFF, 0x75, 0x00};
-    uint8_t google_mfg[] = {3, 0xFF, 0xE0, 0x00};
-    uint8_t smarttag_uuid[] = {3, 0x03, 0x5A, 0xFD};
-    uint8_t fastpair_uuid[] = {3, 0x03, 0x2C, 0xFE};
-    assert(wardrive_tracker_identify(airtag, sizeof airtag) == WardriveTrackerAirTag);
-    assert(wardrive_tracker_identify(apple_other, sizeof apple_other) == WardriveTrackerNone);
-    assert(wardrive_tracker_identify(samsung_mfg, sizeof samsung_mfg) == WardriveTrackerSamsung);
-    assert(wardrive_tracker_identify(google_mfg, sizeof google_mfg) == WardriveTrackerGoogle);
-    assert(wardrive_tracker_identify(smarttag_uuid, sizeof smarttag_uuid) == WardriveTrackerSamsung);
-    assert(wardrive_tracker_identify(fastpair_uuid, sizeof fastpair_uuid) == WardriveTrackerGoogle);
-    assert(wardrive_tracker_identify(NULL, 0) == WardriveTrackerNone);
-    assert(wardrive_tracker_identify(apple, 1) == WardriveTrackerNone);
-    float lats[] = {10.0f, 20.0f};
-    float lons[] = {30.0f, 40.0f};
-    int8_t rssi_eq[] = {-40, -40};
-    float la = 0, lo = 0;
-    assert(wardrive_position_estimate(lats, lons, rssi_eq, 2, &la, &lo));
-    assert(la > 14.99f && la < 15.01f && lo > 34.99f && lo < 35.01f);
-    int8_t rssi_skew[] = {-40, -90};
-    assert(wardrive_position_estimate(lats, lons, rssi_skew, 2, &la, &lo));
-    assert(la > 11.0f && la < 12.0f && lo > 31.0f && lo < 32.0f);
-    assert(!wardrive_position_estimate(lats, lons, rssi_eq, 0, &la, &lo));
-    uint8_t payload[31];
-    assert(wardrive_build_emu_payload(WardriveTrackerAirTag, payload) == 31);
-    assert(payload[0] == 0x1E && payload[1] == 0xFF);
-    assert(payload[2] == 0x4C && payload[3] == 0x00 && payload[4] == 0x12);
-    assert(wardrive_build_emu_payload(WardriveTrackerSamsung, payload) == 31);
-    assert(payload[0] == 0x1B && payload[1] == 0xFF && payload[2] == 0x75);
-    assert(wardrive_build_emu_payload(WardriveTrackerGoogle, payload) == 0);
-    puts("PASS: scan success/empty/cap/errors/cleanup; public/random MAC; manufacturer hints; truncated BLE data; hint retention; tracker brands; rssi centroid; emulation payloads");
+    puts("PASS: scan success/empty/cap/errors/cleanup; public/random MAC; manufacturer hints; truncated BLE data; hint retention");
 }
 '''
-harness = harness.replace("/*TRACKER_FN*/", tracker_fn)
-harness = harness.replace("/*CENTROID_FN*/", centroid_fn)
-harness = harness.replace("/*PAYLOAD_FN*/", payload_fn)
 build = root / "build_host"
 build.mkdir(exist_ok=True)
 source = build / "wardriving_regression.c"
