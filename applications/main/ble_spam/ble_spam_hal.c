@@ -20,7 +20,7 @@ static struct ble_gap_adv_params s_adv_params = {
     .conn_mode = BLE_GAP_CONN_MODE_UND,
     .disc_mode = BLE_GAP_DISC_MODE_GEN,
     .itvl_min = 0x20,
-    .itvl_max = 0x40,
+    .itvl_max = 0x20,
     .channel_map = BLE_GAP_ADV_DFLT_CHANNEL_MAP,
 };
 

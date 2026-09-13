@@ -16,7 +16,8 @@ static const char* attack_names[] = {
     [BleSpamAttackPairSpamCustom] = "Pair Spam (Custom)",
     [BleSpamAttackSourApple] = "Sour Apple (Marauder)",
     [BleSpamAttackAppleJuice] = "Apple Juice (Marauder)",
-    [BleSpamAttackFlipperZero] = "FlipperZero Spam (Marauder)",
+    [BleSpamAttackFlipperZero] = "FlipperZero Spam",
+    [BleSpamAttackSpamAll] = "Spam All (Marauder)",
 };
 
 static void spam_menu_callback(void* context, uint32_t index) {

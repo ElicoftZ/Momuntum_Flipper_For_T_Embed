@@ -6,14 +6,17 @@ Ported from: esp32_marauder/WiFiScan.cpp, WiFiScan::GetUniversalAdvertisementDat
 License: MIT License (included as LICENSE_MARAUDER)
 
 Ported source (this port):
-ble_spam_payloads.h — the "ESP32Marauder payload set" section: mar_apple_device_ids,
-mar_apple_actions, ble_spam_random_name, ble_spam_random_name_mixed,
-ble_spam_build_mar_apple_action, ble_spam_build_mar_apple_device,
-ble_spam_build_mar_sour_apple, ble_spam_build_mar_google,
-ble_spam_build_mar_samsung_watch, ble_spam_build_mar_swiftpair,
-ble_spam_build_mar_flipper.
+ble_spam_payloads.h -- the "ESP32Marauder payload set" section: mar_apple_device_ids,
+mar_apple_actions, mar_samsung_watch_models, ble_spam_random_name,
+ble_spam_random_name_mixed, ble_spam_build_mar_apple_action,
+ble_spam_build_mar_apple_device, ble_spam_build_mar_sour_apple,
+ble_spam_build_mar_google, ble_spam_build_mar_samsung_watch,
+ble_spam_build_mar_samsung_watch_random, ble_spam_build_mar_swiftpair,
+ble_spam_build_mar_flipper, MarPayloadType and ble_spam_build_mar_payload
+(the whole GetUniversalAdvertisementData/executeBLESpam dispatch).
 Attack wiring in scene_running.c, scene_spam_menu.c and ble_spam_app.h
-(BleSpamAttackSourApple, BleSpamAttackAppleJuice, BleSpamAttackFlipperZero).
+(BleSpamAttackSourApple, BleSpamAttackAppleJuice, BleSpamAttackFlipperZero,
+BleSpamAttackSpamAll = Marauder BT_ATTACK_SPAM_ALL).
 
 Modified for this port:
 - Rewritten as plain C, matching this app's existing builder signature style

