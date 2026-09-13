@@ -54,6 +54,7 @@ static bool desktop_lock_menu_bt_enabled(void) {
 }
 
 static bool desktop_lock_menu_wifi_active(void) {
+    if(wlan_hal_is_held_after_update()) return false;
     return wlan_hal_is_user_enabled() || wlan_hal_is_boot_time_sync_active();
 }
 
