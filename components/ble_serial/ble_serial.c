@@ -559,14 +559,22 @@ static int serial_gap_event(struct ble_gap_event* event, void* arg) {
         break;
     case BLE_GAP_EVENT_NOTIFY_TX:
         if(serial && event->notify_tx.attr_handle == serial_state.tx_handle &&
-           event->notify_tx.indication && event->notify_tx.status == 0) {
-            serial_lock(serial);
-            SerialServiceEventCallback callback = serial->event_callback;
-            void* context = serial->event_context;
-            serial_unlock(serial);
-            if(callback) {
-                SerialServiceEvent sent = {.event = SerialServiceEventTypeDataSent};
-                callback(sent, context);
+           event->notify_tx.indication) {
+            if(event->notify_tx.status == BLE_HS_EDONE) {
+                serial_lock(serial);
+                SerialServiceEventCallback callback = serial->event_callback;
+                void* context = serial->event_context;
+                serial_unlock(serial);
+                if(callback) {
+                    SerialServiceEvent sent = {.event = SerialServiceEventTypeDataSent};
+                    callback(sent, context);
+                }
+            } else if(event->notify_tx.status != 0) {
+                ESP_LOGE(
+                    TAG,
+                    "Indication failed, handle=%u status=%d",
+                    event->notify_tx.attr_handle,
+                    event->notify_tx.status);
             }
         }
         break;

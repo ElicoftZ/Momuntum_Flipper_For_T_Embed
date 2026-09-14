@@ -20,8 +20,11 @@ fixture = r'''
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#define TAG "test"
+#define ESP_LOGE(...) ((void)0)
 enum { BLE_GAP_EVENT_SUBSCRIBE, BLE_GAP_EVENT_NOTIFY_TX };
 enum { SerialServiceEventTypeDataSent };
+#define BLE_HS_EDONE 14
 struct ble_gap_event {
     int type;
     struct { int attr_handle, cur_indicate, cur_notify; } subscribe;
@@ -78,12 +81,16 @@ int main(void) {
     e.type = BLE_GAP_EVENT_NOTIFY_TX;
     e.notify_tx.attr_handle = 1;
     e.notify_tx.indication = 1;
+    /* Queued is not confirmed; advancing here corrupts multi-chunk frames. */
+    serial_gap_event(&e, NULL);
+    assert(completed == 0 && !locked);
+    e.notify_tx.status = BLE_HS_EDONE;
     serial_gap_event(&e, NULL);
     assert(completed == 1 && !locked);
     e.notify_tx.status = 7;
     serial_gap_event(&e, NULL);
     assert(completed == 1 && !locked);
-    puts("PASS: synchronous Flow/RPC notifications do not deadlock; indication callback preserved");
+    puts("PASS: notifications do not deadlock; TX advances only after indication acknowledgment");
 }
 '''
 out = root / 'build_host/ble_serial_gap'
