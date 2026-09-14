@@ -68,6 +68,7 @@ typedef enum {
     U2fSettingsIndexRemovePin,
     U2fSettingsIndexCreds,
     U2fSettingsIndexRetries,
+    U2fSettingsIndexInfo,
     U2fSettingsIndexReset,
 } U2fSettingsIndex;
 
