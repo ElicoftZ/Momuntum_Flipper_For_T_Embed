@@ -30,7 +30,9 @@ static void serial_profile_fill_default_gap_config(GapConfig* config) {
     /* MAC left as all-zeros → use public BLE address (no random addr) */
 
     config->bonding_mode = true;
-    config->pairing_method = GapPairingPinCodeVerifyYesNo;
+    /* DisplayOnly + Secure Connections uses Passkey Entry: display the code
+     * here and let the user enter it on the phone. */
+    config->pairing_method = GapPairingPinCodeDisplayOnly;
     snprintf(
         config->adv_name,
         sizeof(config->adv_name),

@@ -477,8 +477,35 @@ static void cts_client_start(uint16_t conn_handle) {
 
 static bool serial_try_start_advertising_locked(void);
 
+/** Ask the phone for connection parameters that survive ESP32 Wi-Fi/BLE
+ *  coexistence. The Flipper mobile app is much happier when the peripheral
+ *  drives this instead of accepting whatever the phone picked: the stock
+ *  Android default is often a long interval with a short supervision timeout,
+ *  which the coexisting radio cannot always honour. Values follow the
+ *  Flipper serial profile: 7.5 ms .. 45 ms, no latency, 4 s supervision. */
+static void serial_request_conn_params(uint16_t conn_handle) {
+    struct ble_gap_upd_params params = {
+        .itvl_min = 0x06, /* 7.5 ms */
+        .itvl_max = 0x24, /* 45 ms */
+        .latency = 0,
+        .supervision_timeout = 0x0190, /* 400 * 10 ms = 4 s */
+        .min_ce_len = 0,
+        .max_ce_len = 0,
+    };
+    int rc = ble_gap_update_params(conn_handle, &params);
+    if(rc != 0) {
+        ESP_LOGW(TAG, "Connection parameter update request failed, rc=%d", rc);
+    } else {
+        ESP_LOGI(TAG, "Requested connection parameters (7.5-45 ms, 4 s timeout)");
+    }
+}
+
 static int serial_gap_event(struct ble_gap_event* event, void* arg) {
     (void)arg;
+    /* NimBLE reports notification sends synchronously, including sends made
+     * below while serial_state.mutex is held. Only indications need handling. */
+    if(event->type == BLE_GAP_EVENT_NOTIFY_TX && !event->notify_tx.indication) return 0;
+
     serial_lock_global();
     BleSerial* serial = serial_state.active;
 
@@ -491,13 +518,17 @@ static int serial_gap_event(struct ble_gap_event* event, void* arg) {
             serial_state.flow_notify_enabled = false;
             serial_state.rpc_notify_enabled = false;
             serial_unlock_global();
+            serial_request_conn_params(event->connect.conn_handle);
             serial_update_connection(serial, true);
-            ble_gap_security_initiate(event->connect.conn_handle);
+            int rc = ble_gap_security_initiate(event->connect.conn_handle);
+            ESP_LOGI(TAG, "Security initiation: rc=%d", rc);
             return 0;
         }
         serial_try_start_advertising_locked();
         break;
     case BLE_GAP_EVENT_DISCONNECT:
+        ESP_LOGI(TAG, "Disconnected, reason=%d (0x%x)",
+                 event->disconnect.reason, event->disconnect.reason);
         cts_client_finish(NULL);
         if(serial) {
             serial->conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -548,29 +579,66 @@ static int serial_gap_event(struct ble_gap_event* event, void* arg) {
             furi_hal_bt_emit_gap_event(mtu);
         }
         break;
+    case BLE_GAP_EVENT_CONN_UPDATE: {
+        struct ble_gap_conn_desc desc;
+        if(event->conn_update.status == 0 &&
+           ble_gap_conn_find(event->conn_update.conn_handle, &desc) == 0) {
+            ESP_LOGI(
+                TAG,
+                "Connection parameters: itvl=%u (%.1f ms) latency=%u timeout=%u (%.0f ms)",
+                desc.conn_itvl,
+                desc.conn_itvl * 1.25,
+                desc.conn_latency,
+                desc.supervision_timeout,
+                desc.supervision_timeout * 10.0);
+        } else {
+            ESP_LOGW(TAG, "Connection parameter update failed, status=%d", event->conn_update.status);
+        }
+        break;
+    }
     case BLE_GAP_EVENT_ENC_CHANGE:
         if(event->enc_change.status == 0 && serial) {
+            ESP_LOGI(TAG, "Encryption established");
             serial_send_flow(serial);
             serial_send_rpc(serial);
             cts_client_start(event->enc_change.conn_handle);
+        } else if(event->enc_change.status != 0) {
+            ESP_LOGE(
+                TAG,
+                "Encryption/pairing failed, status=%d (0x%x)",
+                event->enc_change.status,
+                event->enc_change.status);
         }
         break;
     case BLE_GAP_EVENT_PASSKEY_ACTION: {
         struct ble_sm_io io = {.action = event->passkey.params.action};
-        if(io.action == BLE_SM_IOACT_DISP || io.action == BLE_SM_IOACT_INPUT) {
+        /* UI callbacks and SM injection can call back into GAP. */
+        serial_unlock_global();
+        if(io.action == BLE_SM_IOACT_DISP) {
             io.passkey = esp_random() % 1000000U;
+            ESP_LOGI(TAG, "Pairing passkey: %06lu", (unsigned long)io.passkey);
             GapEvent pin = {.type = GapEventTypePinCodeShow, .data.pin_code = io.passkey};
             furi_hal_bt_emit_gap_event(pin);
         } else if(io.action == BLE_SM_IOACT_NUMCMP) {
+            ESP_LOGI(TAG, "Pairing numeric comparison: %06lu",
+                     (unsigned long)event->passkey.params.numcmp);
             GapEvent pin = {
                 .type = GapEventTypePinCodeShow,
                 .data.pin_code = event->passkey.params.numcmp,
             };
             furi_hal_bt_emit_gap_event(pin);
             io.numcmp_accept = 1;
+        } else {
+            /* Neither advertised IO capability has a keyboard. In particular,
+             * INPUT must never be answered with a locally generated passkey. */
+            ESP_LOGE(TAG, "Unsupported pairing action: %d; disconnecting", io.action);
+            int rc = ble_gap_terminate(event->passkey.conn_handle, BLE_ERR_AUTH_FAIL);
+            ESP_LOGI(TAG, "Pairing rejection: rc=%d", rc);
+            return 0;
         }
-        ble_sm_inject_io(event->passkey.conn_handle, &io);
-        break;
+        int rc = ble_sm_inject_io(event->passkey.conn_handle, &io);
+        ESP_LOGI(TAG, "Pairing IO injection: action=%d rc=%d", io.action, rc);
+        return 0;
     }
     case BLE_GAP_EVENT_REPEAT_PAIRING: {
         struct ble_gap_conn_desc desc;
@@ -705,7 +773,7 @@ BleSerial* ble_serial_alloc(const BleSerialConfig* config) {
     uint8_t io_cap = config->pairing == BleSerialPairingPinCodeVerifyYesNo ?
                          BLE_HS_IO_DISPLAY_YESNO :
                          BLE_HS_IO_DISPLAY_ONLY;
-    nimble_glue_configure_security(config->bonding, true, false, io_cap);
+    nimble_glue_configure_security(config->bonding, true, true, io_cap);
     if(serial_has_custom_mac(config)) {
         err = nimble_glue_set_random_address(config->mac);
         if(err != ESP_OK) goto error;
