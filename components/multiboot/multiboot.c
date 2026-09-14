@@ -43,8 +43,11 @@ static bool multiboot_env_ok(void) {
 #else
     if(esp_flash_encryption_enabled()) return false;
     const esp_partition_t* running = esp_ota_get_running_partition();
-    return running && running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY &&
-           running->address == 0x20000;
+    /* WiFi updates alternate between factory and otaupd, so either one can be
+     * the running Momentum. */
+    return running &&
+           ((running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY && running->address == 0x20000) ||
+            (running->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_0 && running->address == 0x520000));
 #endif
 }
 
@@ -99,8 +102,18 @@ static esp_err_t save_table(uint8_t* next, size_t count) {
     finish_table(next, count);
     uint8_t* check = heap_caps_malloc(MB_SECTOR_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if(!check) return ESP_ERR_NO_MEM;
-    const esp_partition_t* factory = esp_ota_get_running_partition();
-    esp_err_t err = esp_ota_set_boot_partition(factory);
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_err_t err = ESP_OK;
+    /* Boot the running Momentum again after the reboot that applies the table.
+     * Factory only needs an erased otadata. otaupd is ota_0, but otadata's
+     * sequence number is taken modulo the OTA slot count, which the new table
+     * changes; restarting the sequence at 1 selects ota_0 under any count. */
+    if(running->subtype != ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+        const esp_partition_t* otadata = esp_partition_find_first(
+            ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_OTA, NULL);
+        err = otadata ? esp_partition_erase_range(otadata, 0, otadata->size) : ESP_ERR_NOT_FOUND;
+    }
+    if(err == ESP_OK) err = esp_ota_set_boot_partition(running);
     /* Stage the validated table in a data partition. Only the recovery
      * bootloader changes the primary table, so ESP-IDF's protection against
      * writing the bootloader/table/running firmware stays enabled. */
