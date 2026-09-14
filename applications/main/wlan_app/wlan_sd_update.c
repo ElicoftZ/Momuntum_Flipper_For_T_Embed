@@ -155,6 +155,37 @@ static bool sd_update_is_up_to_date(const char* version_url) {
     return remote[0] != '\0' && strcmp(remote, local) == 0;
 }
 
+static bool sd_update_file_present(Storage* storage, const char* path) {
+    FileInfo fi;
+    return storage_common_stat(storage, path, &fi) == FSE_OK && fi.size > 0;
+}
+
+// A sync interrupted mid-write (e.g. the board reset while the host still held
+// the card over USB mass storage) can leave version.txt intact while the
+// extracted files are truncated to 0 bytes. version.txt alone would then report
+// "up to date" forever and the card would never self-repair. Cheap sentinel:
+// core dolphin files that every card carries and users do not delete must exist
+// and be non-empty. If any is missing/empty, treat the card as needing a
+// re-sync so the normal download+extract path rewrites it.
+static bool sd_update_content_intact(void) {
+    static const char* const sentinels[] = {
+        "/ext/dolphin/manifest.txt",
+        "/ext/dolphin/L1_Waves_128x50/meta.txt",
+    };
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    bool intact = true;
+    for(size_t i = 0; i < COUNT_OF(sentinels); ++i) {
+        if(!sd_update_file_present(storage, sentinels[i])) {
+            FURI_LOG_W(
+                SD_UPDATE_TAG, "SD content check: %s missing/empty -> repair", sentinels[i]);
+            intact = false;
+            break;
+        }
+    }
+    furi_record_close(RECORD_STORAGE);
+    return intact;
+}
+
 // Legt /ext/a/b rekursiv an (ohne den finalen Dateinamen).
 static void sd_update_mkdirs(Storage* storage, const char* path) {
     char tmp[256];
@@ -563,7 +594,10 @@ static void sd_update_task(void* arg) {
     u->phase = WlanSdUpdateChecking;
     u->percent = 0;
 
-    if(!u->cancel && sd_update_is_up_to_date(version_url)) {
+    // Skip only when the version matches AND the card content is actually intact.
+    // A corrupt card with a matching version.txt falls through to re-download and
+    // re-extract, repairing itself instead of being wrongly reported up to date.
+    if(!u->cancel && sd_update_is_up_to_date(version_url) && sd_update_content_intact()) {
         u->phase = WlanSdUpdateUpToDate;
         sd_update_finish(u);
         return;
