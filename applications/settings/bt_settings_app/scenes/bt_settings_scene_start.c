@@ -9,6 +9,7 @@ enum BtSetting {
 
 enum BtSettingIndex {
     BtSettingIndexSwitchBt,
+    BtSettingIndexFileSharing,
     BtSettingIndexForgetDev,
 };
 
@@ -22,7 +23,8 @@ static void bt_settings_scene_start_var_list_change_callback(VariableItem* item)
     uint8_t index = variable_item_get_current_value_index(item);
 
     variable_item_set_current_value_text(item, bt_settings_text[index]);
-    view_dispatcher_send_custom_event(app->view_dispatcher, index);
+    uint32_t row = variable_item_list_get_selected_item_index(app->var_item_list);
+    view_dispatcher_send_custom_event(app->view_dispatcher, row * BtSettingNum + index);
 }
 
 static void bt_settings_scene_start_var_list_enter_callback(void* context, uint32_t index) {
@@ -53,6 +55,15 @@ void bt_settings_scene_start_on_enter(void* context) {
             variable_item_set_current_value_index(item, BtSettingOff);
             variable_item_set_current_value_text(item, bt_settings_text[BtSettingOff]);
         }
+        item = variable_item_list_add(
+            var_item_list,
+            "File Sharing",
+            BtSettingNum,
+            bt_settings_scene_start_var_list_change_callback,
+            app);
+        uint8_t sharing = app->settings.file_sharing ? BtSettingOn : BtSettingOff;
+        variable_item_set_current_value_index(item, sharing);
+        variable_item_set_current_value_text(item, bt_settings_text[sharing]);
         variable_item_list_add(var_item_list, "Unpair All Devices", 1, NULL, NULL);
         variable_item_list_set_enter_callback(
             var_item_list, bt_settings_scene_start_var_list_enter_callback, app);
@@ -74,6 +85,12 @@ bool bt_settings_scene_start_on_event(void* context, SceneManagerEvent event) {
             consumed = true;
         } else if(event.event == BtSettingOff) {
             app->settings.enabled = false;
+            consumed = true;
+        } else if(event.event == BtSettingIndexFileSharing * BtSettingNum + BtSettingOn) {
+            app->settings.file_sharing = true;
+            consumed = true;
+        } else if(event.event == BtSettingIndexFileSharing * BtSettingNum + BtSettingOff) {
+            app->settings.file_sharing = false;
             consumed = true;
         } else if(event.event == BtSettingsCustomEventForgetDevices) {
             scene_manager_next_scene(app->scene_manager, BtSettingsAppSceneForgetDevConfirm);

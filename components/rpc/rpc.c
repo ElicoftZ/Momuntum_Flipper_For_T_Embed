@@ -321,7 +321,7 @@ static void rpc_session_thread_pending_callback(void* context, uint32_t arg) {
     RpcSession* session = (RpcSession*)context;
 
     for(size_t i = 0; i < COUNT_OF(rpc_systems); ++i) {
-        if(rpc_systems[i].free) {
+        if(rpc_systems[i].free && session->system_contexts[i]) {
             (rpc_systems[i].free)(session->system_contexts[i]);
         }
     }
@@ -366,8 +366,21 @@ RpcSession* rpc_session_open(Rpc* rpc, RpcOwner owner) {
     session->decoded_message->cb_content.funcs.decode = rpc_pb_content_callback;
     session->decoded_message->cb_content.arg = session;
 
-    session->system_contexts = malloc(COUNT_OF(rpc_systems) * sizeof(void*));
+    /* Snapshot the persisted Bluetooth preference for this session. Existing
+     * sessions finish normally; USB/UART storage is unaffected. */
+    bool file_sharing = true;
+    if(owner == RpcOwnerBle) {
+        BtSettings settings;
+        bt_settings_load(&settings);
+        file_sharing = settings.file_sharing;
+        ESP_LOGI(TAG, "BLE File Sharing: %s", file_sharing ? "ON" : "OFF");
+    }
+
+    session->system_contexts = calloc(COUNT_OF(rpc_systems), sizeof(void*));
     for(size_t i = 0; i < COUNT_OF(rpc_systems); ++i) {
+        /* Unregistered requests get ERROR_NOT_IMPLEMENTED without closing the
+         * session, so GUI, input, app and system RPC remain available. */
+        if(!file_sharing && rpc_systems[i].alloc == rpc_system_storage_alloc) continue;
         session->system_contexts[i] = rpc_systems[i].alloc(session);
     }
 

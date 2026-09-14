@@ -8,6 +8,7 @@ extern "C" {
 
 typedef struct {
     bool enabled;
+    bool file_sharing;
 } BtSettings;
 
 void bt_settings_load(BtSettings* bt_settings);

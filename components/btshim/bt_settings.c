@@ -8,7 +8,7 @@
 #define TAG "BtSettings"
 
 #define BT_SETTINGS_PATH    INT_PATH(BT_SETTINGS_FILE_NAME)
-#define BT_SETTINGS_VERSION (0)
+#define BT_SETTINGS_VERSION (1)
 #define BT_SETTINGS_MAGIC   (0x19)
 
 void bt_settings_load(BtSettings* bt_settings) {
@@ -22,8 +22,11 @@ void bt_settings_load(BtSettings* bt_settings) {
         BT_SETTINGS_VERSION);
 
     if(!load_success) {
-        FURI_LOG_W(TAG, "Failed to load settings, using defaults");
-        bt_settings->enabled = true;
+        /* Version 0 stored only Bluetooth's enabled flag. Preserve it. */
+        bool enabled = true;
+        saved_struct_load(BT_SETTINGS_PATH, &enabled, sizeof(enabled), BT_SETTINGS_MAGIC, 0);
+        bt_settings->enabled = enabled;
+        bt_settings->file_sharing = true;
         bt_settings_save(bt_settings);
     }
 }

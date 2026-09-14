@@ -22,6 +22,7 @@ typedef enum {
 
 typedef enum {
     BtSettingsItemToggle,
+    BtSettingsItemFileSharing,
     BtSettingsItemUnpair,
 } BtSettingsItem;
 
@@ -100,6 +101,16 @@ static void bt_settings_confirm_result_callback(DialogExResult result, void* con
     }
 }
 
+static void bt_settings_file_sharing_callback(VariableItem* item) {
+    BtSettingsApp* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    bt_get_settings(app->bt, &app->settings);
+    app->settings.file_sharing = (index == 1);
+    bt_set_settings(app->bt, &app->settings);
+    variable_item_set_current_value_text(item, bt_setting_text[index]);
+    FURI_LOG_I(TAG, "File Sharing: %s (new connections)", bt_setting_text[index]);
+}
+
 static void bt_settings_show_unpair_confirm(BtSettingsApp* app) {
     dialog_ex_reset(app->confirm_dialog);
     dialog_ex_set_context(app->confirm_dialog, app);
@@ -132,6 +143,12 @@ static void bt_settings_populate_list(BtSettingsApp* app) {
     variable_item_set_current_value_index(item, app->settings.enabled ? 1 : 0);
     variable_item_set_current_value_text(
         item, bt_setting_text[app->settings.enabled ? 1 : 0]);
+
+    item = variable_item_list_add(
+        app->variable_item_list, "File Sharing", 2, bt_settings_file_sharing_callback, app);
+    variable_item_set_current_value_index(item, app->settings.file_sharing ? 1 : 0);
+    variable_item_set_current_value_text(
+        item, bt_setting_text[app->settings.file_sharing ? 1 : 0]);
 
     variable_item_list_add(app->variable_item_list, "Unpair All Devices", 1, NULL, NULL);
     variable_item_list_set_enter_callback(
