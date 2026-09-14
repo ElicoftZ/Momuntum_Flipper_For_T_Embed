@@ -68,6 +68,20 @@ void u2f_scene_settings_on_enter(void* context) {
 
     submenu_add_item(
         app->submenu,
+        "Check security key",
+        U2fSettingsIndexInfo,
+        u2f_scene_settings_submenu_callback,
+        app);
+
+    submenu_add_item(
+        app->submenu,
+        "Scan a security key",
+        U2fSettingsIndexScan,
+        u2f_scene_settings_submenu_callback,
+        app);
+
+    submenu_add_item(
+        app->submenu,
         "Reset authenticator",
         U2fSettingsIndexReset,
         u2f_scene_settings_submenu_callback,
@@ -102,6 +116,14 @@ bool u2f_scene_settings_on_event(void* context, SceneManagerEvent event) {
 
         case U2fSettingsIndexRetries:
             /* Informational row. */
+            break;
+
+        case U2fSettingsIndexInfo:
+            scene_manager_next_scene(app->scene_manager, U2fSceneInfo);
+            break;
+
+        case U2fSettingsIndexScan:
+            scene_manager_next_scene(app->scene_manager, U2fSceneScan);
             break;
 
         case U2fSettingsIndexReset:

@@ -1,6 +1,8 @@
 ADD_SCENE(u2f, main, Main)
 ADD_SCENE(u2f, error, Error)
 ADD_SCENE(u2f, settings, Settings)
+ADD_SCENE(u2f, info, Info)
+ADD_SCENE(u2f, scan, Scan)
 ADD_SCENE(u2f, pin, Pin)
 ADD_SCENE(u2f, reset, Reset)
 ADD_SCENE(u2f, creds, Creds)

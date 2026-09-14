@@ -18,6 +18,7 @@
 #include "ctap2_rk.h"
 #include "u2f_hid.h"
 #include "fido_nfc.h"
+#include "fido_nfc_scan.h"
 #include "u2f.h"
 
 typedef enum {
@@ -68,6 +69,8 @@ typedef enum {
     U2fSettingsIndexRemovePin,
     U2fSettingsIndexCreds,
     U2fSettingsIndexRetries,
+    U2fSettingsIndexInfo,
+    U2fSettingsIndexScan,
     U2fSettingsIndexReset,
 } U2fSettingsIndex;
 
@@ -91,6 +94,9 @@ struct U2fApp {
     Submenu* submenu;
     U2fPinInput* pin_input;
     U2fData* u2f_instance;
+    /* The NFC-reader side of the Scan scene -- inspecting someone ELSE's
+     * security key, as opposed to u2f_instance/fido_nfc which emulate one. */
+    FidoNfcScan* nfc_scan;
 
     U2fPinMode pin_mode;
     U2fPinStage pin_stage;
