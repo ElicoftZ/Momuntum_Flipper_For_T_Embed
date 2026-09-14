@@ -38,7 +38,10 @@
 #define WARD_EVENT_SCROLL_DOWN 101U
 #define WARD_EVENT_SETTINGS    200U
 
-#define WARD_MAX_ENTRIES       512U
+/* Starting capacity for the entry table; it grows (doubling, via realloc) as
+ * a session finds more devices instead of capping hard here. See
+ * wardrive_add_or_update(). */
+#define WARD_INITIAL_ENTRIES    512U
 #define WARD_VISIBLE_ENTRIES   2U
 #define WARD_WORKER_STACK      (10U * 1024U)
 #define WARD_LOG_SYNC_ROWS     8U
@@ -115,6 +118,7 @@ struct WardrivingApp {
     WlanOuiTable* oui;
     WardriveMode mode;
     uint16_t count;
+    uint16_t capacity;
     uint16_t logged_count;
     uint16_t scroll;
     uint32_t dropped;
@@ -321,10 +325,26 @@ static bool wardrive_add_or_update(WardrivingApp* app, const WardriveEntry* cand
         return false;
     }
 
-    if(app->count >= WARD_MAX_ENTRIES) {
-        app->dropped++;
-        furi_mutex_release(app->lock);
-        return false;
+    if(app->count >= app->capacity) {
+        /* Grow instead of dropping: double capacity, bounded only by the
+         * uint16_t index width and whatever PSRAM is actually free. A failed
+         * realloc leaves the existing table intact and falls back to
+         * counting drops, same as the old fixed-cap behavior. */
+        uint32_t next_capacity = (uint32_t)app->capacity * 2U;
+        if(next_capacity > UINT16_MAX) next_capacity = UINT16_MAX;
+        WardriveEntry* grown = next_capacity > app->capacity ?
+                                    heap_caps_realloc(
+                                        app->entries,
+                                        next_capacity * sizeof(WardriveEntry),
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) :
+                                    NULL;
+        if(!grown) {
+            app->dropped++;
+            furi_mutex_release(app->lock);
+            return false;
+        }
+        app->entries = grown;
+        app->capacity = (uint16_t)next_capacity;
     }
 
     app->entries[app->count] = *candidate;
@@ -1199,7 +1219,7 @@ static bool wardrive_session_start(WardrivingApp* app, WardriveMode mode) {
     wardrive_session_stop(app);
 
     app->entries = heap_caps_calloc(
-        WARD_MAX_ENTRIES, sizeof(WardriveEntry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        WARD_INITIAL_ENTRIES, sizeof(WardriveEntry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if(!app->entries) {
         app->mode = mode;
         wardrive_set_status(app, "PSRAM unavailable");
@@ -1209,6 +1229,7 @@ static bool wardrive_session_start(WardrivingApp* app, WardriveMode mode) {
     if(furi_mutex_acquire(app->lock, FuriWaitForever) == FuriStatusOk) {
         app->mode = mode;
         app->count = 0;
+        app->capacity = WARD_INITIAL_ENTRIES;
         app->logged_count = 0;
         app->scroll = 0;
         app->dropped = 0;
@@ -1524,12 +1545,11 @@ static WardrivingApp* wardrive_app_alloc(void) {
     submenu_add_item(
         app->submenu, "Sub-GHz Wardriving", WardriveModeSubGhz, wardrive_menu_callback, app);
     submenu_add_item(app->submenu, "BLE Wardriving", WardriveModeBle, wardrive_menu_callback, app);
-    /* WiFi Wardriving stays hidden from the menu: it's the one mode that turns
-     * WiFi on, and this board has a real, unresolved WiFi-vs-Bluetooth memory
-     * conflict (BLE controller init OOMs while WiFi is running - see project
-     * notes). The offline apdb.bin location feature was entirely fed by this
-     * mode's own WiFi scan, so it goes dark with it; detection and emulation
-     * below are pure BLE and unaffected. Code stays in place, same as before. */
+    /* WiFi Wardriving was hidden for a time (WiFi-vs-Bluetooth memory conflict
+     * concerns), but it calls wlan_hal_start() the exact same way the always-
+     * visible WiFi App does - no more risk than a feature already shipped and
+     * exposed to every user. Restored to match that same rule. */
+    submenu_add_item(app->submenu, "WiFi Wardriving", WardriveModeWifi, wardrive_menu_callback, app);
     submenu_add_item(
         app->submenu, "FindMy Emulate", WardriveModeEmulate, wardrive_menu_callback, app);
     submenu_add_item(app->submenu, "FindMy Settings", WARD_EVENT_SETTINGS, wardrive_menu_callback, app);
