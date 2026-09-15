@@ -1,6 +1,9 @@
 #include "wlan_sd_update.h"
 
 #include <furi.h>
+#include <furi_hal_power.h>
+#include <notification/notification.h>
+#include <notification/notification_messages.h>
 #include <storage/storage.h>
 #include <string.h>
 #include <stdlib.h>
@@ -10,6 +13,17 @@
 #include <esp_http_client.h>
 #include <esp_heap_caps.h>
 #include <miniz.h>
+
+// Backlight forced on for the duration of the sync, then back to automatic --
+// same pair ota_updater.c's own long-running WiFi worker uses.
+static const NotificationSequence sd_update_seq_backlight_enforce_on = {
+    &message_display_backlight_enforce_on,
+    NULL,
+};
+static const NotificationSequence sd_update_seq_backlight_enforce_auto = {
+    &message_display_backlight_enforce_auto,
+    NULL,
+};
 
 #define SD_UPDATE_TAG "WlanSdUpdate"
 // Ein einziges Archiv statt eines gespiegelten Dateibaums: die Karte hat ~3700
@@ -606,7 +620,18 @@ static void sd_update_write_local_version(Storage* storage, const char* version)
 // Worker-Task
 // ---------------------------------------------------------------------------
 
+// A sync interrupted by the normal idle timeout (backlight off -> lock screen)
+// is exactly how a card ends up with 0-byte files: extraction writes straight
+// to the destination path (FSOM_CREATE_ALWAYS truncates immediately, content
+// follows), so anything that interrupts the task mid-write leaves an empty
+// file behind, and the card looks corrupt afterward. Same idea
+// ota_updater.c's own long-running WiFi-download-based worker already uses.
 static void sd_update_finish(WlanSdUpdate* u) {
+    NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
+    notification_message(notification, &sd_update_seq_backlight_enforce_auto);
+    furi_record_close(RECORD_NOTIFICATION);
+    furi_hal_power_insomnia_exit();
+
     u->running = false;
     u->task = NULL;
     vTaskDelete(NULL);
@@ -619,6 +644,11 @@ static void sd_update_task(void* arg) {
     char zip_url[160];
     snprintf(version_url, sizeof(version_url), "%s/version.txt", base_url);
     snprintf(zip_url, sizeof(zip_url), "%s/sdcard.zip", base_url);
+
+    furi_hal_power_insomnia_enter();
+    NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
+    notification_message(notification, &sd_update_seq_backlight_enforce_on);
+    furi_record_close(RECORD_NOTIFICATION);
 
     u->phase = WlanSdUpdateChecking;
     u->percent = 0;
