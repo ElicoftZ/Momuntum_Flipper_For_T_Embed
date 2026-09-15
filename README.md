@@ -109,7 +109,7 @@ USB security-key support: **U2F/FIDO1** and full **FIDO2/CTAP2** (PIN, resident 
 **Streaming** — unified music (.mp3) & video (.mp4) player: play locally or stream to AirPlay, Chromecast/Google Cast, and DLNA devices.
 
 ### 🎮 Games
-Doom (needs `doom1.wad`), Snake, Hotspot Arcade, and 30+ user FAPs (Asteroids, Blackjack, Pong, Roulette, Tamagotchi, Tetris, Texas Hold'em, …).
+Doom (needs `doom1.wad`), Snake, Hotspot Arcade, and 30+ user FAPs (Asteroids, Blackjack, Pong, Roulette, Tamagotchi, Tetris, Texas Hold'em, …). Tamagotchi needs its own ROM dump too — see `applications_user/tamagotchi_p1/README.md`.
 
 ### 🛠 System / Tools
 **Control Centre** (lock-menu quick settings + sliders), **Dual Boot**, **Archive** (SD browser), **JS Runner** (mJS), qFlipper bridge & USB Storage (USB-OTG), and a 30-level Momentum **dolphin** with animated idle desktop.
