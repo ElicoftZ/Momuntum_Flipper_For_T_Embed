@@ -973,7 +973,16 @@ static bool dualboot_worker_install(DualBoot* app) {
         dualboot_fail_worker(app, "Invalid image / no space");
         return false;
     }
+    /* multiboot_install() needs an 8 KiB *internal*-DRAM task stack for the
+     * flash write (see run_job() in multiboot.c) -- if the online-catalogue
+     * download left WiFi's driver running, that allocation can fail with
+     * ESP_ERR_NO_MEM ("recovery boot blocked"). Same fix wlan_fw_update.c's
+     * own flash step uses for the identical problem: free WiFi's internal
+     * DRAM first, resume it once the write is done (safe no-op if WiFi was
+     * already off, e.g. a plain SD install). */
+    wlan_hal_yield_for_memory();
     esp_err_t err = multiboot_install(path, image.offset, image.length, dualboot_install_progress, app);
+    wlan_hal_resume_user_radio();
     if(err != ESP_OK) { dualboot_fail_worker(app, esp_err_to_name(err)); return false; }
     dualboot_store_installed_name(app->names[app->idx], image.app_sha, planned.offset);
     return true;

@@ -160,6 +160,31 @@ static bool sd_update_file_present(Storage* storage, const char* path) {
     return storage_common_stat(storage, path, &fi) == FSE_OK && fi.size > 0;
 }
 
+// The root "Manifest" (finalize_sd_package.py: "V:0\nT:<time>\n" + one D:/F:
+// line per directory/file, ~320 KB on a real card) is read by
+// animation_manager.c and the updater's backup path -- but it is NOT one of
+// the dolphin sentinels below, so a sync that happened to truncate/corrupt
+// only this file (as opposed to zeroing the whole card) would pass the
+// sentinel check and be reported "up to date" forever. Confirmed report: a
+// user's card had a corrupted Manifest that "Update SD" never noticed.
+// Cheap-but-real check: present, past a size floor no truncated/garbled write
+// could plausibly reach (a genuine card's is ~320 KB; this floor is 10x below
+// that), and starting with the format's own magic first line.
+#define SD_UPDATE_MANIFEST_MIN_SIZE (32u * 1024u)
+static bool sd_update_manifest_intact(Storage* storage) {
+    FileInfo fi;
+    if(storage_common_stat(storage, "/ext/Manifest", &fi) != FSE_OK) return false;
+    if(fi.size < SD_UPDATE_MANIFEST_MIN_SIZE) return false;
+
+    File* f = storage_file_alloc(storage);
+    char head[4] = {0};
+    bool ok = storage_file_open(f, "/ext/Manifest", FSAM_READ, FSOM_OPEN_EXISTING) &&
+              storage_file_read(f, head, 3) == 3 && memcmp(head, "V:0", 3) == 0;
+    storage_file_close(f);
+    storage_file_free(f);
+    return ok;
+}
+
 // A sync interrupted mid-write (e.g. the board reset while the host still held
 // the card over USB mass storage) can leave version.txt intact while the
 // extracted files are truncated to 0 bytes. version.txt alone would then report
@@ -181,6 +206,10 @@ static bool sd_update_content_intact(void) {
             intact = false;
             break;
         }
+    }
+    if(intact && !sd_update_manifest_intact(storage)) {
+        FURI_LOG_W(SD_UPDATE_TAG, "SD content check: Manifest missing/corrupt -> repair");
+        intact = false;
     }
     furi_record_close(RECORD_STORAGE);
     return intact;

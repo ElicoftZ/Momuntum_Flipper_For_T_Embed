@@ -31,6 +31,13 @@ class _AnyEnum:
 
 
 def main():
+    # buildFap.sh's bash `read` loop only strips the trailing LF, not a CR --
+    # on Windows, Python's stdout is opened in text mode and translates our
+    # "\n" writes to "\r\n", so every value it reads back (app_dir/lib/foo.c)
+    # would otherwise carry an invisible trailing \r baked into the path.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(newline="\n")
+
     if len(sys.argv) != 2:
         sys.stderr.write("usage: fap_lib_info.py <app_dir>\n")
         return 2
@@ -81,7 +88,11 @@ def main():
         for pat in lib["sources"]:
             matches = sorted(glob.glob(os.path.join(lib_root, pat)))
             for m in matches:
-                rel = os.path.relpath(m, app_dir)
+                # buildFap.sh joins this onto a forward-slash path in bash;
+                # os.path.relpath uses the platform separator, which is a
+                # backslash on Windows and breaks that join ("lib\tamalib\
+                # cpu.c" is not a valid path component for bash/gcc there).
+                rel = os.path.relpath(m, app_dir).replace(os.sep, "/")
                 out.append(f"SOURCE\t{rel}")
         for d in lib["cdefines"]:
             out.append(f"CDEFINE\t{d}")
