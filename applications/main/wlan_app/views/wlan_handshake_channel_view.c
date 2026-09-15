@@ -64,7 +64,9 @@ static void hsc_view_draw_callback(Canvas* canvas, void* _model) {
     }
 
     canvas_set_font(canvas, FontPrimary);
-    snprintf(buf, sizeof(buf), "Handshake Captured: %u", (unsigned)model->hs_complete_count);
+    snprintf(
+        buf, sizeof(buf), "HS: %u  PMKID: %u",
+        (unsigned)model->hs_complete_count, (unsigned)model->pmkid_count);
     canvas_draw_str_aligned(canvas, 64, 48, AlignCenter, AlignBottom, buf);
 
     // Trennlinie unten + Soft-Buttons.

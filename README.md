@@ -190,6 +190,7 @@ Each retains its own license — see the `LICENSE` / `COPYING` / `NOTICE` file n
 | Hotspot Arcade | arcade app | [tarikbc/hotspot-arcade](https://github.com/tarikbc/hotspot-arcade) |
 | WPair | WhisperPair | [zalexdev/wpair-app](https://github.com/zalexdev/wpair-app) — see [NOTICE](applications/main/ble_spam/whisper_pair/NOTICE) |
 | ESP32Marauder payloads | some BLE Spam advertisements | [justcallmekoko/ESP32Marauder](https://github.com/justcallmekoko/ESP32Marauder) — see [NOTICE](applications/main/ble_spam/NOTICE_MARAUDER) *(MIT)* |
+| ESP32Marauder concept | Marauder menu app (name/organization only — see its own [NOTICE](applications/main/marauder/NOTICE) for what is and isn't original code) | [justcallmekoko/ESP32Marauder](https://github.com/justcallmekoko/ESP32Marauder) *(MIT)* |
 
 Additional community apps under `applications_user/` — TagTinker, Flipper Authenticator, xRemote, Tamagotchi (tamalib), Blackjack, ProtoPirate, WMBuster, Wolf3D (Wolf4SDL) and others — each ship under their own `LICENSE`.
 

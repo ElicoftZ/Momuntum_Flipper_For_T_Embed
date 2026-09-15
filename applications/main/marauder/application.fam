@@ -1,0 +1,11 @@
+App(
+    appid="marauder",
+    name="Marauder",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="marauder_app",
+    requires=["gui"],
+    stack_size=2 * 1024,
+    icon="A_Wifi_14",
+    order=66,
+    fap_category="WiFi",
+)

