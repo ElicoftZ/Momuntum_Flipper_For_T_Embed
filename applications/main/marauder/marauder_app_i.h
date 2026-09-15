@@ -20,6 +20,7 @@
 #include <gui/modules/submenu.h>
 #include <gui/modules/widget.h>
 #include <loader/loader.h>
+#include <furi_hal_display.h>
 
 typedef struct {
     Gui* gui;
@@ -27,6 +28,10 @@ typedef struct {
     ViewDispatcher* view_dispatcher;
     Submenu* submenu;
     Widget* widget;
+    /* Whatever the user's own shell-color setting had the UI "ink" tinted to
+     * before this app touched it -- restored on exit so the tint is scoped to
+     * Marauder's own screens, never a lasting change to the rest of the OS. */
+    uint16_t saved_fg_color;
 } MarauderApp;
 
 typedef enum {
