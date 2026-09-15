@@ -29,9 +29,20 @@ typedef struct {
     Submenu* submenu;
     Widget* widget;
     /* Whatever the user's own shell-color setting had the UI "ink" tinted to
-     * before this app touched it -- restored on exit so the tint is scoped to
-     * Marauder's own screens, never a lasting change to the rest of the OS. */
+     * before this app touched it. Restored before handing off to a launched
+     * app (so WiFi/BLE Detector/etc. render in the user's own color, not
+     * Marauder's) and one final time on exit -- the tint never outlives
+     * Marauder's own screens. */
     uint16_t saved_fg_color;
+    /* Held open for scene_main's pubsub subscription (see below); opening it
+     * per-launch like the loader-invoking scenes elsewhere in this codebase
+     * do would miss the "an app we launched just closed" event this needs. */
+    Loader* loader;
+    /* Set only while MarauderSceneMain is the active scene -- re-applies the
+     * green tint exactly when the loader reports the launched app-chain has
+     * fully unwound and focus is back with us (LoaderEventTypeNoMoreAppsInQueue),
+     * the same signal archive_scene_browser.c uses to know it's back on top. */
+    FuriPubSubSubscription* loader_stop_subscription;
 } MarauderApp;
 
 typedef enum {
