@@ -344,6 +344,12 @@ int32_t wlan_app(void* args) {
         // Deep link straight into probe-request flood -- self-contained, no
         // prior state needed.
         scene_manager_next_scene(app->scene_manager, WlanAppSceneProbeFlood);
+    } else if(arg && strcmp(arg, "scan") == 0) {
+        // Deep link (e.g. from the Marauder menu app) straight into the AP
+        // scan -- same scene "Select Wifi"/"Switch Wifi" from this app's own
+        // main menu land on, and it already shows WlanAppViewLoading while
+        // the scan runs.
+        scene_manager_next_scene(app->scene_manager, WlanAppSceneConnect);
     } else {
         scene_manager_next_scene(app->scene_manager, WlanAppSceneMain);
     }

@@ -42,6 +42,9 @@ typedef enum {
     MarauderMainIndexWifiTools, /* launches "WiFi" -- its own menu covers
                                    Connect/Attack/Deauth/Sniffer/Evil Portal/
                                    SSID Spam/Smart Deauth/Probe Sniff+Flood */
+    MarauderMainIndexWifiScan, /* deep link: WiFi app, arg "scan" -- straight
+                                   into the AP scan (its own loading view),
+                                   skipping the WiFi app's main menu */
     MarauderMainIndexHandshake, /* deep link: WiFi app, arg "handshake" */
     MarauderMainIndexSsidSpam, /* deep link: WiFi app, arg "ssidspam" */
     MarauderMainIndexProbeFlood, /* deep link: WiFi app, arg "probeflood" */
@@ -64,6 +67,9 @@ void marauder_scene_main_on_enter(void* context) {
 
     submenu_add_item(
         app->submenu, "WiFi Tools", MarauderMainIndexWifiTools,
+        marauder_scene_main_submenu_cb, app);
+    submenu_add_item(
+        app->submenu, "WiFi Scan", MarauderMainIndexWifiScan,
         marauder_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "Capture Handshake+PMKID", MarauderMainIndexHandshake,
@@ -108,9 +114,29 @@ void marauder_scene_main_on_enter(void* context) {
  * Restores the color BEFORE handing off so the launched app renders in the
  * user's own color, never Marauder's -- the tint is scoped to Marauder's own
  * screens only. Re-entering marauder_scene_main_on_enter (a fresh run, once
- * the target app closes and the queue reaches us again) re-applies it. */
+ * the target app closes and the queue reaches us again) re-applies it.
+ *
+ * Switches to the Loading view and holds it for a beat first: view_dispatcher
+ * only marks a view dirty, it doesn't force a redraw, and the app is about to
+ * exit -- without a moment for the Gui service's own thread to actually draw
+ * this frame, the screen would jump straight from Marauder's submenu to
+ * whatever the launched app renders first (its own main menu, in every one of
+ * these cases), which is exactly the "I don't want the user to see that"
+ * complaint this is fixing.
+ *
+ * scene_manager_stop() before view_dispatcher_stop() -- same order
+ * subghz_scene_start.c's own launch-a-FAP helper uses -- so
+ * marauder_scene_main_on_exit() actually runs and unsubscribes
+ * loader_stop_subscription before this MarauderApp is freed. Skipping it
+ * would leave that subscription pointing at freed memory: the very next
+ * loader event (the target app we're launching closing, if it does before
+ * this queued self-relaunch reaches the front) would invoke
+ * marauder_loader_callback() with a dangling `app`. */
 static void marauder_launch(MarauderApp* app, const char* name, const char* args) {
     furi_hal_display_set_fg_color(app->saved_fg_color);
+
+    view_dispatcher_switch_to_view(app->view_dispatcher, MarauderAppViewLoading);
+    furi_delay_ms(400);
 
     loader_enqueue_launch(app->loader, name, args, LoaderDeferredLaunchFlagGui);
 
@@ -121,6 +147,7 @@ static void marauder_launch(MarauderApp* app, const char* name, const char* args
     }
     furi_string_free(self_path);
 
+    scene_manager_stop(app->scene_manager);
     view_dispatcher_stop(app->view_dispatcher);
 }
 
@@ -133,6 +160,9 @@ bool marauder_scene_main_on_event(void* context, SceneManagerEvent event) {
         switch(event.event) {
         case MarauderMainIndexWifiTools:
             marauder_launch(app, "WiFi", NULL);
+            break;
+        case MarauderMainIndexWifiScan:
+            marauder_launch(app, "WiFi", "scan");
             break;
         case MarauderMainIndexHandshake:
             marauder_launch(app, "WiFi", "handshake");

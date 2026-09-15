@@ -21,6 +21,7 @@
 #include <gui/scene_manager.h>
 #include <gui/modules/submenu.h>
 #include <gui/modules/widget.h>
+#include <gui/modules/loading.h>
 #include <loader/loader.h>
 #include <furi_hal_display.h>
 
@@ -30,6 +31,11 @@ typedef struct {
     ViewDispatcher* view_dispatcher;
     Submenu* submenu;
     Widget* widget;
+    /* Shown by marauder_launch() for a beat before handing off, so the user
+     * sees an explicit "loading" transition instead of jumping straight from
+     * Marauder's own menu into the launched app's -- every leaf goes through
+     * marauder_launch(), so this covers all of them, not just WiFi. */
+    Loading* loading;
     /* Whatever the user's own shell-color setting had the UI "ink" tinted to
      * before this app touched it. Restored before handing off to a launched
      * app (so WiFi/BLE Detector/etc. render in the user's own color, not
@@ -50,4 +56,5 @@ typedef struct {
 typedef enum {
     MarauderAppViewSubmenu,
     MarauderAppViewWidget,
+    MarauderAppViewLoading,
 } MarauderAppView;

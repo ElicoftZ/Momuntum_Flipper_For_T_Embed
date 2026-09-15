@@ -33,6 +33,10 @@ static MarauderApp* marauder_app_alloc(void) {
     view_dispatcher_add_view(
         app->view_dispatcher, MarauderAppViewWidget, widget_get_view(app->widget));
 
+    app->loading = loading_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, MarauderAppViewLoading, loading_get_view(app->loading));
+
     /* Snapshot whatever the user's shell-color setting currently has -- the
      * green tint itself is applied/restored per-scene (see scene_main.c),
      * since it must come off again before handing the screen to a launched
@@ -56,6 +60,9 @@ static void marauder_app_free(MarauderApp* app) {
 
     view_dispatcher_remove_view(app->view_dispatcher, MarauderAppViewWidget);
     widget_free(app->widget);
+
+    view_dispatcher_remove_view(app->view_dispatcher, MarauderAppViewLoading);
+    loading_free(app->loading);
 
     view_dispatcher_free(app->view_dispatcher);
     scene_manager_free(app->scene_manager);
