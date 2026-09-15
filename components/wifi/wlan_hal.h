@@ -190,6 +190,19 @@ bool wlan_hal_beacon_spam_is_running(void);
 
 uint32_t wlan_hal_beacon_spam_get_frame_count(void);
 
+/** Startet einen Hintergrund-Task, der Probe-Request-Frames mit zufälligen
+ *  Quell-MACs und zufälligen SSID-Namen sendet (wie ein Gerät, das nach
+ *  vielen verschiedenen bekannten Netzen sucht). Channel rotiert alle 5
+ *  Paketen (1..11), wie beim Beacon-Spam. Kein Effekt wenn bereits running. */
+void wlan_hal_probe_flood_start(void);
+
+/** Stoppt den Probe-Flood-Task synchron. Idempotent. */
+void wlan_hal_probe_flood_stop(void);
+
+bool wlan_hal_probe_flood_is_running(void);
+
+uint32_t wlan_hal_probe_flood_get_frame_count(void);
+
 // ---------------------------------------------------------------------------
 // Evil Portal: SoftAP + DNS-Hijack + HTTP-Captive-Server.
 // ---------------------------------------------------------------------------

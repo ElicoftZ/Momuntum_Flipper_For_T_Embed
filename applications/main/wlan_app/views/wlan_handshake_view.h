@@ -16,6 +16,7 @@ typedef struct {
     bool has_m2;
     bool has_m3;
     bool has_m4;
+    bool has_pmkid;
     bool complete;
     bool channel_mode; // true → Up/Down ändert Channel; Header zeigt title statt SSID
     uint32_t eapol_count;

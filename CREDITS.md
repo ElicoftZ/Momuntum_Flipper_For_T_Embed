@@ -62,6 +62,7 @@ and 25 of the 34 community apps.
 | infrared | MERGED | OFW base; Momentum universal remotes added later |
 | lfrfid | MERGED | OFW |
 | **macro_pad** | **MINE** | USB/BLE HID macro recorder |
+| **marauder** | **MINE** | menu aggregating this fork's own WiFi/BLE apps under one entry point; name/concept credited to [justcallmekoko/ESP32Marauder](https://github.com/justcallmekoko/ESP32Marauder), MIT — see [NOTICE](applications/main/marauder/NOTICE) |
 | momentum_app | **MOMENTUM** | the Momentum settings application |
 | mp3_player | MERGED | came with the port; Helix decoder is RealNetworks, RPSL/RCSL |
 | nfc | MERGED | OFW; ChameleonUltra support from the port |

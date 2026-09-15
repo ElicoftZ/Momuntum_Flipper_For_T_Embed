@@ -16,6 +16,7 @@ enum MainIndex {
     MainIndexWebFs = 17,
     MainIndexProbeSniff = 18,
     MainIndexUpdateSourceSettings = 19,
+    MainIndexProbeFlood = 20,
 };
 
 static void wlan_app_scene_main_submenu_cb(void* context, uint32_t index) {
@@ -68,6 +69,9 @@ void wlan_app_scene_main_on_enter(void* context) {
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "Probe Sniff", MainIndexProbeSniff,
+        wlan_app_scene_main_submenu_cb, app);
+    submenu_add_item(
+        app->submenu, "Probe Flood", MainIndexProbeFlood,
         wlan_app_scene_main_submenu_cb, app);
     submenu_add_item(
         app->submenu, "SSID Spam", MainIndexChannelSsidSpam,
@@ -137,6 +141,11 @@ bool wlan_app_scene_main_on_event(void* context, SceneManagerEvent event) {
             break;
         case MainIndexProbeSniff:
             scene_manager_next_scene(app->scene_manager, WlanAppSceneProbeSniff);
+            consumed = true;
+            break;
+        case MainIndexProbeFlood:
+            // Target-unabhängig wie SSID Spam → kein channel_mode.
+            scene_manager_next_scene(app->scene_manager, WlanAppSceneProbeFlood);
             consumed = true;
             break;
         case MainIndexChannelSniffer:

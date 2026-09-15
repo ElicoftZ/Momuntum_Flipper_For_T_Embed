@@ -329,6 +329,21 @@ int32_t wlan_app(void* args) {
         } else {
             scene_manager_next_scene(app->scene_manager, WlanAppSceneConnect);
         }
+    } else if(arg && strcmp(arg, "handshake") == 0) {
+        // Deep link (e.g. from the Marauder menu app) straight into channel-mode
+        // handshake + PMKID capture, same state a "Capture Handshake" tap from
+        // this app's own main menu sets up.
+        wlan_handshake_settings_load(&app->hs_settings);
+        app->channel_mode_active = true;
+        if(app->channel_action_channel == 0) app->channel_action_channel = 1;
+        scene_manager_next_scene(app->scene_manager, WlanAppSceneHandshake);
+    } else if(arg && strcmp(arg, "ssidspam") == 0) {
+        // Deep link straight into the SSID/beacon spam mode picker.
+        scene_manager_next_scene(app->scene_manager, WlanAppSceneSsidSpam);
+    } else if(arg && strcmp(arg, "probeflood") == 0) {
+        // Deep link straight into probe-request flood -- self-contained, no
+        // prior state needed.
+        scene_manager_next_scene(app->scene_manager, WlanAppSceneProbeFlood);
     } else {
         scene_manager_next_scene(app->scene_manager, WlanAppSceneMain);
     }

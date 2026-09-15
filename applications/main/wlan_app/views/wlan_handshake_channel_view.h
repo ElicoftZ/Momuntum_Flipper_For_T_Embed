@@ -8,6 +8,7 @@ typedef struct {
     uint8_t count;             // Anzahl beobachteter BSSIDs (Beacons)
     uint8_t channel;
     uint8_t hs_complete_count; // Anzahl Targets mit M2+M3
+    uint8_t pmkid_count;       // Anzahl Targets mit erfasster PMKID (M1)
     bool running;
     bool deauth_active;
     bool auto_mode;            // Soft-Button-Right Label: Auto/Stop

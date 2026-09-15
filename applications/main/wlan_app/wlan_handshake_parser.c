@@ -70,6 +70,33 @@ uint8_t wlan_hs_get_eapol_msg_num(const uint8_t* eapol_start, int eapol_len) {
     return 0;
 }
 
+bool wlan_hs_extract_pmkid(const uint8_t* eapol_start, int eapol_len, uint8_t* pmkid_out) {
+    // Key Data Length is a 2-byte field at offset 97 (4 header + 2 key-info +
+    // 2 key-len + 8 replay + 32 nonce + 16 iv + 8 rsc + 8 reserved + 16 mic),
+    // with Key Data itself starting right after at offset 99.
+    if(eapol_len < 99) return false;
+
+    int key_data_len = (eapol_start[97] << 8) | eapol_start[98];
+    if(key_data_len < 4 || eapol_len < 99 + key_data_len) return false;
+
+    const uint8_t* key_data = &eapol_start[99];
+    int pos = 0;
+    while(pos + 2 <= key_data_len) {
+        uint8_t tag = key_data[pos];
+        uint8_t tag_len = key_data[pos + 1];
+        if(pos + 2 + tag_len > key_data_len) break;
+
+        if(tag == 0xDD && tag_len >= 4 + WLAN_HS_PMKID_LEN &&
+           key_data[pos + 2] == 0x00 && key_data[pos + 3] == 0x0F &&
+           key_data[pos + 4] == 0xAC && key_data[pos + 5] == 0x04) {
+            memcpy(pmkid_out, &key_data[pos + 6], WLAN_HS_PMKID_LEN);
+            return true;
+        }
+        pos += 2 + tag_len;
+    }
+    return false;
+}
+
 bool wlan_hs_extract_beacon_ssid(const uint8_t* payload, int len, char* ssid_out, int max_len) {
     if(len < 38) {
         ssid_out[0] = '\0';

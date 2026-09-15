@@ -1,0 +1,27 @@
+This app's name, concept, and menu organization are credited to:
+
+ESP32Marauder
+Source: https://github.com/justcallmekoko/ESP32Marauder
+Author: justcallmekoko ("Just Call Me Koko")
+License: MIT (see applications/main/ble_spam/LICENSE_MARAUDER for the
+actual upstream license text, kept there because that app contains real
+ported code -- see below).
+
+What this app actually is: a menu that gathers this firmware's own,
+independently-implemented WiFi/BLE apps (WiFi, Wardriving, BLE Detector,
+BLE Spam) under one Marauder-branded entry point, plus two features this
+port didn't have that ESP32Marauder is known for:
+
+- PMKID capture (applications/main/wlan_app/wlan_handshake_parser.c:
+  wlan_hs_extract_pmkid) -- original C implementing the IEEE 802.11i/WPA2
+  PMKID KDE format, a public protocol detail, not copied from Marauder's
+  source. No MIT obligation attaches to it; the credit above is a courtesy,
+  not a license requirement.
+- Probe-request flood (components/wifi/wlan_hal.c:
+  wlan_hal_probe_flood_start and friends) -- likewise original, built on
+  this repo's own existing wlan_hal raw-TX/beacon-spam pattern.
+
+The one place in this firmware with literally ported ESP32Marauder code is
+applications/main/ble_spam/ (see its own NOTICE_MARAUDER and
+LICENSE_MARAUDER) -- this app launches that one unmodified via the loader,
+it does not duplicate it.

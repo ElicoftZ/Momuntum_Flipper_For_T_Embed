@@ -29,6 +29,14 @@ static void wlan_handshake_view_draw_callback(Canvas* canvas, void* _model) {
         canvas_draw_str(canvas, 2, 10, dbuf);
     }
 
+    // PMKID-Indikator (klein) rechts im Header, sobald aus M1 erfasst.
+    if(model->has_pmkid) {
+        canvas_set_font(canvas, FontBatteryPercent);
+        const char* p = "PMKID";
+        uint16_t pw = canvas_string_width(canvas, p);
+        canvas_draw_str(canvas, 128 - (int)pw - 2, 10, p);
+    }
+
     // M1..M4 + B Boxen.
     canvas_set_font(canvas, FontSecondary);
     const char* labels[] = {"M1", "M2", "M3", "M4", "B"};

