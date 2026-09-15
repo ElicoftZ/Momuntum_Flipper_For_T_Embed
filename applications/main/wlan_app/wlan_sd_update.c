@@ -5,6 +5,8 @@
 #include <notification/notification.h>
 #include <notification/notification_messages.h>
 #include <storage/storage.h>
+#include <toolbox/stream/stream.h>
+#include <toolbox/stream/buffered_file_stream.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -199,6 +201,60 @@ static bool sd_update_manifest_intact(Storage* storage) {
     return ok;
 }
 
+// A fixed sentinel list only catches corruption that happens to land on one
+// of those exact paths -- confirmed the hard way: a sync interrupted mid-way
+// left every apps/Games/*.fap at 0 bytes, but the dolphin sentinels and
+// Manifest itself were untouched, so a later, fully-uninterrupted "Update SD"
+// run reported success without ever re-touching the actually-broken files.
+// The only way to catch corruption ANYWHERE is to check against the card's
+// own inventory: /ext/Manifest already lists every file's expected size
+// ("F:<md5>:<size>:<name>" per finalize_sd_package.py). Cheap per file (a
+// stat, no content read) but ~3700 of them -- acceptable for a one-off
+// "Checking..." pass the user explicitly triggered, not something run silently
+// in the background.
+static bool sd_update_manifest_files_intact(Storage* storage) {
+    Stream* stream = buffered_file_stream_alloc(storage);
+    if(!buffered_file_stream_open(stream, "/ext/Manifest", FSAM_READ, FSOM_OPEN_EXISTING)) {
+        buffered_file_stream_close(stream);
+        stream_free(stream);
+        return false;
+    }
+
+    bool intact = true;
+    FuriString* line = furi_string_alloc();
+    char buf[300];
+    char path[300];
+    while(intact && stream_read_line(stream, line)) {
+        strncpy(buf, furi_string_get_cstr(line), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        size_t n = strlen(buf);
+        while(n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = '\0';
+
+        if(buf[0] != 'F' || buf[1] != ':') continue; // only F:<md5>:<size>:<name> lines
+        char* size_str = strchr(buf + 2, ':');
+        if(!size_str) continue;
+        *size_str++ = '\0';
+        char* name = strchr(size_str, ':');
+        if(!name) continue;
+        *name++ = '\0';
+
+        uint32_t expected_size = (uint32_t)strtoul(size_str, NULL, 10);
+        int len = snprintf(path, sizeof(path), "/ext/%s", name);
+        if(len <= 0 || (size_t)len >= sizeof(path)) continue;
+
+        FileInfo fi;
+        if(storage_common_stat(storage, path, &fi) != FSE_OK || fi.size != expected_size) {
+            FURI_LOG_W(SD_UPDATE_TAG, "SD content check: %s size mismatch -> repair", path);
+            intact = false;
+        }
+    }
+
+    furi_string_free(line);
+    buffered_file_stream_close(stream);
+    stream_free(stream);
+    return intact;
+}
+
 // A sync interrupted mid-write (e.g. the board reset while the host still held
 // the card over USB mass storage) can leave version.txt intact while the
 // extracted files are truncated to 0 bytes. version.txt alone would then report
@@ -223,6 +279,9 @@ static bool sd_update_content_intact(void) {
     }
     if(intact && !sd_update_manifest_intact(storage)) {
         FURI_LOG_W(SD_UPDATE_TAG, "SD content check: Manifest missing/corrupt -> repair");
+        intact = false;
+    }
+    if(intact && !sd_update_manifest_files_intact(storage)) {
         intact = false;
     }
     furi_record_close(RECORD_STORAGE);
