@@ -118,6 +118,9 @@ if _board == "lilygo_t_embed_cc1101":
     # U2F speaks FIDO over USB HID, which needs the USB-OTG controller. Only the
     # ESP32-S3 boards have one; the C6 boards have USB-Serial-JTAG only.
     APPS.append("u2f")
+    # PMKID capture + probe-request flood menu app, built on the same WiFi HAL
+    # as wlan_app/wardriving.
+    APPS.append("marauder")
     if not _release_build:
         # Dual Boot validates the dynamic multiboot layout at runtime.
         APPS.append("dualboot")
