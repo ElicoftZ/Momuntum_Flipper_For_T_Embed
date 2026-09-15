@@ -94,16 +94,34 @@ void marauder_scene_main_on_enter(void* context) {
     view_dispatcher_switch_to_view(app->view_dispatcher, MarauderAppViewSubmenu);
 }
 
-/* name/args as loader_start_with_gui_error expects -- name must match the
- * TARGET app's registered application.fam `name=`, not the label shown above.
+/* name/args as loader_enqueue_launch expects -- name must match the TARGET
+ * app's registered application.fam `name=`, not the label shown above.
+ *
+ * Marauder is itself the loader's currently-locked app while this runs, so
+ * loader_start_with_gui_error() here would always fail with "Loader is
+ * locked" -- same trap subghz_scene_start.c's own launch-a-FAP helper
+ * documents. The fix is the loader's own deferred-launch queue: enqueue the
+ * target, enqueue ourselves right behind it (so focus returns to Marauder,
+ * matching marauder_loader_callback's expectation below), then exit -- the
+ * loader starts the queued app once this one's thread has actually closed.
  *
  * Restores the color BEFORE handing off so the launched app renders in the
  * user's own color, never Marauder's -- the tint is scoped to Marauder's own
- * screens only. marauder_loader_callback puts the tint back once the loader
- * reports we're back on top. */
+ * screens only. Re-entering marauder_scene_main_on_enter (a fresh run, once
+ * the target app closes and the queue reaches us again) re-applies it. */
 static void marauder_launch(MarauderApp* app, const char* name, const char* args) {
     furi_hal_display_set_fg_color(app->saved_fg_color);
-    loader_start_with_gui_error(app->loader, name, args);
+
+    loader_enqueue_launch(app->loader, name, args, LoaderDeferredLaunchFlagGui);
+
+    FuriString* self_path = furi_string_alloc();
+    if(loader_get_application_launch_path(app->loader, self_path)) {
+        loader_enqueue_launch(
+            app->loader, furi_string_get_cstr(self_path), NULL, LoaderDeferredLaunchFlagGui);
+    }
+    furi_string_free(self_path);
+
+    view_dispatcher_stop(app->view_dispatcher);
 }
 
 bool marauder_scene_main_on_event(void* context, SceneManagerEvent event) {

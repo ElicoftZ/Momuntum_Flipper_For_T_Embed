@@ -4,10 +4,12 @@
  * offensive-security apps, plus the couple of features (PMKID capture, probe-
  * request flood) that ESP32Marauder has and this port didn't. Nothing here
  * reimplements those apps: every leaf either launches one of them via the
- * loader (loader_start_with_gui_error(), the same primitive the OS menu
- * itself uses) or, for a few scenes verified safe to enter with no prior
- * state, deep-links straight past that app's own main menu via a launch arg
- * it already recognizes (wlan_app's "handshake"/"ssidspam"/"probeflood").
+ * loader's deferred-launch queue (loader_enqueue_launch() + exiting Marauder
+ * itself -- see marauder_launch() in scenes/scene_main.c for why a direct
+ * loader_start_with_gui_error() can't work here) or, for a few scenes
+ * verified safe to enter with no prior state, deep-links straight past that
+ * app's own main menu via a launch arg it already recognizes (wlan_app's
+ * "handshake"/"ssidspam"/"probeflood").
  * See NOTICE for what in this codebase is credited to the real ESP32Marauder
  * project and why. */
 
