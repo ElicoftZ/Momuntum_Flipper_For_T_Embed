@@ -27,6 +27,7 @@ typedef enum {
 
 #define UPD_DONE_POPUP_MS 2500
 #define UPD_INFO_POPUP_MS 1500
+#define UPD_SD_DISABLED_POPUP_MS 5000
 
 // Verlässt die Update-Scene: zurück zu Main (aus dem WiFi-Menü) oder — wenn per
 // Launch-Arg "update" aus dem Settings-Menü gestartet, wo kein Main im Stack ist
@@ -199,10 +200,28 @@ static void upd_show_error(WlanApp* app, const char* msg) {
 }
 
 // SD-Phase starten (nach FW aktuell oder übersprungen).
+//
+// Temporarily disabled (not removed): a user's card got reformatted after an
+// interrupted "Update SD" run left files corrupted, twice, before the
+// Manifest-driven content check (wlan_sd_update.c) was in place -- do not
+// re-enable this until that fix has real hardware mileage. Shows an info
+// popup and leaves instead of ever calling wlan_sd_update_start(); nothing
+// on the SD card is touched by the Update flow while this is in effect.
 static void upd_start_sd(WlanApp* app) {
-    upd_set_state(app, UpdSdRunning);
-    wlan_sd_update_start(app->sd_update);
-    upd_show_sd_progress(app, "Checking Version");
+    popup_reset(app->popup);
+    popup_set_header(app->popup, "SD sync disabled", 64, 6, AlignCenter, AlignTop);
+    popup_set_text(
+        app->popup,
+        "Update SD is off for now.\nCopy sdcard.zip via USB\nto update manually.",
+        64,
+        20,
+        AlignCenter,
+        AlignTop);
+    popup_set_context(app->popup, app);
+    popup_set_callback(app->popup, upd_info_popup_cb);
+    popup_set_timeout(app->popup, UPD_SD_DISABLED_POPUP_MS);
+    popup_enable_timeout(app->popup);
+    view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewPopup);
 }
 
 // FW-Check-Phase starten (nach Quellenwahl).
