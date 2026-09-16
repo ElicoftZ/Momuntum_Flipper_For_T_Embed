@@ -139,8 +139,14 @@ bool mp3_i2s_init(uint32_t sample_rate) {
             .invert_flags = {0},
         },
     };
-    if(i2s_channel_init_std_mode(i2s_tx, &std_cfg) != ESP_OK) goto err_std;
-    if(i2s_channel_enable(i2s_tx) != ESP_OK)                   goto err_std;
+    if(i2s_channel_init_std_mode(i2s_tx, &std_cfg) != ESP_OK) {
+        FURI_LOG_E(TAG, "i2s_channel_init_std_mode failed");
+        goto err_std;
+    }
+    if(i2s_channel_enable(i2s_tx) != ESP_OK) {
+        FURI_LOG_E(TAG, "i2s_channel_enable failed");
+        goto err_std;
+    }
 
     writer_run = true;
     writer_thread = furi_thread_alloc_ex("Mp3I2S", 4096, mp3_i2s_writer_task, NULL);

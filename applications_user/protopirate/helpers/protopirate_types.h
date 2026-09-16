@@ -13,6 +13,7 @@ typedef enum {
     ProtoPirateViewAbout,
     ProtoPirateViewFileBrowser,
     ProtoPirateViewTextInput,
+    ProtoPirateViewLoading,
 } ProtoPirateView;
 
 typedef enum {

@@ -95,6 +95,12 @@ ProtoPirateApp* protopirate_app_alloc() {
     app->save_history_idx = 0;
     memset(app->save_filename, 0, sizeof(app->save_filename));
 
+    // Loading (shown briefly before a scene whose on_enter does slow work,
+    // e.g. radio init, so the start menu doesn't just sit frozen on screen)
+    app->loading = loading_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, ProtoPirateViewLoading, loading_get_view(app->loading));
+
     // File Browser path
     app->file_path = furi_string_alloc();
     furi_string_set(app->file_path, PROTOPIRATE_APP_FOLDER);
@@ -459,6 +465,11 @@ void protopirate_app_free(ProtoPirateApp* app) {
     FURI_LOG_D(TAG, "Removing text_input view");
     view_dispatcher_remove_view(app->view_dispatcher, ProtoPirateViewTextInput);
     text_input_free(app->text_input);
+
+    // Loading
+    FURI_LOG_D(TAG, "Removing loading view");
+    view_dispatcher_remove_view(app->view_dispatcher, ProtoPirateViewLoading);
+    loading_free(app->loading);
     if(app->save_protocol) {
         furi_string_free(app->save_protocol);
         app->save_protocol = NULL;

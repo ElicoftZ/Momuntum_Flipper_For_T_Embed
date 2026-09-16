@@ -132,11 +132,15 @@ void marauder_scene_main_on_enter(void* context) {
  * loader event (the target app we're launching closing, if it does before
  * this queued self-relaunch reaches the front) would invoke
  * marauder_loader_callback() with a dangling `app`. */
+// 400ms left a brief flash of the submenu visible on real hardware before the
+// Loading frame actually painted; bumped to cover the whole transition.
+#define MARAUDER_LOADING_SETTLE_MS 600
+
 static void marauder_launch(MarauderApp* app, const char* name, const char* args) {
     furi_hal_display_set_fg_color(app->saved_fg_color);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, MarauderAppViewLoading);
-    furi_delay_ms(400);
+    furi_delay_ms(MARAUDER_LOADING_SETTLE_MS);
 
     loader_enqueue_launch(app->loader, name, args, LoaderDeferredLaunchFlagGui);
 

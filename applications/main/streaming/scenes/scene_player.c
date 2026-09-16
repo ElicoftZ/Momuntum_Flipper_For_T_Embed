@@ -57,13 +57,19 @@ static void player_refresh_view(StreamingApp* app) {
 void streaming_scene_player_on_enter(void* context) {
     StreamingApp* app = context;
 
-    if(!stream_player_start(app) && app->play_mode == PlayModeAirplay) {
-        /* AirPlay handshake failed → show an error instead of a dead player.
-         * AirPlay 2 devices are rejected before SETUP (no receiver crash). */
-        snprintf(
-            app->error_msg, sizeof(app->error_msg), "%s",
-            airplay_raop_was_airplay2() ? "AirPlay 2 device\nis not supported" :
-                                          "AirPlay connection\nfailed");
+    if(!stream_player_start(app)) {
+        /* Playback failed to start -> show an error instead of a dead player
+         * silently sitting at 00:00 with no explanation. AirPlay 2 devices
+         * are rejected before SETUP (no receiver crash); local failures are
+         * a bad/missing file, speaker init failure, or decoder init failure. */
+        if(app->play_mode == PlayModeAirplay) {
+            snprintf(
+                app->error_msg, sizeof(app->error_msg), "%s",
+                airplay_raop_was_airplay2() ? "AirPlay 2 device\nis not supported" :
+                                              "AirPlay connection\nfailed");
+        } else {
+            snprintf(app->error_msg, sizeof(app->error_msg), "%s", "Playback failed to start");
+        }
         scene_manager_next_scene(app->scene_manager, StreamingSceneError);
         return;
     }

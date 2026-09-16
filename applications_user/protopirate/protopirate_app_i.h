@@ -16,6 +16,7 @@
 #include <gui/modules/variable_item_list.h>
 #include <gui/modules/widget.h>
 #include <gui/modules/text_input.h>
+#include <gui/modules/loading.h>
 #include <notification/notification_messages.h>
 #include <lib/subghz/subghz_setting.h>
 #include <lib/subghz/subghz_worker.h>
@@ -57,6 +58,7 @@ struct ProtoPirateApp {
     Submenu* submenu;
     Widget* widget;
     TextInput* text_input;
+    Loading* loading;
     View* view_about;
     FuriString* file_path;
     ProtoPirateReceiver* protopirate_receiver;
@@ -76,7 +78,16 @@ struct ProtoPirateApp {
     FuriString* save_protocol;
     uint16_t save_history_idx;
     bool save_from_saved_info;
+#ifdef ENABLE_EMULATE_FEATURE
+    uint8_t emulate_nav_pending;
+#endif
 };
+
+#ifdef ENABLE_EMULATE_FEATURE
+#define EMULATE_NAV_NONE     0U
+#define EMULATE_NAV_POP      1U
+#define EMULATE_NAV_STOP_APP 2U
+#endif
 
 typedef enum {
     ProtoPirateSetTypeFord_v0,

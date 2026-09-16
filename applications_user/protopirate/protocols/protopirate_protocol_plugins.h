@@ -7,6 +7,9 @@
 #define PROTOPIRATE_PROTOCOL_PLUGIN_APP_ID      "protopirate_protocol_plugins"
 #define PROTOPIRATE_PROTOCOL_PLUGIN_API_VERSION 2U
 
+// ProtoPirateProtocolRegistryRoute now lives in protocol_items.h (included
+// above) alongside the rest of the restored catalog system.
+
 typedef enum {
     ProtoPirateProtocolPluginKindRx = 0,
     ProtoPirateProtocolPluginKindTx,

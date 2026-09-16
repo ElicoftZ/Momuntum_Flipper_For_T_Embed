@@ -2,6 +2,9 @@
 #include "arm_fap_profile.h"
 #include <stdio.h>
 #include <string.h>
+#ifdef ESP_PLATFORM
+#include <ctype.h>
+#endif
 
 static uint16_t u16(const uint8_t* p) { return (uint16_t)(p[0] | ((uint16_t)p[1] << 8)); }
 static uint32_t u32(const uint8_t* p) {
@@ -190,6 +193,44 @@ static const char* const import_names[] = {
     ARM_FAP_IMPORTS(ARM_FAP_NAME)
 #undef ARM_FAP_NAME
 };
+/* Newlib's exported _ctype_ is 257 bytes: EOF followed by unsigned-char
+ * entries. Reserve a read-only guest region, never a callable import trap.
+ * Host tests reproduce the C-locale table without depending on host libc ABI. */
+static uint32_t guest_ctype_table(ArmFapVm* vm) {
+    if(vm->region_count >= ARM_FAP_MAX_SECTIONS || vm->heap_limit - vm->heap_end < 264) {
+        arm_fap_vm_fault(vm, "No guest space for ctype table"); return 0;
+    }
+    uint32_t address = vm->heap_end;
+    uint8_t* table = vm->ram + address - ARM_FAP_BASE;
+#ifdef ESP_PLATFORM
+    memcpy(table, _ctype_, 257);
+#else
+    memset(table, 0, 257);
+    for(unsigned ch = 0; ch < 128; ch++) {
+        unsigned bits = 0;
+        if(ch < 32 || ch == 127) bits |= 32;
+        if(ch == ' ' || (ch >= 9 && ch <= 13)) bits |= 8;
+        if(ch == ' ') bits |= 128;
+        if(ch >= '0' && ch <= '9') bits |= 4;
+        if(ch >= 'A' && ch <= 'Z') bits |= 1;
+        if(ch >= 'a' && ch <= 'z') bits |= 2;
+        if((ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f')) bits |= 64;
+        if(ch >= 33 && ch <= 126 && !(bits & 7)) bits |= 16;
+        table[ch + 1] = (uint8_t)bits;
+    }
+#endif
+    vm->regions[vm->region_count++] = (ArmFapRegion){address, 257, 0};
+    vm->heap_start = vm->heap_end = address + 264;
+    return address;
+}
+static void add_missing_import(ArmFapVm* vm, const char* name) {
+    char entry[80];
+    snprintf(entry, sizeof(entry), "%.75s", name);
+    if(strstr(vm->missing_imports, entry)) return; /* one relocation site per symbol is common */
+    size_t len = strlen(vm->missing_imports);
+    size_t remaining = sizeof(vm->missing_imports) - len;
+    if(remaining > 2) snprintf(vm->missing_imports + len, remaining, "%s%s", len ? ";" : "", entry);
+}
 bool arm_fap_vm_load(ArmFapVm* vm, const uint8_t* f, size_t size) {
     uint8_t manifest[85];
     if(!vm->ram || !arm_fap_inspect(f, size, manifest)) {
@@ -199,6 +240,7 @@ bool arm_fap_vm_load(ArmFapVm* vm, const uint8_t* f, size_t size) {
         arm_fap_vm_fault(vm, "ARM API profile unsupported (87.0-1 / 88.0-2)"); return false;
     }
     uint32_t addresses[ARM_FAP_MAX_SECTIONS] = {0};
+    uint32_t ctype_address = 0;
     uint32_t cursor = ARM_FAP_BASE;
     vm->heap_limit = ARM_FAP_BASE + ARM_FAP_RAM_SIZE - ARM_FAP_STACK_SIZE;
     vm->r[13] = ARM_FAP_BASE + ARM_FAP_RAM_SIZE;
@@ -252,16 +294,25 @@ bool arm_fap_vm_load(ArmFapVm* vm, const uint8_t* f, size_t size) {
                 unsigned id;
                 for(id = 0; id < ArmImportCount; id++) if(!strcmp(name, import_names[id])) break;
                 if(id == ArmImportCount) {
-                    snprintf(vm->error, sizeof(vm->error), "Unsupported ARM import: %.75s", name);
-                    return false;
+                    add_missing_import(vm, name);
+                    continue; /* keep scanning: report every gap, not just the first */
                 }
                 value = ARM_FAP_IMPORT_BASE + id * 4 + 1;
+                if(id == ArmImport__ctype_) {
+                    if(!ctype_address) ctype_address = guest_ctype_table(vm);
+                    if(!ctype_address) return false;
+                    value = ctype_address;
+                }
             } else if(sec < u16(f + 48) && addresses[sec] &&
                       (value & ~1u) <= u32(section(f, sec) + 20)) value += addresses[sec];
             else goto invalid_relocation;
             uint8_t* p = vm->ram + addresses[dest] - ARM_FAP_BASE + target;
             put32(p, u32(p) + value);
         }
+    }
+    if(vm->missing_imports[0]) {
+        snprintf(vm->error, sizeof(vm->error), "Unsupported ARM import: %.75s", vm->missing_imports);
+        return false;
     }
     return true;
 invalid_relocation:

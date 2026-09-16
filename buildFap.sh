@@ -67,6 +67,15 @@ if ! python3 -c '' >/dev/null 2>&1; then
     for _py in /c/Espressif/python_env/idf*/Scripts/python.exe; do
         if [ -x "$_py" ]; then
             python3() { "$_py" "$@"; }
+            # A plain shell function is only visible in this same process --
+            # the icon-compile step below runs inside build_app(), and on at
+            # least one machine that call landed in a context where the
+            # function definition hadn't propagated (compile_icons.py fell
+            # through to the still-broken Store-stub python3 and failed
+            # silently under this script's own `2>/dev/null || true`).
+            # export -f makes bash pass the function through to child
+            # shells/subshells the normal PATH lookup can't reach.
+            export -f python3
             break
         fi
     done
@@ -384,7 +393,12 @@ build_for_target() {
     if [ -n "$ICON_ASSETS_DIR" ] && [ -d "$ICON_ASSETS_DIR" ]; then
         # Detect icon filename from source includes (e.g. #include "proto_pirate_icons.h")
         local ICON_STEM="${APP_ID}_icons"
-        local DETECTED=$(grep -rh '#include ".*_icons\.h"' "$APP_DIR" 2>/dev/null | head -1 | sed 's/.*"\(.*\)\.h".*/\1/')
+        # Scope to *.c files actually eligible for the build glob (excludes
+        # .inc/.h), and prefer the most COMMON stem, not just the first match:
+        # an app dir can contain sibling plugin sources whose own icon header
+        # name would otherwise be picked up first and misdetected as the main
+        # app's icon stem.
+        local DETECTED=$(grep -rho --include='*.c' '#include ".*_icons\.h"' "$APP_DIR" 2>/dev/null | sed 's/.*"\(.*\)\.h".*/\1/' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
         [ -n "$DETECTED" ] && ICON_STEM="$DETECTED"
 
         mkdir -p "$ICONS_GEN_DIR"

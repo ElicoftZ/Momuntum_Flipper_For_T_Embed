@@ -159,6 +159,12 @@ static int32_t decoder_task(void* ctx) {
         if(d->read_left < 4) {
             /* True EOF — wait for the I2S queue to drain, then notify. */
             if(d->eof) {
+                FURI_LOG_I(
+                    TAG,
+                    "EOF: consumed %llu/%llu bytes, elapsed %lu ms",
+                    (unsigned long long)d->file_pos,
+                    (unsigned long long)d->file_size,
+                    (unsigned long)d->elapsed_ms);
                 while(mp3_sink_has_pending() && d->playing) {
                     furi_delay_ms(50);
                 }
@@ -300,11 +306,15 @@ bool mp3_decoder_init(void) {
     if(g_dec) return true;
 
     Mp3DecoderState* d = heap_caps_calloc(1, sizeof(Mp3DecoderState), MALLOC_CAP_SPIRAM);
-    if(!d) return false;
+    if(!d) {
+        FURI_LOG_E(TAG, "Mp3DecoderState alloc failed (PSRAM exhausted?)");
+        return false;
+    }
 
     d->read_buf = heap_caps_malloc(READ_BUF_SIZE, MALLOC_CAP_8BIT);  /* DRAM is fine */
     d->pcm      = heap_caps_malloc(PCM_FRAMES_MAX * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     if(!d->read_buf || !d->pcm) {
+        FURI_LOG_E(TAG, "read_buf/pcm alloc failed");
         if(d->read_buf) heap_caps_free(d->read_buf);
         if(d->pcm)      heap_caps_free(d->pcm);
         heap_caps_free(d);
@@ -313,6 +323,7 @@ bool mp3_decoder_init(void) {
 
     d->hmp3 = MP3InitDecoder();
     if(!d->hmp3) {
+        FURI_LOG_E(TAG, "MP3InitDecoder failed");
         heap_caps_free(d->read_buf);
         heap_caps_free(d->pcm);
         heap_caps_free(d);

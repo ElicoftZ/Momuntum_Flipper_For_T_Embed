@@ -22,6 +22,19 @@ typedef enum {
 // Forward declaration
 static void protopirate_scene_start_open_saved_captures(ProtoPirateApp* app);
 
+// Some scenes' on_enter does real work (radio init, SD reads) before their own
+// first frame is ready, during which the start submenu would otherwise just
+// sit on screen looking frozen. Switch to the Loading view first and give the
+// Gui service a moment to actually draw it -- view_dispatcher only marks a
+// view dirty, it doesn't force a redraw, so without this delay the switch
+// below would never get painted before the slow on_enter blocks the thread.
+#define PROTOPIRATE_LOADING_SETTLE_MS 600
+
+static void protopirate_scene_start_show_loading(ProtoPirateApp* app) {
+    view_dispatcher_switch_to_view(app->view_dispatcher, ProtoPirateViewLoading);
+    furi_delay_ms(PROTOPIRATE_LOADING_SETTLE_MS);
+}
+
 static void protopirate_scene_start_submenu_callback(void* context, uint32_t index) {
     furi_check(context);
     ProtoPirateApp* app = context;
@@ -120,6 +133,7 @@ static void protopirate_scene_start_open_saved_captures(ProtoPirateApp* app) {
         app->loaded_file_path = furi_string_alloc_set(app->file_path);
 
         FURI_LOG_D(TAG, "[19] Navigating to SavedInfo scene");
+        protopirate_scene_start_show_loading(app);
         scene_manager_next_scene(app->scene_manager, ProtoPirateSceneSavedInfo);
     } else {
         FURI_LOG_I(TAG, "[16] File browser cancelled or empty");
@@ -192,6 +206,7 @@ bool protopirate_scene_start_on_event(void* context, SceneManagerEvent event) {
             scene_manager_next_scene(app->scene_manager, ProtoPirateSceneAbout);
             consumed = true;
         } else if(event.event == SubmenuIndexProtoPirateReceiver) {
+            protopirate_scene_start_show_loading(app);
             scene_manager_next_scene(app->scene_manager, ProtoPirateSceneReceiver);
             consumed = true;
         } else if(event.event == SubmenuIndexProtoPirateReceiverConfig) {
@@ -206,6 +221,7 @@ bool protopirate_scene_start_on_event(void* context, SceneManagerEvent event) {
 #endif
 #ifdef ENABLE_TIMING_TUNER_SCENE
         else if(event.event == SubmenuIndexProtoPirateTimingTuner) {
+            protopirate_scene_start_show_loading(app);
             scene_manager_next_scene(app->scene_manager, ProtoPirateSceneTimingTuner);
             consumed = true;
         }

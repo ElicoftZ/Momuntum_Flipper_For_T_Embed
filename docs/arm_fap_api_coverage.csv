@@ -20,10 +20,10 @@ LL_USART_Init,Function,Other libraries and assets,not_bridged,ErrorStatus,"USART
 SystemCoreClock,Variable,Other libraries and assets,not_bridged,uint32_t,
 __aeabi_f2d,Function,Other libraries and assets,not_bridged,double,float
 __aeabi_uldivmod,Function,Other libraries and assets,not_bridged,void*,"uint64_t, uint64_t"
-__assert_func,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"const char*, int, const char*, const char*"
+__assert_func,Function,Other libraries and assets,bridged_subset,void,"const char*, int, const char*, const char*"
 __clear_cache,Function,Other libraries and assets,not_bridged,void,"void*, void*"
 __cxa_pure_virtual,Function,Other libraries and assets,not_bridged,void,
-__errno,Function,Other libraries and assets,native_export_needs_arm_bridge,int*,
+__errno,Function,Other libraries and assets,bridged_subset,int*,
 __furi_crash_implementation,Function,Other libraries and assets,bridged_subset,void,
 __furi_critical_enter,Function,Other libraries and assets,not_bridged,__FuriCriticalInfo,
 __furi_critical_exit,Function,Other libraries and assets,not_bridged,void,__FuriCriticalInfo
@@ -50,10 +50,10 @@ __wrap_strtod,Function,Other libraries and assets,not_bridged,double,"const char
 __wrap_strtof,Function,Other libraries and assets,not_bridged,float,"const char*, char**"
 __wrap_ungetc,Function,Other libraries and assets,not_bridged,int,"int, FILE*"
 __wrap_vsnprintf,Function,Other libraries and assets,not_bridged,int,"char*, size_t, const char*, va_list"
-_ctype_,Variable,Other libraries and assets,native_export_needs_arm_bridge,const char[],
+_ctype_,Variable,Other libraries and assets,bridged_subset,const char[],
 _impure_data,Variable,Other libraries and assets,not_bridged,_reent,
 _impure_ptr,Variable,Other libraries and assets,not_bridged,_reent*,
-abort,Function,Other libraries and assets,native_export_needs_arm_bridge,void,
+abort,Function,Other libraries and assets,bridged_subset,void,
 aligned_free,Function,Other libraries and assets,not_bridged,void,void*
 aligned_malloc,Function,Other libraries and assets,not_bridged,void*,"size_t, size_t"
 args_char_to_hex,Function,Other libraries and assets,not_bridged,_Bool,"char, char, uint8_t*"
@@ -62,15 +62,15 @@ args_length,Function,Other libraries and assets,not_bridged,size_t,FuriString*
 args_read_duration,Function,Other libraries and assets,not_bridged,_Bool,"FuriString*, uint32_t*, const char*"
 args_read_float_and_trim,Function,Other libraries and assets,not_bridged,_Bool,"FuriString*, float*"
 args_read_hex_bytes,Function,Other libraries and assets,not_bridged,_Bool,"FuriString*, uint8_t*, size_t"
-args_read_int_and_trim,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"FuriString*, int*"
-args_read_probably_quoted_string_and_trim,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"FuriString*, FuriString*"
-args_read_string_and_trim,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"FuriString*, FuriString*"
-atoi,Function,Other libraries and assets,native_export_needs_arm_bridge,int,const char*
-bit_buffer_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,BitBuffer*,size_t
+args_read_int_and_trim,Function,Other libraries and assets,bridged_subset,_Bool,"FuriString*, int*"
+args_read_probably_quoted_string_and_trim,Function,Other libraries and assets,bridged_subset,_Bool,"FuriString*, FuriString*"
+args_read_string_and_trim,Function,Other libraries and assets,bridged_subset,_Bool,"FuriString*, FuriString*"
+atoi,Function,Other libraries and assets,bridged_subset,int,const char*
+bit_buffer_alloc,Function,Other libraries and assets,bridged_subset,BitBuffer*,size_t
 bit_buffer_append,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, const BitBuffer*"
 bit_buffer_append_bit,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, _Bool"
-bit_buffer_append_byte,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"BitBuffer*, uint8_t"
-bit_buffer_append_bytes,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"BitBuffer*, const uint8_t*, size_t"
+bit_buffer_append_byte,Function,Other libraries and assets,bridged_subset,void,"BitBuffer*, uint8_t"
+bit_buffer_append_bytes,Function,Other libraries and assets,bridged_subset,void,"BitBuffer*, const uint8_t*, size_t"
 bit_buffer_append_right,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, const BitBuffer*, size_t"
 bit_buffer_copy,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, const BitBuffer*"
 bit_buffer_copy_bits,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, const uint8_t*, size_t"
@@ -78,16 +78,16 @@ bit_buffer_copy_bytes,Function,Other libraries and assets,not_bridged,void,"BitB
 bit_buffer_copy_bytes_with_parity,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, const uint8_t*, size_t"
 bit_buffer_copy_left,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, const BitBuffer*, size_t"
 bit_buffer_copy_right,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, const BitBuffer*, size_t"
-bit_buffer_free,Function,Other libraries and assets,native_export_needs_arm_bridge,void,BitBuffer*
+bit_buffer_free,Function,Other libraries and assets,bridged_subset,void,BitBuffer*
 bit_buffer_get_byte,Function,Other libraries and assets,not_bridged,uint8_t,"const BitBuffer*, size_t"
 bit_buffer_get_byte_from_bit,Function,Other libraries and assets,not_bridged,uint8_t,"const BitBuffer*, size_t"
 bit_buffer_get_capacity_bytes,Function,Other libraries and assets,not_bridged,size_t,const BitBuffer*
-bit_buffer_get_data,Function,Other libraries and assets,native_export_needs_arm_bridge,const uint8_t*,const BitBuffer*
+bit_buffer_get_data,Function,Other libraries and assets,bridged_subset,const uint8_t*,const BitBuffer*
 bit_buffer_get_parity,Function,Other libraries and assets,not_bridged,const uint8_t*,const BitBuffer*
 bit_buffer_get_size,Function,Other libraries and assets,not_bridged,size_t,const BitBuffer*
-bit_buffer_get_size_bytes,Function,Other libraries and assets,native_export_needs_arm_bridge,size_t,const BitBuffer*
+bit_buffer_get_size_bytes,Function,Other libraries and assets,bridged_subset,size_t,const BitBuffer*
 bit_buffer_has_partial_byte,Function,Other libraries and assets,not_bridged,_Bool,const BitBuffer*
-bit_buffer_reset,Function,Other libraries and assets,native_export_needs_arm_bridge,void,BitBuffer*
+bit_buffer_reset,Function,Other libraries and assets,bridged_subset,void,BitBuffer*
 bit_buffer_set_byte,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, size_t, uint8_t"
 bit_buffer_set_byte_with_parity,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, size_t, uint8_t, _Bool"
 bit_buffer_set_size,Function,Other libraries and assets,not_bridged,void,"BitBuffer*, size_t"
@@ -97,19 +97,19 @@ bit_buffer_write_bytes,Function,Other libraries and assets,not_bridged,void,"con
 bit_buffer_write_bytes_mid,Function,Other libraries and assets,not_bridged,void,"const BitBuffer*, void*, size_t, size_t"
 bit_buffer_write_bytes_with_parity,Function,Other libraries and assets,not_bridged,void,"const BitBuffer*, void*, size_t, size_t*"
 bit_lib_add_parity,Function,Other libraries and assets,not_bridged,size_t,"const uint8_t*, size_t, uint8_t*, size_t, uint8_t, uint8_t, BitLibParity"
-bit_lib_bytes_to_num_bcd,Function,Other libraries and assets,native_export_needs_arm_bridge,uint64_t,"const uint8_t*, uint8_t, _Bool*"
-bit_lib_bytes_to_num_be,Function,Other libraries and assets,native_export_needs_arm_bridge,uint64_t,"const uint8_t*, uint8_t"
-bit_lib_bytes_to_num_le,Function,Other libraries and assets,native_export_needs_arm_bridge,uint64_t,"const uint8_t*, uint8_t"
+bit_lib_bytes_to_num_bcd,Function,Other libraries and assets,bridged_subset,uint64_t,"const uint8_t*, uint8_t, _Bool*"
+bit_lib_bytes_to_num_be,Function,Other libraries and assets,bridged_subset,uint64_t,"const uint8_t*, uint8_t"
+bit_lib_bytes_to_num_le,Function,Other libraries and assets,bridged_subset,uint64_t,"const uint8_t*, uint8_t"
 bit_lib_copy_bits,Function,Other libraries and assets,not_bridged,void,"uint8_t*, size_t, size_t, const uint8_t*, size_t"
 bit_lib_crc16,Function,Other libraries and assets,not_bridged,uint16_t,"const uint8_t*, size_t, uint16_t, uint16_t, _Bool, _Bool, uint16_t"
 bit_lib_crc8,Function,Other libraries and assets,not_bridged,uint16_t,"const uint8_t*, size_t, uint8_t, uint8_t, _Bool, _Bool, uint8_t"
 bit_lib_get_bit,Function,Other libraries and assets,not_bridged,_Bool,"const uint8_t*, size_t"
 bit_lib_get_bit_count,Function,Other libraries and assets,not_bridged,uint8_t,uint32_t
-bit_lib_get_bits,Function,Other libraries and assets,native_export_needs_arm_bridge,uint8_t,"const uint8_t*, size_t, uint8_t"
-bit_lib_get_bits_16,Function,Other libraries and assets,native_export_needs_arm_bridge,uint16_t,"const uint8_t*, size_t, uint8_t"
-bit_lib_get_bits_32,Function,Other libraries and assets,native_export_needs_arm_bridge,uint32_t,"const uint8_t*, size_t, uint8_t"
-bit_lib_get_bits_64,Function,Other libraries and assets,native_export_needs_arm_bridge,uint64_t,"const uint8_t*, size_t, uint8_t"
-bit_lib_num_to_bytes_be,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"uint64_t, uint8_t, uint8_t*"
+bit_lib_get_bits,Function,Other libraries and assets,bridged_subset,uint8_t,"const uint8_t*, size_t, uint8_t"
+bit_lib_get_bits_16,Function,Other libraries and assets,bridged_subset,uint16_t,"const uint8_t*, size_t, uint8_t"
+bit_lib_get_bits_32,Function,Other libraries and assets,bridged_subset,uint32_t,"const uint8_t*, size_t, uint8_t"
+bit_lib_get_bits_64,Function,Other libraries and assets,bridged_subset,uint64_t,"const uint8_t*, size_t, uint8_t"
+bit_lib_num_to_bytes_be,Function,Other libraries and assets,bridged_subset,void,"uint64_t, uint8_t, uint8_t*"
 bit_lib_num_to_bytes_le,Function,Other libraries and assets,not_bridged,void,"uint64_t, uint8_t, uint8_t*"
 bit_lib_print_bits,Function,Other libraries and assets,not_bridged,void,"const uint8_t*, size_t"
 bit_lib_print_regions,Function,Other libraries and assets,not_bridged,void,"const BitLibRegion*, size_t, const uint8_t*, size_t"
@@ -171,10 +171,10 @@ bt_keys_storage_update,Function,Other libraries and assets,not_bridged,_Bool,"Bt
 bt_profile_restore_default,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,Bt*
 bt_profile_start,Function,Other libraries and assets,native_export_needs_arm_bridge,FuriHalBleProfileBase*,"Bt*, const FuriHalBleProfileTemplate*, FuriHalBleProfileParams"
 bt_set_status_changed_callback,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Bt*, BtStatusChangedCallback, void*"
-buffered_file_stream_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,Stream*,Storage*
-buffered_file_stream_close,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,Stream*
+buffered_file_stream_alloc,Function,Other libraries and assets,bridged_subset,Stream*,Storage*
+buffered_file_stream_close,Function,Other libraries and assets,bridged_subset,_Bool,Stream*
 buffered_file_stream_get_error,Function,Other libraries and assets,not_bridged,FS_Error,Stream*
-buffered_file_stream_open,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"Stream*, const char*, FS_AccessMode, FS_OpenMode"
+buffered_file_stream_open,Function,Other libraries and assets,bridged_subset,_Bool,"Stream*, const char*, FS_AccessMode, FS_OpenMode"
 buffered_file_stream_sync,Function,Other libraries and assets,not_bridged,_Bool,Stream*
 button_menu_add_item,Function,Other libraries and assets,not_bridged,ButtonMenuItem*,"ButtonMenu*, const char*, int32_t, ButtonMenuItemCallback, ButtonMenuItemType, void*"
 button_menu_alloc,Function,Other libraries and assets,not_bridged,ButtonMenu*,
@@ -191,20 +191,20 @@ button_panel_free,Function,Other libraries and assets,not_bridged,void,ButtonPan
 button_panel_get_view,Function,Other libraries and assets,not_bridged,View*,ButtonPanel*
 button_panel_reserve,Function,Other libraries and assets,not_bridged,void,"ButtonPanel*, size_t, size_t"
 button_panel_reset,Function,Other libraries and assets,not_bridged,void,ButtonPanel*
-byte_input_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,ByteInput*,
-byte_input_free,Function,Other libraries and assets,native_export_needs_arm_bridge,void,ByteInput*
-byte_input_get_view,Function,Other libraries and assets,native_export_needs_arm_bridge,View*,ByteInput*
-byte_input_set_header_text,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"ByteInput*, const char*"
-byte_input_set_result_callback,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"ByteInput*, ByteInputCallback, ByteChangedCallback, void*, uint8_t*, uint8_t"
-calloc,Function,Other libraries and assets,native_export_needs_arm_bridge,void*,"size_t, size_t"
+byte_input_alloc,Function,Other libraries and assets,bridged_subset,ByteInput*,
+byte_input_free,Function,Other libraries and assets,bridged_subset,void,ByteInput*
+byte_input_get_view,Function,Other libraries and assets,bridged_subset,View*,ByteInput*
+byte_input_set_header_text,Function,Other libraries and assets,bridged_subset,void,"ByteInput*, const char*"
+byte_input_set_result_callback,Function,Other libraries and assets,bridged_subset,void,"ByteInput*, ByteInputCallback, ByteChangedCallback, void*, uint8_t*, uint8_t"
+calloc,Function,Other libraries and assets,bridged_subset,void*,"size_t, size_t"
 canvas_clear,Function,Drawing,bridged_subset,void,Canvas*
 canvas_commit,Function,Drawing,not_bridged,void,Canvas*
-canvas_current_font_height,Function,Drawing,native_export_needs_arm_bridge,size_t,const Canvas*
+canvas_current_font_height,Function,Drawing,bridged_subset,size_t,const Canvas*
 canvas_draw_bitmap,Function,Drawing,not_bridged,void,"Canvas*, int32_t, int32_t, size_t, size_t, const uint8_t*"
 canvas_draw_box,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, size_t, size_t"
-canvas_draw_circle,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t"
+canvas_draw_circle,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, size_t"
 canvas_draw_disc,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, size_t"
-canvas_draw_dot,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t"
+canvas_draw_dot,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t"
 canvas_draw_frame,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, size_t, size_t"
 canvas_draw_glyph,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, uint16_t"
 canvas_draw_icon,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, const Icon*"
@@ -222,16 +222,16 @@ canvas_get_buffer,Function,Drawing,not_bridged,uint8_t*,Canvas*
 canvas_get_buffer_size,Function,Drawing,not_bridged,size_t,const Canvas*
 canvas_get_font_params,Function,Drawing,not_bridged,const CanvasFontParameters*,"const Canvas*, Font"
 canvas_glyph_width,Function,Drawing,native_export_needs_arm_bridge,size_t,"Canvas*, uint16_t"
-canvas_height,Function,Drawing,native_export_needs_arm_bridge,size_t,const Canvas*
-canvas_invert_color,Function,Drawing,native_export_needs_arm_bridge,void,Canvas*
+canvas_height,Function,Drawing,bridged_subset,size_t,const Canvas*
+canvas_invert_color,Function,Drawing,bridged_subset,void,Canvas*
 canvas_reset,Function,Drawing,not_bridged,void,Canvas*
 canvas_set_bitmap_mode,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, _Bool"
 canvas_set_color,Function,Drawing,bridged_subset,void,"Canvas*, Color"
 canvas_set_custom_u8g2_font,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, const uint8_t*"
 canvas_set_font,Function,Drawing,bridged_subset,void,"Canvas*, Font"
 canvas_set_font_direction,Function,Drawing,not_bridged,void,"Canvas*, CanvasDirection"
-canvas_string_width,Function,Drawing,native_export_needs_arm_bridge,uint16_t,"Canvas*, const char*"
-canvas_width,Function,Drawing,native_export_needs_arm_bridge,size_t,const Canvas*
+canvas_string_width,Function,Drawing,bridged_subset,uint16_t,"Canvas*, const char*"
+canvas_width,Function,Drawing,bridged_subset,size_t,const Canvas*
 cli_ansi_parser_alloc,Function,Other libraries and assets,not_bridged,CliAnsiParser*,
 cli_ansi_parser_feed,Function,Other libraries and assets,not_bridged,CliAnsiParserResult,"CliAnsiParser*, char"
 cli_ansi_parser_feed_timeout,Function,Other libraries and assets,not_bridged,CliAnsiParserResult,CliAnsiParser*
@@ -294,36 +294,36 @@ date_time_input_free,Function,Other libraries and assets,not_bridged,void,DateTi
 date_time_input_get_view,Function,Other libraries and assets,not_bridged,View*,DateTimeInput*
 date_time_input_set_editable_fields,Function,Other libraries and assets,not_bridged,void,"DateTimeInput*, _Bool, _Bool, _Bool, _Bool, _Bool, _Bool"
 date_time_input_set_result_callback,Function,Other libraries and assets,not_bridged,void,"DateTimeInput*, DateTimeChangedCallback, DateTimeDoneCallback, void*, DateTime*"
-datetime_datetime_to_timestamp,Function,Other libraries and assets,native_export_needs_arm_bridge,uint32_t,DateTime*
-datetime_get_days_per_month,Function,Other libraries and assets,native_export_needs_arm_bridge,uint8_t,"_Bool, uint8_t"
-datetime_get_days_per_year,Function,Other libraries and assets,native_export_needs_arm_bridge,uint16_t,uint16_t
-datetime_is_leap_year,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,uint16_t
-datetime_timestamp_to_datetime,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"uint32_t, DateTime*"
+datetime_datetime_to_timestamp,Function,Other libraries and assets,bridged_subset,uint32_t,DateTime*
+datetime_get_days_per_month,Function,Other libraries and assets,bridged_subset,uint8_t,"_Bool, uint8_t"
+datetime_get_days_per_year,Function,Other libraries and assets,bridged_subset,uint16_t,uint16_t
+datetime_is_leap_year,Function,Other libraries and assets,bridged_subset,_Bool,uint16_t
+datetime_timestamp_to_datetime,Function,Other libraries and assets,bridged_subset,void,"uint32_t, DateTime*"
 datetime_validate_datetime,Function,Other libraries and assets,not_bridged,_Bool,DateTime*
-dialog_ex_alloc,Function,GUI modules,native_export_needs_arm_bridge,DialogEx*,
+dialog_ex_alloc,Function,GUI modules,bridged_subset,DialogEx*,
 dialog_ex_disable_extended_events,Function,GUI modules,not_bridged,void,DialogEx*
 dialog_ex_enable_extended_events,Function,GUI modules,not_bridged,void,DialogEx*
-dialog_ex_free,Function,GUI modules,native_export_needs_arm_bridge,void,DialogEx*
-dialog_ex_get_view,Function,GUI modules,native_export_needs_arm_bridge,View*,DialogEx*
-dialog_ex_reset,Function,GUI modules,native_export_needs_arm_bridge,void,DialogEx*
-dialog_ex_set_center_button_text,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, const char*"
-dialog_ex_set_context,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, void*"
-dialog_ex_set_header,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, const char*, uint8_t, uint8_t, Align, Align"
+dialog_ex_free,Function,GUI modules,bridged_subset,void,DialogEx*
+dialog_ex_get_view,Function,GUI modules,bridged_subset,View*,DialogEx*
+dialog_ex_reset,Function,GUI modules,bridged_subset,void,DialogEx*
+dialog_ex_set_center_button_text,Function,GUI modules,bridged_subset,void,"DialogEx*, const char*"
+dialog_ex_set_context,Function,GUI modules,bridged_subset,void,"DialogEx*, void*"
+dialog_ex_set_header,Function,GUI modules,bridged_subset,void,"DialogEx*, const char*, uint8_t, uint8_t, Align, Align"
 dialog_ex_set_icon,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, uint8_t, uint8_t, const Icon*"
-dialog_ex_set_left_button_text,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, const char*"
-dialog_ex_set_result_callback,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, DialogExResultCallback"
-dialog_ex_set_right_button_text,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, const char*"
-dialog_ex_set_text,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogEx*, const char*, uint8_t, uint8_t, Align, Align"
+dialog_ex_set_left_button_text,Function,GUI modules,bridged_subset,void,"DialogEx*, const char*"
+dialog_ex_set_result_callback,Function,GUI modules,bridged_subset,void,"DialogEx*, DialogExResultCallback"
+dialog_ex_set_right_button_text,Function,GUI modules,bridged_subset,void,"DialogEx*, const char*"
+dialog_ex_set_text,Function,GUI modules,bridged_subset,void,"DialogEx*, const char*, uint8_t, uint8_t, Align, Align"
 dialog_file_browser_set_basic_options,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogsFileBrowserOptions*, const char*, const Icon*"
 dialog_file_browser_show,Function,GUI modules,native_export_needs_arm_bridge,_Bool,"DialogsApp*, FuriString*, FuriString*, const DialogsFileBrowserOptions*"
-dialog_message_alloc,Function,GUI modules,native_export_needs_arm_bridge,DialogMessage*,
-dialog_message_free,Function,GUI modules,native_export_needs_arm_bridge,void,DialogMessage*
-dialog_message_set_buttons,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogMessage*, const char*, const char*, const char*"
-dialog_message_set_header,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogMessage*, const char*, uint8_t, uint8_t, Align, Align"
+dialog_message_alloc,Function,GUI modules,bridged_subset,DialogMessage*,
+dialog_message_free,Function,GUI modules,bridged_subset,void,DialogMessage*
+dialog_message_set_buttons,Function,GUI modules,bridged_subset,void,"DialogMessage*, const char*, const char*, const char*"
+dialog_message_set_header,Function,GUI modules,bridged_subset,void,"DialogMessage*, const char*, uint8_t, uint8_t, Align, Align"
 dialog_message_set_icon,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogMessage*, const Icon*, uint8_t, uint8_t"
-dialog_message_set_text,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogMessage*, const char*, uint8_t, uint8_t, Align, Align"
-dialog_message_show,Function,GUI modules,native_export_needs_arm_bridge,DialogMessageButton,"DialogsApp*, const DialogMessage*"
-dialog_message_show_storage_error,Function,GUI modules,native_export_needs_arm_bridge,void,"DialogsApp*, const char*"
+dialog_message_set_text,Function,GUI modules,bridged_subset,void,"DialogMessage*, const char*, uint8_t, uint8_t, Align, Align"
+dialog_message_show,Function,GUI modules,bridged_subset,DialogMessageButton,"DialogsApp*, const DialogMessage*"
+dialog_message_show_storage_error,Function,GUI modules,bridged_subset,void,"DialogsApp*, const char*"
 digital_sequence_add_signal,Function,Other libraries and assets,not_bridged,void,"DigitalSequence*, uint8_t"
 digital_sequence_register_signal,Function,Other libraries and assets,not_bridged,void,"DigitalSequence*, uint8_t, const DigitalSignal*"
 digital_sequence_transmit,Function,Other libraries and assets,not_bridged,void,DigitalSequence*
@@ -332,15 +332,15 @@ digital_signal_add_period_with_level,Function,Other libraries and assets,not_bri
 digital_signal_get_size,Function,Other libraries and assets,not_bridged,uint32_t,const DigitalSignal*
 digital_signal_get_start_level,Function,Other libraries and assets,not_bridged,_Bool,const DigitalSignal*
 digital_signal_set_start_level,Function,Other libraries and assets,not_bridged,void,"DigitalSignal*, _Bool"
-dir_walk_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,DirWalk*,Storage*
+dir_walk_alloc,Function,Other libraries and assets,bridged_subset,DirWalk*,Storage*
 dir_walk_close,Function,Other libraries and assets,not_bridged,void,DirWalk*
-dir_walk_free,Function,Other libraries and assets,native_export_needs_arm_bridge,void,DirWalk*
+dir_walk_free,Function,Other libraries and assets,bridged_subset,void,DirWalk*
 dir_walk_get_error,Function,Other libraries and assets,not_bridged,FS_Error,DirWalk*
-dir_walk_open,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"DirWalk*, const char*"
-dir_walk_read,Function,Other libraries and assets,native_export_needs_arm_bridge,DirWalkResult,"DirWalk*, FuriString*, FileInfo*"
+dir_walk_open,Function,Other libraries and assets,bridged_subset,_Bool,"DirWalk*, const char*"
+dir_walk_read,Function,Other libraries and assets,bridged_subset,DirWalkResult,"DirWalk*, FuriString*, FileInfo*"
 dir_walk_set_filter_cb,Function,Other libraries and assets,not_bridged,void,"DirWalk*, DirWalkFilterCb, void*"
-dir_walk_set_recursive,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"DirWalk*, _Bool"
-dolphin_deed,Function,Other libraries and assets,native_export_needs_arm_bridge,void,DolphinDeed
+dir_walk_set_recursive,Function,Other libraries and assets,bridged_subset,void,"DirWalk*, _Bool"
+dolphin_deed,Function,Other libraries and assets,bridged_subset,void,DolphinDeed
 dolphin_deed_get_app,Function,Other libraries and assets,not_bridged,DolphinApp,DolphinDeed
 dolphin_deed_get_app_limit,Function,Other libraries and assets,not_bridged,uint8_t,DolphinApp
 dolphin_deed_get_weight,Function,Other libraries and assets,not_bridged,uint8_t,DolphinDeed
@@ -353,24 +353,24 @@ dolphin_upgrade_level,Function,Other libraries and assets,not_bridged,void,Dolph
 elements_bold_rounded_frame,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, size_t"
 elements_bubble,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, size_t"
 elements_bubble_str,Function,Drawing,not_bridged,void,"Canvas*, int32_t, int32_t, const char*, Align, Align"
-elements_button_center,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, const char*"
+elements_button_center,Function,Drawing,bridged_subset,void,"Canvas*, const char*"
 elements_button_down,Function,Drawing,not_bridged,void,"Canvas*, const char*"
-elements_button_left,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, const char*"
-elements_button_right,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, const char*"
+elements_button_left,Function,Drawing,bridged_subset,void,"Canvas*, const char*"
+elements_button_right,Function,Drawing,bridged_subset,void,"Canvas*, const char*"
 elements_button_up,Function,Drawing,not_bridged,void,"Canvas*, const char*"
 elements_frame,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, size_t"
-elements_multiline_text,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, const char*"
+elements_multiline_text,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, const char*"
 elements_multiline_text_aligned,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, Align, Align, const char*"
 elements_multiline_text_framed,Function,Drawing,not_bridged,void,"Canvas*, int32_t, int32_t, const char*"
 elements_progress_bar,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, float"
 elements_progress_bar_with_text,Function,Drawing,not_bridged,void,"Canvas*, int32_t, int32_t, size_t, float, const char*"
 elements_scrollable_text_line,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, FuriString*, size_t, _Bool"
 elements_scrollbar,Function,Drawing,not_bridged,void,"Canvas*, size_t, size_t"
-elements_scrollbar_pos,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, size_t, size_t"
+elements_scrollbar_pos,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, size_t, size_t, size_t"
 elements_slightly_rounded_box,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, size_t"
 elements_slightly_rounded_frame,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, size_t"
 elements_string_fit_width,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, FuriString*, size_t"
-elements_text_box,Function,Drawing,native_export_needs_arm_bridge,void,"Canvas*, int32_t, int32_t, size_t, size_t, Align, Align, const char*, _Bool"
+elements_text_box,Function,Drawing,bridged_subset,void,"Canvas*, int32_t, int32_t, size_t, size_t, Align, Align, const char*, _Bool"
 elf_resolve_from_hashtable,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"const ElfApiInterface*, uint32_t, Elf32_Addr*"
 elf_symbolname_hash,Function,Other libraries and assets,not_bridged,uint32_t,const char*
 em4305_write,Function,Other libraries and assets,not_bridged,void,LFRFIDEM4305*
@@ -428,10 +428,10 @@ file_browser_worker_set_item_callback,Function,Other libraries and assets,not_br
 file_browser_worker_set_list_callback,Function,Other libraries and assets,not_bridged,void,"BrowserWorker*, BrowserWorkerListLoadCallback"
 file_browser_worker_set_long_load_callback,Function,Other libraries and assets,not_bridged,void,"BrowserWorker*, BrowserWorkerLongLoadCallback"
 file_info_is_dir,Function,Other libraries and assets,not_bridged,_Bool,const FileInfo*
-file_stream_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,Stream*,Storage*
-file_stream_close,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,Stream*
+file_stream_alloc,Function,Other libraries and assets,bridged_subset,Stream*,Storage*
+file_stream_close,Function,Other libraries and assets,bridged_subset,_Bool,Stream*
 file_stream_get_error,Function,Other libraries and assets,not_bridged,FS_Error,Stream*
-file_stream_open,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"Stream*, const char*, FS_AccessMode, FS_OpenMode"
+file_stream_open,Function,Other libraries and assets,bridged_subset,_Bool,"Stream*, const char*, FS_AccessMode, FS_OpenMode"
 filesystem_api_error_get_desc,Function,Other libraries and assets,not_bridged,const char*,FS_Error
 firmware_api_interface,Variable,Other libraries and assets,not_bridged,const ElfApiInterface* const,
 flipper_application_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,FlipperApplication*,"Storage*, const ElfApiInterface*"
@@ -450,79 +450,79 @@ flipper_application_plugin_get_descriptor,Function,Other libraries and assets,na
 flipper_application_preload,Function,Other libraries and assets,native_export_needs_arm_bridge,FlipperApplicationPreloadStatus,"FlipperApplication*, const char*"
 flipper_application_preload_manifest,Function,Other libraries and assets,not_bridged,FlipperApplicationPreloadStatus,"FlipperApplication*, const char*"
 flipper_application_preload_status_to_string,Function,Other libraries and assets,not_bridged,const char*,FlipperApplicationPreloadStatus
-flipper_format_buffered_file_alloc,Function,Storage,native_export_needs_arm_bridge,FlipperFormat*,Storage*
+flipper_format_buffered_file_alloc,Function,Storage,bridged_subset,FlipperFormat*,Storage*
 flipper_format_buffered_file_close,Function,Storage,not_bridged,_Bool,FlipperFormat*
 flipper_format_buffered_file_open_always,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*"
-flipper_format_buffered_file_open_existing,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*"
+flipper_format_buffered_file_open_existing,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*"
 flipper_format_delete_key,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*"
-flipper_format_file_alloc,Function,Storage,native_export_needs_arm_bridge,FlipperFormat*,Storage*
-flipper_format_file_close,Function,Storage,native_export_needs_arm_bridge,_Bool,FlipperFormat*
-flipper_format_file_open_always,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*"
-flipper_format_file_open_append,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*"
-flipper_format_file_open_existing,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*"
-flipper_format_file_open_new,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*"
-flipper_format_free,Function,Storage,native_export_needs_arm_bridge,void,FlipperFormat*
-flipper_format_get_raw_stream,Function,Storage,native_export_needs_arm_bridge,Stream*,FlipperFormat*
-flipper_format_get_value_count,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, uint32_t*"
-flipper_format_insert_or_update_bool,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const _Bool*, const uint16_t"
-flipper_format_insert_or_update_float,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const float*, const uint16_t"
-flipper_format_insert_or_update_hex,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const uint8_t*, const uint16_t"
+flipper_format_file_alloc,Function,Storage,bridged_subset,FlipperFormat*,Storage*
+flipper_format_file_close,Function,Storage,bridged_subset,_Bool,FlipperFormat*
+flipper_format_file_open_always,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*"
+flipper_format_file_open_append,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*"
+flipper_format_file_open_existing,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*"
+flipper_format_file_open_new,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*"
+flipper_format_free,Function,Storage,bridged_subset,void,FlipperFormat*
+flipper_format_get_raw_stream,Function,Storage,bridged_subset,Stream*,FlipperFormat*
+flipper_format_get_value_count,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, uint32_t*"
+flipper_format_insert_or_update_bool,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const _Bool*, const uint16_t"
+flipper_format_insert_or_update_float,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const float*, const uint16_t"
+flipper_format_insert_or_update_hex,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const uint8_t*, const uint16_t"
 flipper_format_insert_or_update_int32,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, const int32_t*, const uint16_t"
 flipper_format_insert_or_update_string,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, FuriString*"
-flipper_format_insert_or_update_string_cstr,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const char*"
-flipper_format_insert_or_update_uint32,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const uint32_t*, const uint16_t"
+flipper_format_insert_or_update_string_cstr,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const char*"
+flipper_format_insert_or_update_uint32,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const uint32_t*, const uint16_t"
 flipper_format_key_exist,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*"
-flipper_format_read_bool,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, _Bool*, const uint16_t"
-flipper_format_read_float,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, float*, const uint16_t"
-flipper_format_read_header,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, FuriString*, uint32_t*"
-flipper_format_read_hex,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, uint8_t*, const uint16_t"
+flipper_format_read_bool,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, _Bool*, const uint16_t"
+flipper_format_read_float,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, float*, const uint16_t"
+flipper_format_read_header,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, FuriString*, uint32_t*"
+flipper_format_read_hex,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, uint8_t*, const uint16_t"
 flipper_format_read_hex_uint64,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, uint64_t*, const uint16_t"
-flipper_format_read_int32,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, int32_t*, const uint16_t"
-flipper_format_read_string,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, FuriString*"
-flipper_format_read_uint32,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, uint32_t*, const uint16_t"
-flipper_format_rewind,Function,Storage,native_export_needs_arm_bridge,_Bool,FlipperFormat*
+flipper_format_read_int32,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, int32_t*, const uint16_t"
+flipper_format_read_string,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, FuriString*"
+flipper_format_read_uint32,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, uint32_t*, const uint16_t"
+flipper_format_rewind,Function,Storage,bridged_subset,_Bool,FlipperFormat*
 flipper_format_seek,Function,Storage,not_bridged,_Bool,"FlipperFormat*, int32_t, FlipperFormatOffset"
-flipper_format_seek_to_end,Function,Storage,native_export_needs_arm_bridge,_Bool,FlipperFormat*
+flipper_format_seek_to_end,Function,Storage,bridged_subset,_Bool,FlipperFormat*
 flipper_format_set_strict_mode,Function,Storage,not_bridged,void,"FlipperFormat*, _Bool"
 flipper_format_stream_delete_key_and_write,Function,Storage,not_bridged,_Bool,"Stream*, FlipperStreamWriteData*, _Bool"
 flipper_format_stream_get_value_count,Function,Storage,not_bridged,_Bool,"Stream*, const char*, uint32_t*, _Bool"
 flipper_format_stream_read_value_line,Function,Storage,not_bridged,_Bool,"Stream*, const char*, FlipperStreamValue, void*, size_t, _Bool"
 flipper_format_stream_write_comment_cstr,Function,Storage,not_bridged,_Bool,"Stream*, const char*"
 flipper_format_stream_write_value_line,Function,Storage,not_bridged,_Bool,"Stream*, FlipperStreamWriteData*"
-flipper_format_string_alloc,Function,Storage,native_export_needs_arm_bridge,FlipperFormat*,
+flipper_format_string_alloc,Function,Storage,bridged_subset,FlipperFormat*,
 flipper_format_tell,Function,Storage,not_bridged,size_t,FlipperFormat*
 flipper_format_update_bool,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, const _Bool*, const uint16_t"
 flipper_format_update_float,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, const float*, const uint16_t"
-flipper_format_update_hex,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const uint8_t*, const uint16_t"
+flipper_format_update_hex,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const uint8_t*, const uint16_t"
 flipper_format_update_int32,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, const int32_t*, const uint16_t"
 flipper_format_update_string,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, FuriString*"
 flipper_format_update_string_cstr,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, const char*"
-flipper_format_update_uint32,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const uint32_t*, const uint16_t"
-flipper_format_write_bool,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const _Bool*, const uint16_t"
+flipper_format_update_uint32,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const uint32_t*, const uint16_t"
+flipper_format_write_bool,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const _Bool*, const uint16_t"
 flipper_format_write_comment,Function,Storage,not_bridged,_Bool,"FlipperFormat*, FuriString*"
-flipper_format_write_comment_cstr,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*"
+flipper_format_write_comment_cstr,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*"
 flipper_format_write_empty_line,Function,Storage,not_bridged,_Bool,FlipperFormat*
-flipper_format_write_float,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const float*, const uint16_t"
+flipper_format_write_float,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const float*, const uint16_t"
 flipper_format_write_header,Function,Storage,not_bridged,_Bool,"FlipperFormat*, FuriString*, const uint32_t"
-flipper_format_write_header_cstr,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const uint32_t"
-flipper_format_write_hex,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const uint8_t*, const uint16_t"
+flipper_format_write_header_cstr,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const uint32_t"
+flipper_format_write_hex,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const uint8_t*, const uint16_t"
 flipper_format_write_hex_uint64,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, const uint64_t*, const uint16_t"
 flipper_format_write_int32,Function,Storage,not_bridged,_Bool,"FlipperFormat*, const char*, const int32_t*, const uint16_t"
-flipper_format_write_string,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, FuriString*"
-flipper_format_write_string_cstr,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const char*"
-flipper_format_write_uint32,Function,Storage,native_export_needs_arm_bridge,_Bool,"FlipperFormat*, const char*, const uint32_t*, const uint16_t"
+flipper_format_write_string,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, FuriString*"
+flipper_format_write_string_cstr,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const char*"
+flipper_format_write_uint32,Function,Storage,bridged_subset,_Bool,"FlipperFormat*, const char*, const uint32_t*, const uint16_t"
 float_is_equal,Function,Other libraries and assets,not_bridged,_Bool,"float, float"
 free,Function,Other libraries and assets,bridged_subset,void,void*
 furi_delay_ms,Function,OS services,bridged_subset,void,uint32_t
-furi_delay_tick,Function,OS services,native_export_needs_arm_bridge,void,uint32_t
+furi_delay_tick,Function,OS services,bridged_subset,void,uint32_t
 furi_delay_until_tick,Function,OS services,not_bridged,FuriStatus,uint32_t
-furi_delay_us,Function,OS services,not_bridged,void,uint32_t
-furi_event_flag_alloc,Function,OS services,native_export_needs_arm_bridge,FuriEventFlag*,
+furi_delay_us,Function,OS services,native_export_needs_arm_bridge,void,uint32_t
+furi_event_flag_alloc,Function,OS services,bridged_subset,FuriEventFlag*,
 furi_event_flag_clear,Function,OS services,not_bridged,uint32_t,"FuriEventFlag*, uint32_t"
-furi_event_flag_free,Function,OS services,native_export_needs_arm_bridge,void,FuriEventFlag*
+furi_event_flag_free,Function,OS services,bridged_subset,void,FuriEventFlag*
 furi_event_flag_get,Function,OS services,not_bridged,uint32_t,FuriEventFlag*
-furi_event_flag_set,Function,OS services,native_export_needs_arm_bridge,uint32_t,"FuriEventFlag*, uint32_t"
-furi_event_flag_wait,Function,OS services,native_export_needs_arm_bridge,uint32_t,"FuriEventFlag*, uint32_t, uint32_t, uint32_t"
+furi_event_flag_set,Function,OS services,bridged_subset,uint32_t,"FuriEventFlag*, uint32_t"
+furi_event_flag_wait,Function,OS services,bridged_subset,uint32_t,"FuriEventFlag*, uint32_t, uint32_t, uint32_t"
 furi_event_loop_alloc,Function,OS services,not_bridged,FuriEventLoop*,
 furi_event_loop_free,Function,OS services,not_bridged,void,FuriEventLoop*
 furi_event_loop_is_subscribed,Function,OS services,not_bridged,_Bool,"FuriEventLoop*, FuriEventLoopObject*"
@@ -564,11 +564,11 @@ furi_hal_bt_dump_state,Function,Hardware HAL,not_bridged,void,FuriString*
 furi_hal_bt_ensure_c2_mode,Function,Hardware HAL,not_bridged,_Bool,BleGlueC2Mode
 furi_hal_bt_extra_beacon_get_config,Function,Hardware HAL,not_bridged,const GapExtraBeaconConfig*,
 furi_hal_bt_extra_beacon_get_data,Function,Hardware HAL,not_bridged,uint8_t,uint8_t*
-furi_hal_bt_extra_beacon_is_active,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
-furi_hal_bt_extra_beacon_set_config,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,const GapExtraBeaconConfig*
-furi_hal_bt_extra_beacon_set_data,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"const uint8_t*, uint8_t"
-furi_hal_bt_extra_beacon_start,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
-furi_hal_bt_extra_beacon_stop,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
+furi_hal_bt_extra_beacon_is_active,Function,Hardware HAL,bridged_subset,_Bool,
+furi_hal_bt_extra_beacon_set_config,Function,Hardware HAL,bridged_subset,_Bool,const GapExtraBeaconConfig*
+furi_hal_bt_extra_beacon_set_data,Function,Hardware HAL,bridged_subset,_Bool,"const uint8_t*, uint8_t"
+furi_hal_bt_extra_beacon_start,Function,Hardware HAL,bridged_subset,_Bool,
+furi_hal_bt_extra_beacon_stop,Function,Hardware HAL,bridged_subset,_Bool,
 furi_hal_bt_get_key_storage_buff,Function,Hardware HAL,not_bridged,void,"uint8_t**, uint16_t*"
 furi_hal_bt_get_radio_stack,Function,Hardware HAL,not_bridged,FuriHalBtStack,
 furi_hal_bt_get_rssi,Function,Hardware HAL,not_bridged,float,
@@ -582,14 +582,14 @@ furi_hal_bt_nvm_sram_sem_acquire,Function,Hardware HAL,not_bridged,void,
 furi_hal_bt_nvm_sram_sem_release,Function,Hardware HAL,not_bridged,void,
 furi_hal_bt_reinit,Function,Hardware HAL,not_bridged,void,
 furi_hal_bt_set_key_storage_change_callback,Function,Hardware HAL,not_bridged,void,"BleGlueKeyStorageChangedCallback, void*"
-furi_hal_bt_start_advertising,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_bt_start_advertising,Function,Hardware HAL,bridged_subset,void,
 furi_hal_bt_start_app,Function,Hardware HAL,not_bridged,FuriHalBleProfileBase*,"const FuriHalBleProfileTemplate*, FuriHalBleProfileParams, const GapRootSecurityKeys*, GapEventCallback, void*"
 furi_hal_bt_start_packet_rx,Function,Hardware HAL,not_bridged,void,"uint8_t, uint8_t"
 furi_hal_bt_start_packet_tx,Function,Hardware HAL,not_bridged,void,"uint8_t, uint8_t, uint8_t"
 furi_hal_bt_start_radio_stack,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_bt_start_rx,Function,Hardware HAL,not_bridged,void,uint8_t
 furi_hal_bt_start_tone_tx,Function,Hardware HAL,not_bridged,void,"uint8_t, uint8_t"
-furi_hal_bt_stop_advertising,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_bt_stop_advertising,Function,Hardware HAL,bridged_subset,void,
 furi_hal_bt_stop_packet_test,Function,Hardware HAL,not_bridged,uint16_t,
 furi_hal_bt_stop_rx,Function,Hardware HAL,not_bridged,void,
 furi_hal_bt_stop_tone_tx,Function,Hardware HAL,not_bridged,void,
@@ -617,17 +617,17 @@ furi_hal_cortex_timer_get,Function,Hardware HAL,not_bridged,FuriHalCortexTimer,u
 furi_hal_cortex_timer_is_expired,Function,Hardware HAL,not_bridged,_Bool,FuriHalCortexTimer
 furi_hal_cortex_timer_wait,Function,Hardware HAL,not_bridged,void,FuriHalCortexTimer
 furi_hal_crypto_ctr,Function,Hardware HAL,not_bridged,_Bool,"const uint8_t*, const uint8_t*, const uint8_t*, uint8_t*, size_t"
-furi_hal_crypto_decrypt,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"const uint8_t*, uint8_t*, size_t"
-furi_hal_crypto_enclave_ensure_key,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,uint8_t
-furi_hal_crypto_enclave_load_key,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"uint8_t, const uint8_t*"
+furi_hal_crypto_decrypt,Function,Hardware HAL,bridged_subset,_Bool,"const uint8_t*, uint8_t*, size_t"
+furi_hal_crypto_enclave_ensure_key,Function,Hardware HAL,bridged_subset,_Bool,uint8_t
+furi_hal_crypto_enclave_load_key,Function,Hardware HAL,bridged_subset,_Bool,"uint8_t, const uint8_t*"
 furi_hal_crypto_enclave_store_key,Function,Hardware HAL,not_bridged,_Bool,"FuriHalCryptoKey*, uint8_t*"
-furi_hal_crypto_enclave_unload_key,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,uint8_t
+furi_hal_crypto_enclave_unload_key,Function,Hardware HAL,bridged_subset,_Bool,uint8_t
 furi_hal_crypto_enclave_verify,Function,Hardware HAL,not_bridged,_Bool,"uint8_t*, uint8_t*"
-furi_hal_crypto_encrypt,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"const uint8_t*, uint8_t*, size_t"
+furi_hal_crypto_encrypt,Function,Hardware HAL,bridged_subset,_Bool,"const uint8_t*, uint8_t*, size_t"
 furi_hal_crypto_gcm,Function,Hardware HAL,not_bridged,_Bool,"const uint8_t*, const uint8_t*, const uint8_t*, size_t, const uint8_t*, uint8_t*, size_t, uint8_t*, _Bool"
 furi_hal_crypto_gcm_decrypt_and_verify,Function,Hardware HAL,not_bridged,FuriHalCryptoGCMState,"const uint8_t*, const uint8_t*, const uint8_t*, size_t, const uint8_t*, uint8_t*, size_t, const uint8_t*"
 furi_hal_crypto_gcm_encrypt_and_tag,Function,Hardware HAL,not_bridged,FuriHalCryptoGCMState,"const uint8_t*, const uint8_t*, const uint8_t*, size_t, const uint8_t*, uint8_t*, size_t, uint8_t*"
-furi_hal_crypto_load_key,Function,Hardware HAL,not_bridged,_Bool,"const uint8_t*, const uint8_t*"
+furi_hal_crypto_load_key,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"const uint8_t*, const uint8_t*"
 furi_hal_crypto_unload_key,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_debug_disable,Function,Hardware HAL,not_bridged,void,
 furi_hal_debug_enable,Function,Hardware HAL,not_bridged,void,
@@ -645,10 +645,10 @@ furi_hal_hid_consumer_key_press,Function,Hardware HAL,not_bridged,_Bool,uint16_t
 furi_hal_hid_consumer_key_release,Function,Hardware HAL,not_bridged,_Bool,uint16_t
 furi_hal_hid_consumer_key_release_all,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_hid_get_led_state,Function,Hardware HAL,not_bridged,uint8_t,
-furi_hal_hid_is_connected,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
-furi_hal_hid_kb_press,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,uint16_t
-furi_hal_hid_kb_release,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,uint16_t
-furi_hal_hid_kb_release_all,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
+furi_hal_hid_is_connected,Function,Hardware HAL,bridged_subset,_Bool,
+furi_hal_hid_kb_press,Function,Hardware HAL,bridged_subset,_Bool,uint16_t
+furi_hal_hid_kb_release,Function,Hardware HAL,bridged_subset,_Bool,uint16_t
+furi_hal_hid_kb_release_all,Function,Hardware HAL,bridged_subset,_Bool,
 furi_hal_hid_mouse_move,Function,Hardware HAL,not_bridged,_Bool,"int8_t, int8_t"
 furi_hal_hid_mouse_press,Function,Hardware HAL,not_bridged,_Bool,uint8_t
 furi_hal_hid_mouse_release,Function,Hardware HAL,not_bridged,_Bool,uint8_t
@@ -694,18 +694,18 @@ furi_hal_infrared_async_tx_set_signal_sent_isr_callback,Function,Hardware HAL,no
 furi_hal_infrared_async_tx_start,Function,Hardware HAL,native_export_needs_arm_bridge,void,"uint32_t, float"
 furi_hal_infrared_async_tx_stop,Function,Hardware HAL,not_bridged,void,
 furi_hal_infrared_async_tx_wait_termination,Function,Hardware HAL,native_export_needs_arm_bridge,void,
-furi_hal_infrared_detect_tx_output,Function,Hardware HAL,native_export_needs_arm_bridge,FuriHalInfraredTxPin,
+furi_hal_infrared_detect_tx_output,Function,Hardware HAL,bridged_subset,FuriHalInfraredTxPin,
 furi_hal_infrared_is_busy,Function,Hardware HAL,not_bridged,_Bool,
-furi_hal_infrared_set_tx_output,Function,Hardware HAL,native_export_needs_arm_bridge,void,FuriHalInfraredTxPin
+furi_hal_infrared_set_tx_output,Function,Hardware HAL,bridged_subset,void,FuriHalInfraredTxPin
 furi_hal_interrupt_get_name,Function,Hardware HAL,not_bridged,const char*,uint8_t
 furi_hal_interrupt_get_time_in_isr_total,Function,Hardware HAL,not_bridged,uint32_t,
 furi_hal_interrupt_set_isr,Function,Hardware HAL,not_bridged,void,"FuriHalInterruptId, FuriHalInterruptISR, void*"
 furi_hal_interrupt_set_isr_ex,Function,Hardware HAL,not_bridged,void,"FuriHalInterruptId, FuriHalInterruptPriority, FuriHalInterruptISR, void*"
 furi_hal_light_blink_set_color,Function,Hardware HAL,not_bridged,void,Light
-furi_hal_light_blink_start,Function,Hardware HAL,not_bridged,void,"Light, uint8_t, uint16_t, uint16_t"
-furi_hal_light_blink_stop,Function,Hardware HAL,not_bridged,void,
+furi_hal_light_blink_start,Function,Hardware HAL,native_export_needs_arm_bridge,void,"Light, uint8_t, uint16_t, uint16_t"
+furi_hal_light_blink_stop,Function,Hardware HAL,native_export_needs_arm_bridge,void,
 furi_hal_light_sequence,Function,Hardware HAL,not_bridged,void,const char*
-furi_hal_light_set,Function,Hardware HAL,not_bridged,void,"Light, uint8_t"
+furi_hal_light_set,Function,Hardware HAL,native_export_needs_arm_bridge,void,"Light, uint8_t"
 furi_hal_memory_alloc,Function,Hardware HAL,not_bridged,void*,size_t
 furi_hal_memory_get_free,Function,Hardware HAL,not_bridged,size_t,
 furi_hal_memory_init,Function,Hardware HAL,not_bridged,void,
@@ -720,9 +720,9 @@ furi_hal_nfc_acquire,Function,Hardware HAL,native_export_needs_arm_bridge,FuriHa
 furi_hal_nfc_event_start,Function,Hardware HAL,not_bridged,FuriHalNfcError,
 furi_hal_nfc_event_stop,Function,Hardware HAL,not_bridged,FuriHalNfcError,
 furi_hal_nfc_felica_listener_set_sensf_res_data,Function,Hardware HAL,not_bridged,FuriHalNfcError,"const uint8_t*, const uint8_t, const uint8_t*, const uint8_t, const uint16_t"
-furi_hal_nfc_field_detect_start,Function,Hardware HAL,native_export_needs_arm_bridge,FuriHalNfcError,
-furi_hal_nfc_field_detect_stop,Function,Hardware HAL,native_export_needs_arm_bridge,FuriHalNfcError,
-furi_hal_nfc_field_is_present,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
+furi_hal_nfc_field_detect_start,Function,Hardware HAL,bridged_subset,FuriHalNfcError,
+furi_hal_nfc_field_detect_stop,Function,Hardware HAL,bridged_subset,FuriHalNfcError,
+furi_hal_nfc_field_is_present,Function,Hardware HAL,bridged_subset,_Bool,
 furi_hal_nfc_init,Function,Hardware HAL,not_bridged,FuriHalNfcError,
 furi_hal_nfc_is_hal_ready,Function,Hardware HAL,not_bridged,FuriHalNfcError,
 furi_hal_nfc_iso14443a_listener_set_col_res_data,Function,Hardware HAL,not_bridged,FuriHalNfcError,"uint8_t*, uint8_t, uint8_t*, uint8_t"
@@ -759,26 +759,26 @@ furi_hal_power_check_otg_fault,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_power_check_otg_status,Function,Hardware HAL,not_bridged,void,
 furi_hal_power_debug_get,Function,Hardware HAL,not_bridged,void,"PropertyValueCallback, void*"
 furi_hal_power_disable_external_3_3v,Function,Hardware HAL,not_bridged,void,
-furi_hal_power_disable_otg,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_power_disable_otg,Function,Hardware HAL,bridged_subset,void,
 furi_hal_power_enable_external_3_3v,Function,Hardware HAL,not_bridged,void,
-furi_hal_power_enable_otg,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
+furi_hal_power_enable_otg,Function,Hardware HAL,bridged_subset,_Bool,
 furi_hal_power_gauge_is_ok,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_power_get_bat_health_pct,Function,Hardware HAL,not_bridged,uint8_t,
 furi_hal_power_get_battery_charge_voltage_limit,Function,Hardware HAL,not_bridged,float,
 furi_hal_power_get_battery_current,Function,Hardware HAL,not_bridged,float,FuriHalPowerIC
 furi_hal_power_get_battery_design_capacity,Function,Hardware HAL,not_bridged,uint32_t,
-furi_hal_power_get_battery_full_capacity,Function,Hardware HAL,native_export_needs_arm_bridge,uint32_t,
-furi_hal_power_get_battery_remaining_capacity,Function,Hardware HAL,native_export_needs_arm_bridge,uint32_t,
+furi_hal_power_get_battery_full_capacity,Function,Hardware HAL,bridged_subset,uint32_t,
+furi_hal_power_get_battery_remaining_capacity,Function,Hardware HAL,bridged_subset,uint32_t,
 furi_hal_power_get_battery_temperature,Function,Hardware HAL,not_bridged,float,FuriHalPowerIC
 furi_hal_power_get_battery_voltage,Function,Hardware HAL,not_bridged,float,FuriHalPowerIC
 furi_hal_power_get_pct,Function,Hardware HAL,not_bridged,uint8_t,
 furi_hal_power_get_usb_voltage,Function,Hardware HAL,not_bridged,float,
 furi_hal_power_info_get,Function,Hardware HAL,not_bridged,void,"PropertyValueCallback, char, void*"
-furi_hal_power_insomnia_enter,Function,Hardware HAL,native_export_needs_arm_bridge,void,
-furi_hal_power_insomnia_exit,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_power_insomnia_enter,Function,Hardware HAL,bridged_subset,void,
+furi_hal_power_insomnia_exit,Function,Hardware HAL,bridged_subset,void,
 furi_hal_power_is_charging,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_power_is_charging_done,Function,Hardware HAL,not_bridged,_Bool,
-furi_hal_power_is_otg_enabled,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
+furi_hal_power_is_otg_enabled,Function,Hardware HAL,bridged_subset,_Bool,
 furi_hal_power_is_shutdown_requested,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_power_off,Function,Hardware HAL,not_bridged,void,
 furi_hal_power_reset,Function,Hardware HAL,not_bridged,void,
@@ -786,13 +786,13 @@ furi_hal_power_set_battery_charge_voltage_limit,Function,Hardware HAL,not_bridge
 furi_hal_power_shutdown,Function,Hardware HAL,not_bridged,void,
 furi_hal_power_sleep,Function,Hardware HAL,not_bridged,void,
 furi_hal_power_sleep_available,Function,Hardware HAL,not_bridged,_Bool,
-furi_hal_power_suppress_charge_enter,Function,Hardware HAL,native_export_needs_arm_bridge,void,
-furi_hal_power_suppress_charge_exit,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_power_suppress_charge_enter,Function,Hardware HAL,bridged_subset,void,
+furi_hal_power_suppress_charge_exit,Function,Hardware HAL,bridged_subset,void,
 furi_hal_pwm_is_running,Function,Hardware HAL,not_bridged,_Bool,FuriHalPwmOutputId
 furi_hal_pwm_set_params,Function,Hardware HAL,not_bridged,void,"FuriHalPwmOutputId, uint32_t, uint8_t"
 furi_hal_pwm_start,Function,Hardware HAL,not_bridged,void,"FuriHalPwmOutputId, uint32_t, uint8_t"
 furi_hal_pwm_stop,Function,Hardware HAL,not_bridged,void,FuriHalPwmOutputId
-furi_hal_random_fill_buf,Function,Hardware HAL,native_export_needs_arm_bridge,void,"uint8_t*, uint32_t"
+furi_hal_random_fill_buf,Function,Hardware HAL,bridged_subset,void,"uint8_t*, uint32_t"
 furi_hal_random_get,Function,Hardware HAL,bridged_subset,uint32_t,
 furi_hal_random_init,Function,Hardware HAL,not_bridged,void,
 furi_hal_region_get,Function,Hardware HAL,not_bridged,const FuriHalRegion*,
@@ -807,9 +807,9 @@ furi_hal_resources_pin_by_number,Function,Hardware HAL,not_bridged,const GpioPin
 furi_hal_rfid_comp_set_callback,Function,Hardware HAL,not_bridged,void,"FuriHalRfidCompCallback, void*"
 furi_hal_rfid_comp_start,Function,Hardware HAL,not_bridged,void,
 furi_hal_rfid_comp_stop,Function,Hardware HAL,not_bridged,void,
-furi_hal_rfid_field_detect_start,Function,Hardware HAL,native_export_needs_arm_bridge,void,
-furi_hal_rfid_field_detect_stop,Function,Hardware HAL,native_export_needs_arm_bridge,void,
-furi_hal_rfid_field_is_present,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,uint32_t*
+furi_hal_rfid_field_detect_start,Function,Hardware HAL,bridged_subset,void,
+furi_hal_rfid_field_detect_stop,Function,Hardware HAL,bridged_subset,void,
+furi_hal_rfid_field_is_present,Function,Hardware HAL,bridged_subset,_Bool,uint32_t*
 furi_hal_rfid_pin_pull_pulldown,Function,Hardware HAL,not_bridged,void,
 furi_hal_rfid_pin_pull_release,Function,Hardware HAL,not_bridged,void,
 furi_hal_rfid_pins_reset,Function,Hardware HAL,not_bridged,void,
@@ -824,19 +824,19 @@ furi_hal_rfid_tim_read_pause,Function,Hardware HAL,not_bridged,void,
 furi_hal_rfid_tim_read_start,Function,Hardware HAL,not_bridged,void,"float, float"
 furi_hal_rfid_tim_read_stop,Function,Hardware HAL,not_bridged,void,
 furi_hal_rtc_get_boot_mode,Function,Hardware HAL,not_bridged,FuriHalRtcBootMode,
-furi_hal_rtc_get_datetime,Function,Hardware HAL,native_export_needs_arm_bridge,void,DateTime*
+furi_hal_rtc_get_datetime,Function,Hardware HAL,bridged_subset,void,DateTime*
 furi_hal_rtc_get_fault_data,Function,Hardware HAL,not_bridged,uint32_t,
 furi_hal_rtc_get_heap_track_mode,Function,Hardware HAL,not_bridged,FuriHalRtcHeapTrackMode,
 furi_hal_rtc_get_locale_dateformat,Function,Hardware HAL,not_bridged,FuriHalRtcLocaleDateFormat,
 furi_hal_rtc_get_locale_timeformat,Function,Hardware HAL,not_bridged,FuriHalRtcLocaleTimeFormat,
-furi_hal_rtc_get_locale_units,Function,Hardware HAL,native_export_needs_arm_bridge,FuriHalRtcLocaleUnits,
+furi_hal_rtc_get_locale_units,Function,Hardware HAL,bridged_subset,FuriHalRtcLocaleUnits,
 furi_hal_rtc_get_log_baud_rate,Function,Hardware HAL,not_bridged,FuriHalRtcLogBaudRate,
 furi_hal_rtc_get_log_device,Function,Hardware HAL,not_bridged,FuriHalRtcLogDevice,
 furi_hal_rtc_get_log_level,Function,Hardware HAL,not_bridged,uint8_t,
 furi_hal_rtc_get_pin_fails,Function,Hardware HAL,not_bridged,uint32_t,
 furi_hal_rtc_get_register,Function,Hardware HAL,not_bridged,uint32_t,FuriHalRtcRegister
-furi_hal_rtc_get_timestamp,Function,Hardware HAL,native_export_needs_arm_bridge,uint32_t,
-furi_hal_rtc_is_flag_set,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,FuriHalRtcFlag
+furi_hal_rtc_get_timestamp,Function,Hardware HAL,bridged_subset,uint32_t,
+furi_hal_rtc_is_flag_set,Function,Hardware HAL,bridged_subset,_Bool,FuriHalRtcFlag
 furi_hal_rtc_reset_flag,Function,Hardware HAL,not_bridged,void,FuriHalRtcFlag
 furi_hal_rtc_reset_registers,Function,Hardware HAL,not_bridged,void,
 furi_hal_rtc_set_boot_mode,Function,Hardware HAL,not_bridged,void,FuriHalRtcBootMode
@@ -887,12 +887,12 @@ furi_hal_serial_set_br,Function,Hardware HAL,not_bridged,void,"FuriHalSerialHand
 furi_hal_serial_suspend,Function,Hardware HAL,not_bridged,void,FuriHalSerialHandle*
 furi_hal_serial_tx,Function,Hardware HAL,not_bridged,void,"FuriHalSerialHandle*, const uint8_t*, size_t"
 furi_hal_serial_tx_wait_complete,Function,Hardware HAL,not_bridged,void,FuriHalSerialHandle*
-furi_hal_speaker_acquire,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,uint32_t
-furi_hal_speaker_is_mine,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,
-furi_hal_speaker_release,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_speaker_acquire,Function,Hardware HAL,bridged_subset,_Bool,uint32_t
+furi_hal_speaker_is_mine,Function,Hardware HAL,bridged_subset,_Bool,
+furi_hal_speaker_release,Function,Hardware HAL,bridged_subset,void,
 furi_hal_speaker_set_volume,Function,Hardware HAL,not_bridged,void,float
 furi_hal_speaker_start,Function,Hardware HAL,native_export_needs_arm_bridge,void,"float, float"
-furi_hal_speaker_stop,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_speaker_stop,Function,Hardware HAL,bridged_subset,void,
 furi_hal_spi_acquire,Function,Hardware HAL,native_export_needs_arm_bridge,void,const FuriHalSpiBusHandle*
 furi_hal_spi_bus_d,Variable,Hardware HAL,not_bridged,FuriHalSpiBus,
 furi_hal_spi_bus_deinit,Function,Hardware HAL,not_bridged,void,FuriHalSpiBus*
@@ -906,38 +906,38 @@ furi_hal_spi_bus_handle_sd_slow,Variable,Hardware HAL,not_bridged,const FuriHalS
 furi_hal_spi_bus_handle_subghz,Variable,Hardware HAL,not_bridged,const FuriHalSpiBusHandle,
 furi_hal_spi_bus_init,Function,Hardware HAL,not_bridged,void,FuriHalSpiBus*
 furi_hal_spi_bus_r,Variable,Hardware HAL,not_bridged,FuriHalSpiBus,
-furi_hal_spi_bus_rx,Function,Hardware HAL,not_bridged,_Bool,"const FuriHalSpiBusHandle*, uint8_t*, size_t, uint32_t"
+furi_hal_spi_bus_rx,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"const FuriHalSpiBusHandle*, uint8_t*, size_t, uint32_t"
 furi_hal_spi_bus_trx,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"const FuriHalSpiBusHandle*, const uint8_t*, uint8_t*, size_t, uint32_t"
 furi_hal_spi_bus_trx_dma,Function,Hardware HAL,not_bridged,_Bool,"const FuriHalSpiBusHandle*, uint8_t*, uint8_t*, size_t, uint32_t"
-furi_hal_spi_bus_tx,Function,Hardware HAL,not_bridged,_Bool,"const FuriHalSpiBusHandle*, const uint8_t*, size_t, uint32_t"
+furi_hal_spi_bus_tx,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"const FuriHalSpiBusHandle*, const uint8_t*, size_t, uint32_t"
 furi_hal_spi_preset_1edge_low_16m,Variable,Hardware HAL,not_bridged,const LL_SPI_InitTypeDef,
 furi_hal_spi_preset_1edge_low_2m,Variable,Hardware HAL,not_bridged,const LL_SPI_InitTypeDef,
 furi_hal_spi_preset_1edge_low_4m,Variable,Hardware HAL,not_bridged,const LL_SPI_InitTypeDef,
 furi_hal_spi_preset_1edge_low_8m,Variable,Hardware HAL,not_bridged,const LL_SPI_InitTypeDef,
 furi_hal_spi_preset_2edge_low_8m,Variable,Hardware HAL,not_bridged,const LL_SPI_InitTypeDef,
 furi_hal_spi_release,Function,Hardware HAL,native_export_needs_arm_bridge,void,const FuriHalSpiBusHandle*
-furi_hal_subghz_flush_rx,Function,Hardware HAL,not_bridged,void,
+furi_hal_subghz_flush_rx,Function,Hardware HAL,native_export_needs_arm_bridge,void,
 furi_hal_subghz_flush_tx,Function,Hardware HAL,not_bridged,void,
 furi_hal_subghz_get_data_gpio,Function,Hardware HAL,not_bridged,const GpioPin*,
 furi_hal_subghz_get_lqi,Function,Hardware HAL,not_bridged,uint8_t,
-furi_hal_subghz_get_rssi,Function,Hardware HAL,not_bridged,float,
-furi_hal_subghz_idle,Function,Hardware HAL,not_bridged,void,
+furi_hal_subghz_get_rssi,Function,Hardware HAL,native_export_needs_arm_bridge,float,
+furi_hal_subghz_idle,Function,Hardware HAL,native_export_needs_arm_bridge,void,
 furi_hal_subghz_is_async_tx_complete,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_subghz_is_frequency_valid,Function,Hardware HAL,not_bridged,_Bool,uint32_t
 furi_hal_subghz_is_rx_data_crc_valid,Function,Hardware HAL,not_bridged,_Bool,
-furi_hal_subghz_load_custom_preset,Function,Hardware HAL,not_bridged,void,const uint8_t*
+furi_hal_subghz_load_custom_preset,Function,Hardware HAL,native_export_needs_arm_bridge,void,const uint8_t*
 furi_hal_subghz_load_patable,Function,Hardware HAL,not_bridged,void,const uint8_t[8]
 furi_hal_subghz_load_registers,Function,Hardware HAL,not_bridged,void,const uint8_t*
 furi_hal_subghz_read_packet,Function,Hardware HAL,not_bridged,void,"uint8_t*, uint8_t*"
-furi_hal_subghz_reset,Function,Hardware HAL,not_bridged,void,
-furi_hal_subghz_rx,Function,Hardware HAL,not_bridged,void,
+furi_hal_subghz_reset,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_subghz_rx,Function,Hardware HAL,native_export_needs_arm_bridge,void,
 furi_hal_subghz_rx_pipe_not_empty,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_subghz_set_async_mirror_pin,Function,Hardware HAL,not_bridged,void,const GpioPin*
 furi_hal_subghz_set_frequency,Function,Hardware HAL,not_bridged,uint32_t,uint32_t
-furi_hal_subghz_set_frequency_and_path,Function,Hardware HAL,not_bridged,uint32_t,uint32_t
+furi_hal_subghz_set_frequency_and_path,Function,Hardware HAL,native_export_needs_arm_bridge,uint32_t,uint32_t
 furi_hal_subghz_set_path,Function,Hardware HAL,not_bridged,void,FuriHalSubGhzPath
 furi_hal_subghz_shutdown,Function,Hardware HAL,not_bridged,void,
-furi_hal_subghz_sleep,Function,Hardware HAL,not_bridged,void,
+furi_hal_subghz_sleep,Function,Hardware HAL,native_export_needs_arm_bridge,void,
 furi_hal_subghz_start_async_rx,Function,Hardware HAL,not_bridged,void,"FuriHalSubGhzCaptureCallback, void*"
 furi_hal_subghz_start_async_tx,Function,Hardware HAL,not_bridged,_Bool,"FuriHalSubGhzAsyncTxCallback, void*"
 furi_hal_subghz_stop_async_rx,Function,Hardware HAL,not_bridged,void,
@@ -953,7 +953,7 @@ furi_hal_usb_lock,Function,Hardware HAL,not_bridged,void,
 furi_hal_usb_reinit,Function,Hardware HAL,not_bridged,void,
 furi_hal_usb_set_config,Function,Hardware HAL,native_export_needs_arm_bridge,_Bool,"FuriHalUsbInterface*, void*"
 furi_hal_usb_set_state_callback,Function,Hardware HAL,not_bridged,void,"FuriHalUsbStateCallback, void*"
-furi_hal_usb_unlock,Function,Hardware HAL,native_export_needs_arm_bridge,void,
+furi_hal_usb_unlock,Function,Hardware HAL,bridged_subset,void,
 furi_hal_version_do_i_belong_here,Function,Hardware HAL,not_bridged,_Bool,
 furi_hal_version_get_ble_local_device_name_ptr,Function,Hardware HAL,not_bridged,const char*,
 furi_hal_version_get_ble_mac,Function,Hardware HAL,not_bridged,const uint8_t*,
@@ -977,10 +977,10 @@ furi_hal_version_get_name_ptr,Function,Hardware HAL,not_bridged,const char*,
 furi_hal_version_get_ncc_id,Function,Hardware HAL,not_bridged,const char*,
 furi_hal_version_get_otp_version,Function,Hardware HAL,not_bridged,FuriHalVersionOtpVersion,
 furi_hal_version_get_srrc_id,Function,Hardware HAL,not_bridged,const char*,
-furi_hal_version_uid,Function,Hardware HAL,native_export_needs_arm_bridge,const uint8_t*,
-furi_hal_version_uid_size,Function,Hardware HAL,native_export_needs_arm_bridge,size_t,
+furi_hal_version_uid,Function,Hardware HAL,bridged_subset,const uint8_t*,
+furi_hal_version_uid_size,Function,Hardware HAL,bridged_subset,size_t,
 furi_hal_vibro_on,Function,Hardware HAL,not_bridged,void,_Bool
-furi_kernel_get_tick_frequency,Function,OS services,native_export_needs_arm_bridge,uint32_t,
+furi_kernel_get_tick_frequency,Function,OS services,bridged_subset,uint32_t,
 furi_kernel_is_irq_or_masked,Function,OS services,not_bridged,_Bool,
 furi_kernel_is_running,Function,OS services,not_bridged,_Bool,
 furi_kernel_lock,Function,OS services,not_bridged,int32_t,
@@ -990,11 +990,11 @@ furi_log_add_handler,Function,OS services,not_bridged,_Bool,FuriLogHandler
 furi_log_get_level,Function,OS services,not_bridged,FuriLogLevel,
 furi_log_level_from_string,Function,OS services,not_bridged,_Bool,"const char*, FuriLogLevel*"
 furi_log_level_to_string,Function,OS services,not_bridged,_Bool,"FuriLogLevel, const char**"
-furi_log_print_format,Function,OS services,native_export_needs_arm_bridge,void,"FuriLogLevel, const char*, const char*, ..."
+furi_log_print_format,Function,OS services,bridged_subset,void,"FuriLogLevel, const char*, const char*, ..."
 furi_log_print_raw_format,Function,OS services,not_bridged,void,"FuriLogLevel, const char*, ..."
 furi_log_puts,Function,OS services,not_bridged,void,const char*
 furi_log_remove_handler,Function,OS services,not_bridged,_Bool,FuriLogHandler
-furi_log_set_level,Function,OS services,native_export_needs_arm_bridge,void,FuriLogLevel
+furi_log_set_level,Function,OS services,bridged_subset,void,FuriLogLevel
 furi_log_tx,Function,OS services,not_bridged,void,"const uint8_t*, size_t"
 furi_message_queue_alloc,Function,OS services,bridged_subset,FuriMessageQueue*,"uint32_t, uint32_t"
 furi_message_queue_free,Function,OS services,bridged_subset,void,FuriMessageQueue*
@@ -1006,11 +1006,11 @@ furi_message_queue_get_space,Function,OS services,not_bridged,uint32_t,FuriMessa
 furi_message_queue_put,Function,OS services,bridged_subset,FuriStatus,"FuriMessageQueue*, const void*, uint32_t"
 furi_message_queue_reset,Function,OS services,bridged_subset,FuriStatus,FuriMessageQueue*
 furi_ms_to_ticks,Function,OS services,bridged_subset,uint32_t,uint32_t
-furi_mutex_acquire,Function,OS services,native_export_needs_arm_bridge,FuriStatus,"FuriMutex*, uint32_t"
-furi_mutex_alloc,Function,OS services,native_export_needs_arm_bridge,FuriMutex*,FuriMutexType
-furi_mutex_free,Function,OS services,native_export_needs_arm_bridge,void,FuriMutex*
+furi_mutex_acquire,Function,OS services,bridged_subset,FuriStatus,"FuriMutex*, uint32_t"
+furi_mutex_alloc,Function,OS services,bridged_subset,FuriMutex*,FuriMutexType
+furi_mutex_free,Function,OS services,bridged_subset,void,FuriMutex*
 furi_mutex_get_owner,Function,OS services,not_bridged,FuriThreadId,FuriMutex*
-furi_mutex_release,Function,OS services,native_export_needs_arm_bridge,FuriStatus,FuriMutex*
+furi_mutex_release,Function,OS services,bridged_subset,FuriStatus,FuriMutex*
 furi_pubsub_alloc,Function,OS services,not_bridged,FuriPubSub*,
 furi_pubsub_free,Function,OS services,not_bridged,void,FuriPubSub*
 furi_pubsub_publish,Function,OS services,not_bridged,void,"FuriPubSub*, void*"
@@ -1022,12 +1022,12 @@ furi_record_destroy,Function,OS services,not_bridged,_Bool,const char*
 furi_record_exists,Function,OS services,not_bridged,_Bool,const char*
 furi_record_open,Function,OS services,bridged_subset,void*,const char*
 furi_run,Function,OS services,not_bridged,void,
-furi_semaphore_acquire,Function,OS services,native_export_needs_arm_bridge,FuriStatus,"FuriSemaphore*, uint32_t"
-furi_semaphore_alloc,Function,OS services,native_export_needs_arm_bridge,FuriSemaphore*,"uint32_t, uint32_t"
-furi_semaphore_free,Function,OS services,native_export_needs_arm_bridge,void,FuriSemaphore*
+furi_semaphore_acquire,Function,OS services,bridged_subset,FuriStatus,"FuriSemaphore*, uint32_t"
+furi_semaphore_alloc,Function,OS services,bridged_subset,FuriSemaphore*,"uint32_t, uint32_t"
+furi_semaphore_free,Function,OS services,bridged_subset,void,FuriSemaphore*
 furi_semaphore_get_count,Function,OS services,not_bridged,uint32_t,FuriSemaphore*
 furi_semaphore_get_space,Function,OS services,not_bridged,uint32_t,FuriSemaphore*
-furi_semaphore_release,Function,OS services,native_export_needs_arm_bridge,FuriStatus,FuriSemaphore*
+furi_semaphore_release,Function,OS services,bridged_subset,FuriStatus,FuriSemaphore*
 furi_stream_buffer_alloc,Function,OS services,not_bridged,FuriStreamBuffer*,"size_t, size_t"
 furi_stream_buffer_bytes_available,Function,OS services,not_bridged,size_t,FuriStreamBuffer*
 furi_stream_buffer_free,Function,OS services,not_bridged,void,FuriStreamBuffer*
@@ -1039,60 +1039,60 @@ furi_stream_buffer_send,Function,OS services,not_bridged,size_t,"FuriStreamBuffe
 furi_stream_buffer_spaces_available,Function,OS services,not_bridged,size_t,FuriStreamBuffer*
 furi_stream_get_trigger_level,Function,OS services,not_bridged,size_t,FuriStreamBuffer*
 furi_stream_set_trigger_level,Function,OS services,not_bridged,_Bool,"FuriStreamBuffer*, size_t"
-furi_string_alloc,Function,Strings,native_export_needs_arm_bridge,FuriString*,
+furi_string_alloc,Function,Strings,bridged_subset,FuriString*,
 furi_string_alloc_move,Function,Strings,not_bridged,FuriString*,FuriString*
 furi_string_alloc_printf,Function,Strings,native_export_needs_arm_bridge,FuriString*,"const char[], ..."
-furi_string_alloc_set,Function,Strings,native_export_needs_arm_bridge,FuriString*,const FuriString*
-furi_string_alloc_set_str,Function,Strings,native_export_needs_arm_bridge,FuriString*,const char[]
+furi_string_alloc_set,Function,Strings,bridged_subset,FuriString*,const FuriString*
+furi_string_alloc_set_str,Function,Strings,bridged_subset,FuriString*,const char[]
 furi_string_alloc_vprintf,Function,Strings,not_bridged,FuriString*,"const char[], va_list"
-furi_string_cat,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, const FuriString*"
+furi_string_cat,Function,Strings,bridged_subset,void,"FuriString*, const FuriString*"
 furi_string_cat_printf,Function,Strings,native_export_needs_arm_bridge,int,"FuriString*, const char[], ..."
-furi_string_cat_str,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, const char[]"
+furi_string_cat_str,Function,Strings,bridged_subset,void,"FuriString*, const char[]"
 furi_string_cat_vprintf,Function,Strings,not_bridged,int,"FuriString*, const char[], va_list"
-furi_string_cmp,Function,Strings,native_export_needs_arm_bridge,int,"const FuriString*, const FuriString*"
-furi_string_cmp_str,Function,Strings,native_export_needs_arm_bridge,int,"const FuriString*, const char[]"
+furi_string_cmp,Function,Strings,bridged_subset,int,"const FuriString*, const FuriString*"
+furi_string_cmp_str,Function,Strings,bridged_subset,int,"const FuriString*, const char[]"
 furi_string_cmpi,Function,Strings,not_bridged,int,"const FuriString*, const FuriString*"
-furi_string_cmpi_str,Function,Strings,native_export_needs_arm_bridge,int,"const FuriString*, const char[]"
-furi_string_empty,Function,Strings,native_export_needs_arm_bridge,_Bool,const FuriString*
+furi_string_cmpi_str,Function,Strings,bridged_subset,int,"const FuriString*, const char[]"
+furi_string_empty,Function,Strings,bridged_subset,_Bool,const FuriString*
 furi_string_end_with,Function,Strings,not_bridged,_Bool,"const FuriString*, const FuriString*"
 furi_string_end_with_str,Function,Strings,not_bridged,_Bool,"const FuriString*, const char[]"
 furi_string_end_withi,Function,Strings,not_bridged,_Bool,"const FuriString*, const FuriString*"
 furi_string_end_withi_str,Function,Strings,not_bridged,_Bool,"const FuriString*, const char[]"
-furi_string_equal,Function,Strings,native_export_needs_arm_bridge,_Bool,"const FuriString*, const FuriString*"
-furi_string_equal_str,Function,Strings,native_export_needs_arm_bridge,_Bool,"const FuriString*, const char[]"
-furi_string_free,Function,Strings,native_export_needs_arm_bridge,void,FuriString*
-furi_string_get_char,Function,Strings,native_export_needs_arm_bridge,char,"const FuriString*, size_t"
-furi_string_get_cstr,Function,Strings,native_export_needs_arm_bridge,const char*,const FuriString*
+furi_string_equal,Function,Strings,bridged_subset,_Bool,"const FuriString*, const FuriString*"
+furi_string_equal_str,Function,Strings,bridged_subset,_Bool,"const FuriString*, const char[]"
+furi_string_free,Function,Strings,bridged_subset,void,FuriString*
+furi_string_get_char,Function,Strings,bridged_subset,char,"const FuriString*, size_t"
+furi_string_get_cstr,Function,Strings,bridged_subset,const char*,const FuriString*
 furi_string_hash,Function,Strings,not_bridged,size_t,const FuriString*
-furi_string_left,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, size_t"
+furi_string_left,Function,Strings,bridged_subset,void,"FuriString*, size_t"
 furi_string_mid,Function,Strings,not_bridged,void,"FuriString*, size_t, size_t"
-furi_string_move,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, FuriString*"
+furi_string_move,Function,Strings,bridged_subset,void,"FuriString*, FuriString*"
 furi_string_printf,Function,Strings,native_export_needs_arm_bridge,int,"FuriString*, const char[], ..."
-furi_string_push_back,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, char"
+furi_string_push_back,Function,Strings,bridged_subset,void,"FuriString*, char"
 furi_string_replace,Function,Strings,not_bridged,size_t,"FuriString*, FuriString*, FuriString*, size_t"
 furi_string_replace_all,Function,Strings,not_bridged,void,"FuriString*, const FuriString*, const FuriString*"
-furi_string_replace_all_str,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, const char[], const char[]"
+furi_string_replace_all_str,Function,Strings,bridged_subset,void,"FuriString*, const char[], const char[]"
 furi_string_replace_at,Function,Strings,not_bridged,void,"FuriString*, size_t, size_t, const char[]"
-furi_string_replace_str,Function,Strings,native_export_needs_arm_bridge,size_t,"FuriString*, const char[], const char[], size_t"
-furi_string_reserve,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, size_t"
-furi_string_reset,Function,Strings,native_export_needs_arm_bridge,void,FuriString*
-furi_string_right,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, size_t"
+furi_string_replace_str,Function,Strings,bridged_subset,size_t,"FuriString*, const char[], const char[], size_t"
+furi_string_reserve,Function,Strings,bridged_subset,void,"FuriString*, size_t"
+furi_string_reset,Function,Strings,bridged_subset,void,FuriString*
+furi_string_right,Function,Strings,bridged_subset,void,"FuriString*, size_t"
 furi_string_search,Function,Strings,not_bridged,size_t,"const FuriString*, const FuriString*, size_t"
-furi_string_search_char,Function,Strings,native_export_needs_arm_bridge,size_t,"const FuriString*, char, size_t"
-furi_string_search_rchar,Function,Strings,native_export_needs_arm_bridge,size_t,"const FuriString*, char, size_t"
-furi_string_search_str,Function,Strings,native_export_needs_arm_bridge,size_t,"const FuriString*, const char[], size_t"
-furi_string_set,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, FuriString*"
-furi_string_set_char,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, size_t, const char"
-furi_string_set_n,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, const FuriString*, size_t, size_t"
-furi_string_set_str,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, const char[]"
-furi_string_set_strn,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, const char[], size_t"
-furi_string_size,Function,Strings,native_export_needs_arm_bridge,size_t,const FuriString*
+furi_string_search_char,Function,Strings,bridged_subset,size_t,"const FuriString*, char, size_t"
+furi_string_search_rchar,Function,Strings,bridged_subset,size_t,"const FuriString*, char, size_t"
+furi_string_search_str,Function,Strings,bridged_subset,size_t,"const FuriString*, const char[], size_t"
+furi_string_set,Function,Strings,bridged_subset,void,"FuriString*, FuriString*"
+furi_string_set_char,Function,Strings,bridged_subset,void,"FuriString*, size_t, const char"
+furi_string_set_n,Function,Strings,bridged_subset,void,"FuriString*, const FuriString*, size_t, size_t"
+furi_string_set_str,Function,Strings,bridged_subset,void,"FuriString*, const char[]"
+furi_string_set_strn,Function,Strings,bridged_subset,void,"FuriString*, const char[], size_t"
+furi_string_size,Function,Strings,bridged_subset,size_t,const FuriString*
 furi_string_start_with,Function,Strings,not_bridged,_Bool,"const FuriString*, const FuriString*"
-furi_string_start_with_str,Function,Strings,native_export_needs_arm_bridge,_Bool,"const FuriString*, const char[]"
+furi_string_start_with_str,Function,Strings,bridged_subset,_Bool,"const FuriString*, const char[]"
 furi_string_swap,Function,Strings,not_bridged,void,"FuriString*, FuriString*"
-furi_string_trim,Function,Strings,native_export_needs_arm_bridge,void,"FuriString*, const char[]"
+furi_string_trim,Function,Strings,bridged_subset,void,"FuriString*, const char[]"
 furi_string_utf8_decode,Function,Strings,not_bridged,void,"char, FuriStringUTF8State*, FuriStringUnicodeValue*"
-furi_string_utf8_length,Function,Strings,native_export_needs_arm_bridge,size_t,FuriString*
+furi_string_utf8_length,Function,Strings,bridged_subset,size_t,FuriString*
 furi_string_utf8_push,Function,Strings,not_bridged,void,"FuriString*, FuriStringUnicodeValue"
 furi_string_vprintf,Function,Strings,not_bridged,int,"FuriString*, const char[], va_list"
 furi_thread_alloc,Function,OS services,native_export_needs_arm_bridge,FuriThread*,
@@ -1208,8 +1208,8 @@ gpio_usb_dp,Variable,Other libraries and assets,not_bridged,const GpioPin,
 gpio_vibro,Variable,Other libraries and assets,not_bridged,const GpioPin,
 gui_add_framebuffer_callback,Function,Views and dispatcher,not_bridged,void,"Gui*, GuiCanvasCommitCallback, void*"
 gui_add_view_port,Function,Views and dispatcher,bridged_subset,void,"Gui*, ViewPort*, GuiLayer"
-gui_direct_draw_acquire,Function,Views and dispatcher,native_export_needs_arm_bridge,Canvas*,Gui*
-gui_direct_draw_release,Function,Views and dispatcher,native_export_needs_arm_bridge,void,Gui*
+gui_direct_draw_acquire,Function,Views and dispatcher,bridged_subset,Canvas*,Gui*
+gui_direct_draw_release,Function,Views and dispatcher,bridged_subset,void,Gui*
 gui_get_framebuffer_size,Function,Views and dispatcher,not_bridged,size_t,const Gui*
 gui_remove_framebuffer_callback,Function,Views and dispatcher,not_bridged,void,"Gui*, GuiCanvasCommitCallback, void*"
 gui_remove_view_port,Function,Views and dispatcher,bridged_subset,void,"Gui*, ViewPort*"
@@ -1217,7 +1217,7 @@ gui_set_lockdown,Function,Views and dispatcher,not_bridged,void,"Gui*, _Bool"
 gui_view_port_send_to_back,Function,Views and dispatcher,not_bridged,void,"Gui*, ViewPort*"
 gui_view_port_send_to_front,Function,Views and dispatcher,not_bridged,void,"Gui*, ViewPort*"
 hex_char_to_hex_nibble,Function,Other libraries and assets,not_bridged,_Bool,"char, uint8_t*"
-hex_char_to_uint8,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"char, char, uint8_t*"
+hex_char_to_uint8,Function,Other libraries and assets,bridged_subset,_Bool,"char, char, uint8_t*"
 hex_chars_to_uint64,Function,Other libraries and assets,not_bridged,_Bool,"const char*, uint64_t*"
 hex_chars_to_uint8,Function,Other libraries and assets,not_bridged,_Bool,"const char*, uint8_t*"
 ibutton_key_alloc,Function,Other libraries and assets,not_bridged,iButtonKey*,size_t
@@ -1279,31 +1279,31 @@ infrared_decode,Function,Infrared,not_bridged,const InfraredMessage*,"InfraredDe
 infrared_encode,Function,Infrared,not_bridged,InfraredStatus,"InfraredEncoderHandler*, uint32_t*, _Bool*"
 infrared_free_decoder,Function,Infrared,not_bridged,void,InfraredDecoderHandler*
 infrared_free_encoder,Function,Infrared,not_bridged,void,InfraredEncoderHandler*
-infrared_get_protocol_address_length,Function,Infrared,native_export_needs_arm_bridge,uint8_t,InfraredProtocol
-infrared_get_protocol_by_name,Function,Infrared,native_export_needs_arm_bridge,InfraredProtocol,const char*
-infrared_get_protocol_command_length,Function,Infrared,native_export_needs_arm_bridge,uint8_t,InfraredProtocol
+infrared_get_protocol_address_length,Function,Infrared,bridged_subset,uint8_t,InfraredProtocol
+infrared_get_protocol_by_name,Function,Infrared,bridged_subset,InfraredProtocol,const char*
+infrared_get_protocol_command_length,Function,Infrared,bridged_subset,uint8_t,InfraredProtocol
 infrared_get_protocol_duty_cycle,Function,Infrared,not_bridged,float,InfraredProtocol
 infrared_get_protocol_frequency,Function,Infrared,not_bridged,uint32_t,InfraredProtocol
 infrared_get_protocol_min_repeat_count,Function,Infrared,not_bridged,size_t,InfraredProtocol
-infrared_get_protocol_name,Function,Infrared,native_export_needs_arm_bridge,const char*,InfraredProtocol
-infrared_is_protocol_valid,Function,Infrared,native_export_needs_arm_bridge,_Bool,InfraredProtocol
+infrared_get_protocol_name,Function,Infrared,bridged_subset,const char*,InfraredProtocol
+infrared_is_protocol_valid,Function,Infrared,bridged_subset,_Bool,InfraredProtocol
 infrared_reset_decoder,Function,Infrared,not_bridged,void,InfraredDecoderHandler*
 infrared_reset_encoder,Function,Infrared,not_bridged,void,"InfraredEncoderHandler*, const InfraredMessage*"
-infrared_send,Function,Infrared,native_export_needs_arm_bridge,void,"const InfraredMessage*, int"
+infrared_send,Function,Infrared,bridged_subset,void,"const InfraredMessage*, int"
 infrared_send_raw,Function,Infrared,not_bridged,void,"const uint32_t[], uint32_t, _Bool"
-infrared_send_raw_ext,Function,Infrared,native_export_needs_arm_bridge,void,"const uint32_t[], uint32_t, _Bool, uint32_t, float"
-infrared_worker_alloc,Function,Infrared,native_export_needs_arm_bridge,InfraredWorker*,
-infrared_worker_free,Function,Infrared,native_export_needs_arm_bridge,void,InfraredWorker*
-infrared_worker_get_decoded_signal,Function,Infrared,native_export_needs_arm_bridge,const InfraredMessage*,const InfraredWorkerSignal*
-infrared_worker_get_raw_signal,Function,Infrared,native_export_needs_arm_bridge,void,"const InfraredWorkerSignal*, const uint32_t**, size_t*"
+infrared_send_raw_ext,Function,Infrared,bridged_subset,void,"const uint32_t[], uint32_t, _Bool, uint32_t, float"
+infrared_worker_alloc,Function,Infrared,bridged_subset,InfraredWorker*,
+infrared_worker_free,Function,Infrared,bridged_subset,void,InfraredWorker*
+infrared_worker_get_decoded_signal,Function,Infrared,bridged_subset,const InfraredMessage*,const InfraredWorkerSignal*
+infrared_worker_get_raw_signal,Function,Infrared,bridged_subset,void,"const InfraredWorkerSignal*, const uint32_t**, size_t*"
 infrared_worker_rx_enable_blink_on_receiving,Function,Infrared,not_bridged,void,"InfraredWorker*, _Bool"
 infrared_worker_rx_enable_signal_decoding,Function,Infrared,not_bridged,void,"InfraredWorker*, _Bool"
-infrared_worker_rx_set_received_signal_callback,Function,Infrared,native_export_needs_arm_bridge,void,"InfraredWorker*, InfraredWorkerReceivedSignalCallback, void*"
-infrared_worker_rx_start,Function,Infrared,native_export_needs_arm_bridge,void,InfraredWorker*
-infrared_worker_rx_stop,Function,Infrared,native_export_needs_arm_bridge,void,InfraredWorker*
+infrared_worker_rx_set_received_signal_callback,Function,Infrared,bridged_subset,void,"InfraredWorker*, InfraredWorkerReceivedSignalCallback, void*"
+infrared_worker_rx_start,Function,Infrared,bridged_subset,void,InfraredWorker*
+infrared_worker_rx_stop,Function,Infrared,bridged_subset,void,InfraredWorker*
 infrared_worker_set_decoded_signal,Function,Infrared,not_bridged,void,"InfraredWorker*, const InfraredMessage*"
 infrared_worker_set_raw_signal,Function,Infrared,not_bridged,void,"InfraredWorker*, const uint32_t*, size_t, uint32_t, float"
-infrared_worker_signal_is_decoded,Function,Infrared,native_export_needs_arm_bridge,_Bool,const InfraredWorkerSignal*
+infrared_worker_signal_is_decoded,Function,Infrared,bridged_subset,_Bool,const InfraredWorkerSignal*
 infrared_worker_tx_get_signal_steady_callback,Function,Infrared,not_bridged,InfraredWorkerGetSignalResponse,"void*, InfraredWorker*"
 infrared_worker_tx_set_get_signal_callback,Function,Infrared,not_bridged,void,"InfraredWorker*, InfraredWorkerGetSignalCallback, void*"
 infrared_worker_tx_set_signal_sent_callback,Function,Infrared,not_bridged,void,"InfraredWorker*, InfraredWorkerMessageSentCallback, void*"
@@ -1406,9 +1406,9 @@ iso15693_3_alloc,Function,NFC,not_bridged,Iso15693_3Data*,
 iso15693_3_copy,Function,NFC,not_bridged,void,"Iso15693_3Data*, const Iso15693_3Data*"
 iso15693_3_free,Function,NFC,not_bridged,void,Iso15693_3Data*
 iso15693_3_get_base_data,Function,NFC,not_bridged,Iso15693_3Data*,const Iso15693_3Data*
-iso15693_3_get_block_count,Function,NFC,native_export_needs_arm_bridge,uint16_t,const Iso15693_3Data*
+iso15693_3_get_block_count,Function,NFC,bridged_subset,uint16_t,const Iso15693_3Data*
 iso15693_3_get_block_data,Function,NFC,not_bridged,const uint8_t*,"const Iso15693_3Data*, uint8_t"
-iso15693_3_get_block_size,Function,NFC,native_export_needs_arm_bridge,uint8_t,const Iso15693_3Data*
+iso15693_3_get_block_size,Function,NFC,bridged_subset,uint8_t,const Iso15693_3Data*
 iso15693_3_get_device_name,Function,NFC,not_bridged,const char*,"const Iso15693_3Data*, NfcDeviceNameType"
 iso15693_3_get_manufacturer_id,Function,NFC,not_bridged,uint8_t,const Iso15693_3Data*
 iso15693_3_get_uid,Function,NFC,not_bridged,const uint8_t*,"const Iso15693_3Data*, size_t*"
@@ -1475,31 +1475,31 @@ loader_start,Function,Other libraries and assets,not_bridged,LoaderStatus,"Loade
 loader_start_detached_with_gui_error,Function,Other libraries and assets,not_bridged,void,"Loader*, const char*, const char*"
 loader_start_with_gui_error,Function,Other libraries and assets,not_bridged,LoaderStatus,"Loader*, const char*, const char*"
 loader_unlock,Function,Other libraries and assets,not_bridged,void,Loader*
-loading_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,Loading*,
-loading_free,Function,Other libraries and assets,native_export_needs_arm_bridge,void,Loading*
-loading_get_view,Function,Other libraries and assets,native_export_needs_arm_bridge,View*,Loading*
-locale_celsius_to_fahrenheit,Function,Other libraries and assets,native_export_needs_arm_bridge,float,float
-locale_fahrenheit_to_celsius,Function,Other libraries and assets,native_export_needs_arm_bridge,float,float
-locale_format_date,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"FuriString*, const DateTime*, const LocaleDateFormat, const char*"
-locale_format_time,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"FuriString*, const DateTime*, const LocaleTimeFormat, const _Bool"
-locale_get_date_format,Function,Other libraries and assets,native_export_needs_arm_bridge,LocaleDateFormat,
+loading_alloc,Function,Other libraries and assets,bridged_subset,Loading*,
+loading_free,Function,Other libraries and assets,bridged_subset,void,Loading*
+loading_get_view,Function,Other libraries and assets,bridged_subset,View*,Loading*
+locale_celsius_to_fahrenheit,Function,Other libraries and assets,bridged_subset,float,float
+locale_fahrenheit_to_celsius,Function,Other libraries and assets,bridged_subset,float,float
+locale_format_date,Function,Other libraries and assets,bridged_subset,void,"FuriString*, const DateTime*, const LocaleDateFormat, const char*"
+locale_format_time,Function,Other libraries and assets,bridged_subset,void,"FuriString*, const DateTime*, const LocaleTimeFormat, const _Bool"
+locale_get_date_format,Function,Other libraries and assets,bridged_subset,LocaleDateFormat,
 locale_get_measurement_unit,Function,Other libraries and assets,not_bridged,LocaleMeasurementUnits,
-locale_get_time_format,Function,Other libraries and assets,native_export_needs_arm_bridge,LocaleTimeFormat,
+locale_get_time_format,Function,Other libraries and assets,bridged_subset,LocaleTimeFormat,
 locale_set_date_format,Function,Other libraries and assets,not_bridged,void,LocaleDateFormat
 locale_set_measurement_unit,Function,Other libraries and assets,not_bridged,void,LocaleMeasurementUnits
 locale_set_time_format,Function,Other libraries and assets,not_bridged,void,LocaleTimeFormat
 malloc,Function,Other libraries and assets,bridged_subset,void*,size_t
-manchester_advance,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"ManchesterState, ManchesterEvent, ManchesterState*, _Bool*"
+manchester_advance,Function,Other libraries and assets,bridged_subset,_Bool,"ManchesterState, ManchesterEvent, ManchesterState*, _Bool*"
 manchester_encoder_advance,Function,Other libraries and assets,not_bridged,_Bool,"ManchesterEncoderState*, const _Bool, ManchesterEncoderResult*"
 manchester_encoder_finish,Function,Other libraries and assets,not_bridged,ManchesterEncoderResult,ManchesterEncoderState*
 manchester_encoder_reset,Function,Other libraries and assets,not_bridged,void,ManchesterEncoderState*
 maxim_crc8,Function,Other libraries and assets,not_bridged,uint8_t,"const uint8_t*, const uint8_t, const uint8_t"
 md5_calc_file,Function,Other libraries and assets,not_bridged,_Bool,"File*, const char*, unsigned char[16], FS_Error*"
 md5_string_calc_file,Function,Other libraries and assets,not_bridged,_Bool,"File*, const char*, FuriString*, FS_Error*"
-memchr,Function,Other libraries and assets,native_export_needs_arm_bridge,void*,"const void*, int, size_t"
-memcmp,Function,Other libraries and assets,native_export_needs_arm_bridge,int,"const void*, const void*, size_t"
+memchr,Function,Other libraries and assets,bridged_subset,void*,"const void*, int, size_t"
+memcmp,Function,Other libraries and assets,bridged_subset,int,"const void*, const void*, size_t"
 memcpy,Function,Other libraries and assets,bridged_subset,void*,"void*, const void*, size_t"
-memmgr_get_free_heap,Function,Other libraries and assets,native_export_needs_arm_bridge,size_t,
+memmgr_get_free_heap,Function,Other libraries and assets,bridged_subset,size_t,
 memmgr_get_minimum_free_heap,Function,Other libraries and assets,not_bridged,size_t,
 memmgr_get_total_heap,Function,Other libraries and assets,not_bridged,size_t,
 memmgr_heap_disable_thread_trace,Function,Other libraries and assets,not_bridged,void,FuriThreadId
@@ -1509,11 +1509,11 @@ memmgr_heap_get_thread_memory,Function,Other libraries and assets,not_bridged,si
 memmgr_heap_printf_free_blocks,Function,Other libraries and assets,not_bridged,void,
 memmove,Function,Other libraries and assets,bridged_subset,void*,"void*, const void*, size_t"
 memset,Function,Other libraries and assets,bridged_subset,void*,"void*, int, size_t"
-menu_add_item,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Menu*, const char*, const Icon*, uint32_t, MenuItemCallback, void*"
-menu_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,Menu*,
-menu_free,Function,Other libraries and assets,native_export_needs_arm_bridge,void,Menu*
-menu_get_view,Function,Other libraries and assets,native_export_needs_arm_bridge,View*,Menu*
-menu_reset,Function,Other libraries and assets,native_export_needs_arm_bridge,void,Menu*
+menu_add_item,Function,Other libraries and assets,bridged_subset,void,"Menu*, const char*, const Icon*, uint32_t, MenuItemCallback, void*"
+menu_alloc,Function,Other libraries and assets,bridged_subset,Menu*,
+menu_free,Function,Other libraries and assets,bridged_subset,void,Menu*
+menu_get_view,Function,Other libraries and assets,bridged_subset,View*,Menu*
+menu_reset,Function,Other libraries and assets,bridged_subset,void,Menu*
 menu_set_selected_item,Function,Other libraries and assets,not_bridged,void,"Menu*, uint32_t"
 message_blink_set_color_blue,Variable,Other libraries and assets,not_bridged,const NotificationMessage,
 message_blink_set_color_cyan,Variable,Other libraries and assets,not_bridged,const NotificationMessage,
@@ -1661,27 +1661,27 @@ message_red_255,Variable,Other libraries and assets,not_bridged,const Notificati
 message_sound_off,Variable,Other libraries and assets,not_bridged,const NotificationMessage,
 message_vibro_off,Variable,Other libraries and assets,not_bridged,const NotificationMessage,
 message_vibro_on,Variable,Other libraries and assets,not_bridged,const NotificationMessage,
-mf_classic_alloc,Function,NFC,native_export_needs_arm_bridge,MfClassicData*,
-mf_classic_block_to_value,Function,NFC,native_export_needs_arm_bridge,_Bool,"const MfClassicBlock*, int32_t*, uint8_t*"
+mf_classic_alloc,Function,NFC,bridged_subset,MfClassicData*,
+mf_classic_block_to_value,Function,NFC,bridged_subset,_Bool,"const MfClassicBlock*, int32_t*, uint8_t*"
 mf_classic_copy,Function,NFC,not_bridged,void,"MfClassicData*, const MfClassicData*"
-mf_classic_free,Function,NFC,native_export_needs_arm_bridge,void,MfClassicData*
+mf_classic_free,Function,NFC,bridged_subset,void,MfClassicData*
 mf_classic_get_base_data,Function,NFC,not_bridged,Iso14443_3aData*,const MfClassicData*
 mf_classic_get_blocks_num_in_sector,Function,NFC,not_bridged,uint8_t,uint8_t
 mf_classic_get_device_name,Function,NFC,not_bridged,const char*,"const MfClassicData*, NfcDeviceNameType"
-mf_classic_get_first_block_num_of_sector,Function,NFC,native_export_needs_arm_bridge,uint8_t,uint8_t
+mf_classic_get_first_block_num_of_sector,Function,NFC,bridged_subset,uint8_t,uint8_t
 mf_classic_get_key,Function,NFC,not_bridged,MfClassicKey,"const MfClassicData*, uint8_t, MfClassicKeyType"
 mf_classic_get_read_sectors_and_keys,Function,NFC,not_bridged,void,"const MfClassicData*, uint8_t*, uint8_t*"
-mf_classic_get_sector_by_block,Function,NFC,native_export_needs_arm_bridge,uint8_t,uint8_t
-mf_classic_get_sector_trailer_by_sector,Function,NFC,native_export_needs_arm_bridge,MfClassicSectorTrailer*,"const MfClassicData*, uint8_t"
-mf_classic_get_sector_trailer_num_by_block,Function,NFC,native_export_needs_arm_bridge,uint8_t,uint8_t
+mf_classic_get_sector_by_block,Function,NFC,bridged_subset,uint8_t,uint8_t
+mf_classic_get_sector_trailer_by_sector,Function,NFC,bridged_subset,MfClassicSectorTrailer*,"const MfClassicData*, uint8_t"
+mf_classic_get_sector_trailer_num_by_block,Function,NFC,bridged_subset,uint8_t,uint8_t
 mf_classic_get_sector_trailer_num_by_sector,Function,NFC,not_bridged,uint8_t,uint8_t
 mf_classic_get_total_block_num,Function,NFC,not_bridged,uint16_t,MfClassicType
-mf_classic_get_total_sectors_num,Function,NFC,native_export_needs_arm_bridge,uint8_t,MfClassicType
-mf_classic_get_uid,Function,NFC,native_export_needs_arm_bridge,const uint8_t*,"const MfClassicData*, size_t*"
+mf_classic_get_total_sectors_num,Function,NFC,bridged_subset,uint8_t,MfClassicType
+mf_classic_get_uid,Function,NFC,bridged_subset,const uint8_t*,"const MfClassicData*, size_t*"
 mf_classic_is_allowed_access,Function,NFC,not_bridged,_Bool,"MfClassicData*, uint8_t, MfClassicKeyType, MfClassicAction"
 mf_classic_is_allowed_access_data_block,Function,NFC,not_bridged,_Bool,"MfClassicSectorTrailer*, uint8_t, MfClassicKeyType, MfClassicAction"
-mf_classic_is_block_read,Function,NFC,native_export_needs_arm_bridge,_Bool,"const MfClassicData*, uint8_t"
-mf_classic_is_card_read,Function,NFC,native_export_needs_arm_bridge,_Bool,const MfClassicData*
+mf_classic_is_block_read,Function,NFC,bridged_subset,_Bool,"const MfClassicData*, uint8_t"
+mf_classic_is_card_read,Function,NFC,bridged_subset,_Bool,const MfClassicData*
 mf_classic_is_equal,Function,NFC,not_bridged,_Bool,"const MfClassicData*, const MfClassicData*"
 mf_classic_is_key_found,Function,NFC,not_bridged,_Bool,"const MfClassicData*, uint8_t, MfClassicKeyType"
 mf_classic_is_sector_read,Function,NFC,not_bridged,_Bool,"const MfClassicData*, uint8_t"
@@ -1698,12 +1698,12 @@ mf_classic_poller_send_custom_parity_frame,Function,NFC,not_bridged,MfClassicErr
 mf_classic_poller_send_encrypted_frame,Function,NFC,not_bridged,MfClassicError,"MfClassicPoller*, const BitBuffer*, BitBuffer*, uint32_t"
 mf_classic_poller_send_frame,Function,NFC,not_bridged,MfClassicError,"MfClassicPoller*, const BitBuffer*, BitBuffer*, uint32_t"
 mf_classic_poller_send_standard_frame,Function,NFC,not_bridged,MfClassicError,"MfClassicPoller*, const BitBuffer*, BitBuffer*, uint32_t"
-mf_classic_poller_sync_auth,Function,NFC,native_export_needs_arm_bridge,MfClassicError,"Nfc*, uint8_t, MfClassicKey*, MfClassicKeyType, MfClassicAuthContext*"
+mf_classic_poller_sync_auth,Function,NFC,bridged_subset,MfClassicError,"Nfc*, uint8_t, MfClassicKey*, MfClassicKeyType, MfClassicAuthContext*"
 mf_classic_poller_sync_change_value,Function,NFC,not_bridged,MfClassicError,"Nfc*, uint8_t, MfClassicKey*, MfClassicKeyType, int32_t, int32_t*"
-mf_classic_poller_sync_collect_nt,Function,NFC,not_bridged,MfClassicError,"Nfc*, uint8_t, MfClassicKeyType, MfClassicNt*"
-mf_classic_poller_sync_detect_type,Function,NFC,native_export_needs_arm_bridge,MfClassicError,"Nfc*, MfClassicType*"
-mf_classic_poller_sync_read,Function,NFC,native_export_needs_arm_bridge,MfClassicError,"Nfc*, const MfClassicDeviceKeys*, MfClassicData*"
-mf_classic_poller_sync_read_block,Function,NFC,native_export_needs_arm_bridge,MfClassicError,"Nfc*, uint8_t, MfClassicKey*, MfClassicKeyType, MfClassicBlock*"
+mf_classic_poller_sync_collect_nt,Function,NFC,native_export_needs_arm_bridge,MfClassicError,"Nfc*, uint8_t, MfClassicKeyType, MfClassicNt*"
+mf_classic_poller_sync_detect_type,Function,NFC,bridged_subset,MfClassicError,"Nfc*, MfClassicType*"
+mf_classic_poller_sync_read,Function,NFC,bridged_subset,MfClassicError,"Nfc*, const MfClassicDeviceKeys*, MfClassicData*"
+mf_classic_poller_sync_read_block,Function,NFC,bridged_subset,MfClassicError,"Nfc*, uint8_t, MfClassicKey*, MfClassicKeyType, MfClassicBlock*"
 mf_classic_poller_sync_read_value,Function,NFC,not_bridged,MfClassicError,"Nfc*, uint8_t, MfClassicKey*, MfClassicKeyType, int32_t*"
 mf_classic_poller_sync_write_block,Function,NFC,not_bridged,MfClassicError,"Nfc*, uint8_t, MfClassicKey*, MfClassicKeyType, MfClassicBlock*"
 mf_classic_poller_value_cmd,Function,NFC,not_bridged,MfClassicError,"MfClassicPoller*, uint8_t, MfClassicValueCommand, int32_t"
@@ -1777,7 +1777,7 @@ mf_ultralight_get_config_page,Function,NFC,not_bridged,_Bool,"const MfUltralight
 mf_ultralight_get_config_page_num,Function,NFC,not_bridged,uint16_t,MfUltralightType
 mf_ultralight_get_device_name,Function,NFC,not_bridged,const char*,"const MfUltralightData*, NfcDeviceNameType"
 mf_ultralight_get_feature_support_set,Function,NFC,not_bridged,uint32_t,MfUltralightType
-mf_ultralight_get_pages_total,Function,NFC,native_export_needs_arm_bridge,uint16_t,MfUltralightType
+mf_ultralight_get_pages_total,Function,NFC,bridged_subset,uint16_t,MfUltralightType
 mf_ultralight_get_pwd_page_num,Function,NFC,not_bridged,uint8_t,MfUltralightType
 mf_ultralight_get_type_by_version,Function,NFC,not_bridged,MfUltralightType,MfUltralightVersion*
 mf_ultralight_get_uid,Function,NFC,not_bridged,const uint8_t*,"const MfUltralightData*, size_t*"
@@ -1888,31 +1888,31 @@ mjs_typeof,Function,Other libraries and assets,not_bridged,const char*,mjs_val_t
 name_generator_make_auto,Function,Other libraries and assets,not_bridged,void,"char*, size_t, const char*"
 name_generator_make_detailed,Function,Other libraries and assets,not_bridged,void,"char*, size_t, const char*"
 name_generator_make_random,Function,Other libraries and assets,not_bridged,void,"char*, size_t"
-nfc_alloc,Function,NFC,native_export_needs_arm_bridge,Nfc*,
+nfc_alloc,Function,NFC,bridged_subset,Nfc*,
 nfc_config,Function,NFC,not_bridged,void,"Nfc*, NfcMode, NfcTech"
 nfc_data_generator_fill_data,Function,NFC,not_bridged,void,"NfcDataGeneratorType, NfcDevice*"
 nfc_data_generator_get_name,Function,NFC,not_bridged,const char*,NfcDataGeneratorType
-nfc_device_alloc,Function,NFC,native_export_needs_arm_bridge,NfcDevice*,
+nfc_device_alloc,Function,NFC,bridged_subset,NfcDevice*,
 nfc_device_clear,Function,NFC,not_bridged,void,NfcDevice*
-nfc_device_copy_data,Function,NFC,native_export_needs_arm_bridge,void,"const NfcDevice*, NfcProtocol, NfcDeviceData*"
-nfc_device_free,Function,NFC,native_export_needs_arm_bridge,void,NfcDevice*
-nfc_device_get_data,Function,NFC,native_export_needs_arm_bridge,const NfcDeviceData*,"const NfcDevice*, NfcProtocol"
-nfc_device_get_name,Function,NFC,native_export_needs_arm_bridge,const char*,"const NfcDevice*, NfcDeviceNameType"
-nfc_device_get_protocol,Function,NFC,native_export_needs_arm_bridge,NfcProtocol,const NfcDevice*
+nfc_device_copy_data,Function,NFC,bridged_subset,void,"const NfcDevice*, NfcProtocol, NfcDeviceData*"
+nfc_device_free,Function,NFC,bridged_subset,void,NfcDevice*
+nfc_device_get_data,Function,NFC,bridged_subset,const NfcDeviceData*,"const NfcDevice*, NfcProtocol"
+nfc_device_get_name,Function,NFC,bridged_subset,const char*,"const NfcDevice*, NfcDeviceNameType"
+nfc_device_get_protocol,Function,NFC,bridged_subset,NfcProtocol,const NfcDevice*
 nfc_device_get_protocol_name,Function,NFC,not_bridged,const char*,NfcProtocol
-nfc_device_get_uid,Function,NFC,not_bridged,const uint8_t*,"const NfcDevice*, size_t*"
+nfc_device_get_uid,Function,NFC,native_export_needs_arm_bridge,const uint8_t*,"const NfcDevice*, size_t*"
 nfc_device_is_equal,Function,NFC,not_bridged,_Bool,"const NfcDevice*, const NfcDevice*"
 nfc_device_is_equal_data,Function,NFC,not_bridged,_Bool,"const NfcDevice*, NfcProtocol, const NfcDeviceData*"
 nfc_device_load,Function,NFC,not_bridged,_Bool,"NfcDevice*, const char*"
 nfc_device_reset,Function,NFC,not_bridged,void,NfcDevice*
 nfc_device_save,Function,NFC,not_bridged,_Bool,"NfcDevice*, const char*"
-nfc_device_set_data,Function,NFC,native_export_needs_arm_bridge,void,"NfcDevice*, NfcProtocol, const NfcDeviceData*"
-nfc_device_set_loading_callback,Function,NFC,native_export_needs_arm_bridge,void,"NfcDevice*, NfcLoadingCallback, void*"
+nfc_device_set_data,Function,NFC,bridged_subset,void,"NfcDevice*, NfcProtocol, const NfcDeviceData*"
+nfc_device_set_loading_callback,Function,NFC,bridged_subset,void,"NfcDevice*, NfcLoadingCallback, void*"
 nfc_device_set_uid,Function,NFC,not_bridged,_Bool,"NfcDevice*, const uint8_t*, size_t"
 nfc_felica_listener_set_sensf_res_data,Function,NFC,not_bridged,NfcError,"Nfc*, const uint8_t*, const uint8_t, const uint8_t*, const uint8_t, const uint16_t"
 nfc_felica_listener_timer_anticol_start,Function,NFC,not_bridged,void,"Nfc*, uint8_t"
 nfc_felica_listener_timer_anticol_stop,Function,NFC,not_bridged,void,Nfc*
-nfc_free,Function,NFC,native_export_needs_arm_bridge,void,Nfc*
+nfc_free,Function,NFC,bridged_subset,void,Nfc*
 nfc_iso14443a_listener_set_col_res_data,Function,NFC,not_bridged,NfcError,"Nfc*, uint8_t*, uint8_t, uint8_t*, uint8_t"
 nfc_iso14443a_listener_tx_custom_parity,Function,NFC,not_bridged,NfcError,"Nfc*, const BitBuffer*"
 nfc_iso14443a_poller_trx_custom_parity,Function,NFC,not_bridged,NfcError,"Nfc*, const BitBuffer*, BitBuffer*, uint32_t"
@@ -1926,21 +1926,21 @@ nfc_listener_get_protocol,Function,NFC,not_bridged,NfcProtocol,const NfcListener
 nfc_listener_start,Function,NFC,not_bridged,void,"NfcListener*, NfcGenericCallback, void*"
 nfc_listener_stop,Function,NFC,not_bridged,void,NfcListener*
 nfc_listener_tx,Function,NFC,not_bridged,NfcError,"Nfc*, const BitBuffer*"
-nfc_poller_alloc,Function,NFC,native_export_needs_arm_bridge,NfcPoller*,"Nfc*, NfcProtocol"
+nfc_poller_alloc,Function,NFC,bridged_subset,NfcPoller*,"Nfc*, NfcProtocol"
 nfc_poller_detect,Function,NFC,not_bridged,_Bool,NfcPoller*
-nfc_poller_free,Function,NFC,native_export_needs_arm_bridge,void,NfcPoller*
-nfc_poller_get_data,Function,NFC,native_export_needs_arm_bridge,const NfcDeviceData*,const NfcPoller*
+nfc_poller_free,Function,NFC,bridged_subset,void,NfcPoller*
+nfc_poller_get_data,Function,NFC,bridged_subset,const NfcDeviceData*,const NfcPoller*
 nfc_poller_get_protocol,Function,NFC,not_bridged,NfcProtocol,const NfcPoller*
 nfc_poller_start,Function,NFC,native_export_needs_arm_bridge,void,"NfcPoller*, NfcGenericCallback, void*"
 nfc_poller_start_ex,Function,NFC,not_bridged,void,"NfcPoller*, NfcGenericCallbackEx, void*"
-nfc_poller_stop,Function,NFC,native_export_needs_arm_bridge,void,NfcPoller*
+nfc_poller_stop,Function,NFC,bridged_subset,void,NfcPoller*
 nfc_poller_trx,Function,NFC,not_bridged,NfcError,"Nfc*, const BitBuffer*, BitBuffer*, uint32_t"
 nfc_protocol_get_parent,Function,NFC,not_bridged,NfcProtocol,NfcProtocol
 nfc_protocol_has_parent,Function,NFC,not_bridged,_Bool,"NfcProtocol, NfcProtocol"
-nfc_scanner_alloc,Function,NFC,native_export_needs_arm_bridge,NfcScanner*,Nfc*
-nfc_scanner_free,Function,NFC,native_export_needs_arm_bridge,void,NfcScanner*
-nfc_scanner_start,Function,NFC,native_export_needs_arm_bridge,void,"NfcScanner*, NfcScannerCallback, void*"
-nfc_scanner_stop,Function,NFC,native_export_needs_arm_bridge,void,NfcScanner*
+nfc_scanner_alloc,Function,NFC,bridged_subset,NfcScanner*,Nfc*
+nfc_scanner_free,Function,NFC,bridged_subset,void,NfcScanner*
+nfc_scanner_start,Function,NFC,bridged_subset,void,"NfcScanner*, NfcScannerCallback, void*"
+nfc_scanner_stop,Function,NFC,bridged_subset,void,NfcScanner*
 nfc_set_fdt_listen_fc,Function,NFC,not_bridged,void,"Nfc*, uint32_t"
 nfc_set_fdt_poll_fc,Function,NFC,not_bridged,void,"Nfc*, uint32_t"
 nfc_set_fdt_poll_poll_us,Function,NFC,not_bridged,void,"Nfc*, uint32_t"
@@ -1957,11 +1957,11 @@ notification_internal_message_block,Function,Notifications,not_bridged,void,"Not
 notification_message,Function,Notifications,bridged_subset,void,"NotificationApp*, const NotificationSequence*"
 notification_message_block,Function,Notifications,bridged_subset,void,"NotificationApp*, const NotificationSequence*"
 notification_messages_notes_frequency_from_name,Function,Notifications,not_bridged,float,const char*
-number_input_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,NumberInput*,
-number_input_free,Function,Other libraries and assets,native_export_needs_arm_bridge,void,NumberInput*
-number_input_get_view,Function,Other libraries and assets,native_export_needs_arm_bridge,View*,NumberInput*
-number_input_set_header_text,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"NumberInput*, const char*"
-number_input_set_result_callback,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"NumberInput*, NumberInputCallback, void*, int32_t, int32_t, int32_t"
+number_input_alloc,Function,Other libraries and assets,bridged_subset,NumberInput*,
+number_input_free,Function,Other libraries and assets,bridged_subset,void,NumberInput*
+number_input_get_view,Function,Other libraries and assets,bridged_subset,View*,NumberInput*
+number_input_set_header_text,Function,Other libraries and assets,bridged_subset,void,"NumberInput*, const char*"
+number_input_set_result_callback,Function,Other libraries and assets,bridged_subset,void,"NumberInput*, NumberInputCallback, void*, int32_t, int32_t, int32_t"
 onewire_host_alloc,Function,Other libraries and assets,not_bridged,OneWireHost*,const GpioPin*
 onewire_host_free,Function,Other libraries and assets,not_bridged,void,OneWireHost*
 onewire_host_read,Function,Other libraries and assets,not_bridged,uint8_t,OneWireHost*
@@ -1996,9 +1996,9 @@ path_concat,Function,Other libraries and assets,not_bridged,void,"const char*, c
 path_contains_only_ascii,Function,Other libraries and assets,not_bridged,_Bool,const char*
 path_extract_basename,Function,Other libraries and assets,not_bridged,void,"const char*, FuriString*"
 path_extract_dirname,Function,Other libraries and assets,not_bridged,void,"const char*, FuriString*"
-path_extract_extension,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"FuriString*, char*, size_t"
-path_extract_filename,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"FuriString*, FuriString*, _Bool"
-path_extract_filename_no_ext,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"const char*, FuriString*"
+path_extract_extension,Function,Other libraries and assets,bridged_subset,void,"FuriString*, char*, size_t"
+path_extract_filename,Function,Other libraries and assets,bridged_subset,void,"FuriString*, FuriString*, _Bool"
+path_extract_filename_no_ext,Function,Other libraries and assets,bridged_subset,void,"const char*, FuriString*"
 pb_close_string_substream,Function,Other libraries and assets,not_bridged,_Bool,"pb_istream_t*, pb_istream_t*"
 pb_decode,Function,Other libraries and assets,not_bridged,_Bool,"pb_istream_t*, const pb_msgdesc_t*, void*"
 pb_decode_bool,Function,Other libraries and assets,not_bridged,_Bool,"pb_istream_t*, _Bool*"
@@ -2052,18 +2052,18 @@ plugin_manager_get_count,Function,Other libraries and assets,not_bridged,uint32_
 plugin_manager_get_ep,Function,Other libraries and assets,native_export_needs_arm_bridge,const void*,"PluginManager*, uint32_t"
 plugin_manager_load_all,Function,Other libraries and assets,not_bridged,PluginManagerError,"PluginManager*, const char*"
 plugin_manager_load_single,Function,Other libraries and assets,native_export_needs_arm_bridge,PluginManagerError,"PluginManager*, const char*"
-popup_alloc,Function,Other libraries and assets,native_export_needs_arm_bridge,Popup*,
-popup_disable_timeout,Function,Other libraries and assets,native_export_needs_arm_bridge,void,Popup*
-popup_enable_timeout,Function,Other libraries and assets,native_export_needs_arm_bridge,void,Popup*
-popup_free,Function,Other libraries and assets,native_export_needs_arm_bridge,void,Popup*
-popup_get_view,Function,Other libraries and assets,native_export_needs_arm_bridge,View*,Popup*
-popup_reset,Function,Other libraries and assets,native_export_needs_arm_bridge,void,Popup*
-popup_set_callback,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Popup*, PopupCallback"
-popup_set_context,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Popup*, void*"
-popup_set_header,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Popup*, const char*, uint8_t, uint8_t, Align, Align"
+popup_alloc,Function,Other libraries and assets,bridged_subset,Popup*,
+popup_disable_timeout,Function,Other libraries and assets,bridged_subset,void,Popup*
+popup_enable_timeout,Function,Other libraries and assets,bridged_subset,void,Popup*
+popup_free,Function,Other libraries and assets,bridged_subset,void,Popup*
+popup_get_view,Function,Other libraries and assets,bridged_subset,View*,Popup*
+popup_reset,Function,Other libraries and assets,bridged_subset,void,Popup*
+popup_set_callback,Function,Other libraries and assets,bridged_subset,void,"Popup*, PopupCallback"
+popup_set_context,Function,Other libraries and assets,bridged_subset,void,"Popup*, void*"
+popup_set_header,Function,Other libraries and assets,bridged_subset,void,"Popup*, const char*, uint8_t, uint8_t, Align, Align"
 popup_set_icon,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Popup*, uint8_t, uint8_t, const Icon*"
-popup_set_text,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Popup*, const char*, uint8_t, uint8_t, Align, Align"
-popup_set_timeout,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"Popup*, uint32_t"
+popup_set_text,Function,Other libraries and assets,bridged_subset,void,"Popup*, const char*, uint8_t, uint8_t, Align, Align"
+popup_set_timeout,Function,Other libraries and assets,bridged_subset,void,"Popup*, uint32_t"
 power_enable_low_battery_level_notification,Function,Other libraries and assets,not_bridged,void,"Power*, _Bool"
 power_enable_otg,Function,Other libraries and assets,not_bridged,void,"Power*, _Bool"
 power_get_info,Function,Other libraries and assets,not_bridged,void,"Power*, PowerInfo*"
@@ -2073,7 +2073,7 @@ power_is_otg_enabled,Function,Other libraries and assets,not_bridged,_Bool,Power
 power_off,Function,Other libraries and assets,not_bridged,void,Power*
 power_reboot,Function,Other libraries and assets,not_bridged,void,"Power*, PowerBootMode"
 powf,Function,Other libraries and assets,not_bridged,float,"float, float"
-pretty_format_bytes_hex_canonical,Function,Other libraries and assets,native_export_needs_arm_bridge,void,"FuriString*, size_t, const char*, const uint8_t*, size_t"
+pretty_format_bytes_hex_canonical,Function,Other libraries and assets,bridged_subset,void,"FuriString*, size_t, const char*, const uint8_t*, size_t"
 property_value_out,Function,Other libraries and assets,not_bridged,void,"PropertyValueContext*, const char*, unsigned int, ..."
 protocol_dict_alloc,Function,Other libraries and assets,not_bridged,ProtocolDict*,"const ProtocolBase* const*, size_t"
 protocol_dict_decoders_feed,Function,Other libraries and assets,not_bridged,ProtocolId,"ProtocolDict*, _Bool, uint32_t"
@@ -2102,9 +2102,9 @@ pulse_glue_pop,Function,Other libraries and assets,not_bridged,void,"PulseGlue*,
 pulse_glue_push,Function,Other libraries and assets,not_bridged,_Bool,"PulseGlue*, _Bool, uint32_t"
 pulse_glue_reset,Function,Other libraries and assets,not_bridged,void,PulseGlue*
 rand,Function,Other libraries and assets,bridged_subset,int,
-random,Function,Other libraries and assets,native_export_needs_arm_bridge,long,
-realloc,Function,Other libraries and assets,native_export_needs_arm_bridge,void*,"void*, size_t"
-roundf,Function,Other libraries and assets,native_export_needs_arm_bridge,float,float
+random,Function,Other libraries and assets,bridged_subset,long,
+realloc,Function,Other libraries and assets,bridged_subset,void*,"void*, size_t"
+roundf,Function,Other libraries and assets,bridged_subset,float,float
 rpc_session_close,Function,Other libraries and assets,not_bridged,void,RpcSession*
 rpc_session_feed,Function,Other libraries and assets,not_bridged,size_t,"RpcSession*, const uint8_t*, size_t, uint32_t"
 rpc_session_get_available_size,Function,Other libraries and assets,not_bridged,size_t,RpcSession*
@@ -2124,24 +2124,24 @@ rpc_system_app_set_callback,Function,Other libraries and assets,not_bridged,void
 rpc_system_app_set_error_code,Function,Other libraries and assets,not_bridged,void,"RpcAppSystem*, uint32_t"
 rpc_system_app_set_error_text,Function,Other libraries and assets,not_bridged,void,"RpcAppSystem*, const char*"
 saved_struct_get_metadata,Function,Other libraries and assets,not_bridged,_Bool,"const char*, uint8_t*, uint8_t*, size_t*"
-saved_struct_load,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"const char*, void*, size_t, uint8_t, uint8_t"
-saved_struct_save,Function,Other libraries and assets,native_export_needs_arm_bridge,_Bool,"const char*, const void*, size_t, uint8_t, uint8_t"
+saved_struct_load,Function,Other libraries and assets,bridged_subset,_Bool,"const char*, void*, size_t, uint8_t, uint8_t"
+saved_struct_save,Function,Other libraries and assets,bridged_subset,_Bool,"const char*, const void*, size_t, uint8_t, uint8_t"
 scalbnf,Function,Other libraries and assets,not_bridged,float,"float, int"
-scene_manager_alloc,Function,GUI modules,native_export_needs_arm_bridge,SceneManager*,"const SceneManagerHandlers*, void*"
-scene_manager_free,Function,GUI modules,native_export_needs_arm_bridge,void,SceneManager*
+scene_manager_alloc,Function,GUI modules,bridged_subset,SceneManager*,"const SceneManagerHandlers*, void*"
+scene_manager_free,Function,GUI modules,bridged_subset,void,SceneManager*
 scene_manager_get_current_scene,Function,GUI modules,not_bridged,uint32_t,SceneManager*
-scene_manager_get_scene_state,Function,GUI modules,native_export_needs_arm_bridge,uint32_t,"const SceneManager*, uint32_t"
-scene_manager_handle_back_event,Function,GUI modules,native_export_needs_arm_bridge,_Bool,SceneManager*
-scene_manager_handle_custom_event,Function,GUI modules,native_export_needs_arm_bridge,_Bool,"SceneManager*, uint32_t"
-scene_manager_handle_tick_event,Function,GUI modules,native_export_needs_arm_bridge,void,SceneManager*
-scene_manager_has_previous_scene,Function,GUI modules,native_export_needs_arm_bridge,_Bool,"const SceneManager*, uint32_t"
-scene_manager_next_scene,Function,GUI modules,native_export_needs_arm_bridge,void,"SceneManager*, uint32_t"
-scene_manager_previous_scene,Function,GUI modules,native_export_needs_arm_bridge,_Bool,SceneManager*
-scene_manager_search_and_switch_to_another_scene,Function,GUI modules,native_export_needs_arm_bridge,_Bool,"SceneManager*, uint32_t"
-scene_manager_search_and_switch_to_previous_scene,Function,GUI modules,native_export_needs_arm_bridge,_Bool,"SceneManager*, uint32_t"
-scene_manager_search_and_switch_to_previous_scene_one_of,Function,GUI modules,native_export_needs_arm_bridge,_Bool,"SceneManager*, const uint32_t*, size_t"
-scene_manager_set_scene_state,Function,GUI modules,native_export_needs_arm_bridge,void,"SceneManager*, uint32_t, uint32_t"
-scene_manager_stop,Function,GUI modules,native_export_needs_arm_bridge,void,SceneManager*
+scene_manager_get_scene_state,Function,GUI modules,bridged_subset,uint32_t,"const SceneManager*, uint32_t"
+scene_manager_handle_back_event,Function,GUI modules,bridged_subset,_Bool,SceneManager*
+scene_manager_handle_custom_event,Function,GUI modules,bridged_subset,_Bool,"SceneManager*, uint32_t"
+scene_manager_handle_tick_event,Function,GUI modules,bridged_subset,void,SceneManager*
+scene_manager_has_previous_scene,Function,GUI modules,bridged_subset,_Bool,"const SceneManager*, uint32_t"
+scene_manager_next_scene,Function,GUI modules,bridged_subset,void,"SceneManager*, uint32_t"
+scene_manager_previous_scene,Function,GUI modules,bridged_subset,_Bool,SceneManager*
+scene_manager_search_and_switch_to_another_scene,Function,GUI modules,bridged_subset,_Bool,"SceneManager*, uint32_t"
+scene_manager_search_and_switch_to_previous_scene,Function,GUI modules,bridged_subset,_Bool,"SceneManager*, uint32_t"
+scene_manager_search_and_switch_to_previous_scene_one_of,Function,GUI modules,bridged_subset,_Bool,"SceneManager*, const uint32_t*, size_t"
+scene_manager_set_scene_state,Function,GUI modules,bridged_subset,void,"SceneManager*, uint32_t, uint32_t"
+scene_manager_stop,Function,GUI modules,bridged_subset,void,SceneManager*
 sd_api_get_fs_type_text,Function,Other libraries and assets,not_bridged,const char*,SDFsType
 sequence_audiovisual_alert,Variable,Other libraries and assets,not_bridged,const NotificationSequence,
 sequence_blink_blue_10,Variable,Other libraries and assets,not_bridged,const NotificationSequence,
@@ -2240,7 +2240,7 @@ slix_type_has_features,Function,Other libraries and assets,not_bridged,_Bool,"Sl
 slix_type_supports_password,Function,Other libraries and assets,not_bridged,_Bool,"SlixType, SlixPasswordType"
 slix_verify,Function,Other libraries and assets,not_bridged,_Bool,"SlixData*, const FuriString*"
 snprintf,Function,Other libraries and assets,native_export_needs_arm_bridge,int,"char*, size_t, const char*, ..."
-srand,Function,Other libraries and assets,native_export_needs_arm_bridge,void,unsigned
+srand,Function,Other libraries and assets,bridged_subset,void,unsigned
 sscanf,Function,Other libraries and assets,native_export_needs_arm_bridge,int,"const char*, const char*, ..."
 st25r3916_change_reg_bits,Function,Other libraries and assets,not_bridged,void,"const FuriHalSpiBusHandle*, uint8_t, uint8_t, uint8_t"
 st25r3916_change_test_reg_bits,Function,Other libraries and assets,not_bridged,void,"const FuriHalSpiBusHandle*, uint8_t, uint8_t, uint8_t"
@@ -2290,42 +2290,42 @@ st25tb_reset,Function,Other libraries and assets,not_bridged,void,St25tbData*
 st25tb_save,Function,Other libraries and assets,not_bridged,_Bool,"const St25tbData*, FlipperFormat*"
 st25tb_set_uid,Function,Other libraries and assets,not_bridged,_Bool,"St25tbData*, const uint8_t*, size_t"
 st25tb_verify,Function,Other libraries and assets,not_bridged,_Bool,"St25tbData*, const FuriString*"
-storage_common_copy,Function,Storage,native_export_needs_arm_bridge,FS_Error,"Storage*, const char*, const char*"
+storage_common_copy,Function,Storage,bridged_subset,FS_Error,"Storage*, const char*, const char*"
 storage_common_equivalent_path,Function,Storage,not_bridged,_Bool,"Storage*, const char*, const char*"
-storage_common_exists,Function,Storage,native_export_needs_arm_bridge,_Bool,"Storage*, const char*"
+storage_common_exists,Function,Storage,bridged_subset,_Bool,"Storage*, const char*"
 storage_common_fs_info,Function,Storage,not_bridged,FS_Error,"Storage*, const char*, uint64_t*, uint64_t*"
 storage_common_is_subdir,Function,Storage,not_bridged,_Bool,"Storage*, const char*, const char*"
 storage_common_merge,Function,Storage,not_bridged,FS_Error,"Storage*, const char*, const char*"
-storage_common_migrate,Function,Storage,native_export_needs_arm_bridge,FS_Error,"Storage*, const char*, const char*"
-storage_common_mkdir,Function,Storage,native_export_needs_arm_bridge,FS_Error,"Storage*, const char*"
-storage_common_remove,Function,Storage,native_export_needs_arm_bridge,FS_Error,"Storage*, const char*"
-storage_common_rename,Function,Storage,native_export_needs_arm_bridge,FS_Error,"Storage*, const char*, const char*"
+storage_common_migrate,Function,Storage,bridged_subset,FS_Error,"Storage*, const char*, const char*"
+storage_common_mkdir,Function,Storage,bridged_subset,FS_Error,"Storage*, const char*"
+storage_common_remove,Function,Storage,bridged_subset,FS_Error,"Storage*, const char*"
+storage_common_rename,Function,Storage,bridged_subset,FS_Error,"Storage*, const char*, const char*"
 storage_common_resolve_path_and_ensure_app_directory,Function,Storage,not_bridged,void,"Storage*, FuriString*"
-storage_common_stat,Function,Storage,native_export_needs_arm_bridge,FS_Error,"Storage*, const char*, FileInfo*"
+storage_common_stat,Function,Storage,bridged_subset,FS_Error,"Storage*, const char*, FileInfo*"
 storage_common_timestamp,Function,Storage,not_bridged,FS_Error,"Storage*, const char*, uint32_t*"
-storage_dir_close,Function,Storage,native_export_needs_arm_bridge,_Bool,File*
-storage_dir_exists,Function,Storage,native_export_needs_arm_bridge,_Bool,"Storage*, const char*"
-storage_dir_open,Function,Storage,native_export_needs_arm_bridge,_Bool,"File*, const char*"
-storage_dir_read,Function,Storage,native_export_needs_arm_bridge,_Bool,"File*, FileInfo*, char*, uint16_t"
+storage_dir_close,Function,Storage,bridged_subset,_Bool,File*
+storage_dir_exists,Function,Storage,bridged_subset,_Bool,"Storage*, const char*"
+storage_dir_open,Function,Storage,bridged_subset,_Bool,"File*, const char*"
+storage_dir_read,Function,Storage,bridged_subset,_Bool,"File*, FileInfo*, char*, uint16_t"
 storage_error_get_desc,Function,Storage,not_bridged,const char*,FS_Error
-storage_file_alloc,Function,Storage,native_export_needs_arm_bridge,File*,Storage*
-storage_file_close,Function,Storage,native_export_needs_arm_bridge,_Bool,File*
+storage_file_alloc,Function,Storage,bridged_subset,File*,Storage*
+storage_file_close,Function,Storage,bridged_subset,_Bool,File*
 storage_file_copy_to_file,Function,Storage,not_bridged,_Bool,"File*, File*, size_t"
 storage_file_eof,Function,Storage,not_bridged,_Bool,File*
-storage_file_exists,Function,Storage,native_export_needs_arm_bridge,_Bool,"Storage*, const char*"
-storage_file_free,Function,Storage,native_export_needs_arm_bridge,void,File*
-storage_file_get_error,Function,Storage,native_export_needs_arm_bridge,FS_Error,File*
-storage_file_get_error_desc,Function,Storage,native_export_needs_arm_bridge,const char*,File*
+storage_file_exists,Function,Storage,bridged_subset,_Bool,"Storage*, const char*"
+storage_file_free,Function,Storage,bridged_subset,void,File*
+storage_file_get_error,Function,Storage,bridged_subset,FS_Error,File*
+storage_file_get_error_desc,Function,Storage,bridged_subset,const char*,File*
 storage_file_is_dir,Function,Storage,not_bridged,_Bool,File*
 storage_file_is_open,Function,Storage,not_bridged,_Bool,File*
-storage_file_open,Function,Storage,native_export_needs_arm_bridge,_Bool,"File*, const char*, FS_AccessMode, FS_OpenMode"
-storage_file_read,Function,Storage,native_export_needs_arm_bridge,size_t,"File*, void*, size_t"
-storage_file_seek,Function,Storage,native_export_needs_arm_bridge,_Bool,"File*, uint32_t, _Bool"
-storage_file_size,Function,Storage,native_export_needs_arm_bridge,uint64_t,File*
-storage_file_sync,Function,Storage,not_bridged,_Bool,File*
-storage_file_tell,Function,Storage,native_export_needs_arm_bridge,uint64_t,File*
+storage_file_open,Function,Storage,bridged_subset,_Bool,"File*, const char*, FS_AccessMode, FS_OpenMode"
+storage_file_read,Function,Storage,bridged_subset,size_t,"File*, void*, size_t"
+storage_file_seek,Function,Storage,bridged_subset,_Bool,"File*, uint32_t, _Bool"
+storage_file_size,Function,Storage,bridged_subset,uint64_t,File*
+storage_file_sync,Function,Storage,native_export_needs_arm_bridge,_Bool,File*
+storage_file_tell,Function,Storage,bridged_subset,uint64_t,File*
 storage_file_truncate,Function,Storage,not_bridged,_Bool,File*
-storage_file_write,Function,Storage,native_export_needs_arm_bridge,size_t,"File*, const void*, size_t"
+storage_file_write,Function,Storage,bridged_subset,size_t,"File*, const void*, size_t"
 storage_get_next_filename,Function,Storage,not_bridged,void,"Storage*, const char*, const char*, const char*, FuriString*, uint8_t"
 storage_get_pubsub,Function,Storage,not_bridged,FuriPubSub*,Storage*
 storage_int_backup,Function,Storage,not_bridged,FS_Error,"Storage*, const char*"
@@ -2333,24 +2333,24 @@ storage_int_restore,Function,Storage,not_bridged,FS_Error,"Storage*, const char*
 storage_sd_format,Function,Storage,not_bridged,FS_Error,Storage*
 storage_sd_info,Function,Storage,not_bridged,FS_Error,"Storage*, SDInfo*"
 storage_sd_mount,Function,Storage,not_bridged,FS_Error,Storage*
-storage_sd_status,Function,Storage,native_export_needs_arm_bridge,FS_Error,Storage*
+storage_sd_status,Function,Storage,bridged_subset,FS_Error,Storage*
 storage_sd_unmount,Function,Storage,not_bridged,FS_Error,Storage*
-storage_simply_mkdir,Function,Storage,native_export_needs_arm_bridge,_Bool,"Storage*, const char*"
-storage_simply_remove,Function,Storage,native_export_needs_arm_bridge,_Bool,"Storage*, const char*"
-storage_simply_remove_recursive,Function,Storage,native_export_needs_arm_bridge,_Bool,"Storage*, const char*"
+storage_simply_mkdir,Function,Storage,bridged_subset,_Bool,"Storage*, const char*"
+storage_simply_remove,Function,Storage,bridged_subset,_Bool,"Storage*, const char*"
+storage_simply_remove_recursive,Function,Storage,bridged_subset,_Bool,"Storage*, const char*"
 str_buffer_clear_all_clones,Function,Other libraries and assets,not_bridged,void,StrBuffer*
 str_buffer_make_owned_clone,Function,Other libraries and assets,not_bridged,const char*,"StrBuffer*, const char*"
-strcasecmp,Function,Other libraries and assets,native_export_needs_arm_bridge,int,"const char*, const char*"
+strcasecmp,Function,Other libraries and assets,bridged_subset,int,"const char*, const char*"
 strcasestr,Function,Other libraries and assets,not_bridged,char*,"const char*, const char*"
-strchr,Function,Other libraries and assets,native_export_needs_arm_bridge,char*,"const char*, int"
+strchr,Function,Other libraries and assets,bridged_subset,char*,"const char*, int"
 strcmp,Function,Other libraries and assets,bridged_subset,int,"const char*, const char*"
-strcpy,Function,Other libraries and assets,native_export_needs_arm_bridge,char*,"char*, const char*"
+strcpy,Function,Other libraries and assets,bridged_subset,char*,"char*, const char*"
 strcspn,Function,Other libraries and assets,not_bridged,size_t,"const char*, const char*"
-strdup,Function,Other libraries and assets,native_export_needs_arm_bridge,char*,const char*
-stream_clean,Function,Storage,native_export_needs_arm_bridge,void,Stream*
-stream_copy,Function,Storage,native_export_needs_arm_bridge,size_t,"Stream*, Stream*, size_t"
+strdup,Function,Other libraries and assets,bridged_subset,char*,const char*
+stream_clean,Function,Storage,bridged_subset,void,Stream*
+stream_copy,Function,Storage,bridged_subset,size_t,"Stream*, Stream*, size_t"
 stream_copy_full,Function,Storage,not_bridged,size_t,"Stream*, Stream*"
-stream_delete,Function,Storage,native_export_needs_arm_bridge,_Bool,"Stream*, size_t"
+stream_delete,Function,Storage,bridged_subset,_Bool,"Stream*, size_t"
 stream_delete_and_insert,Function,Storage,not_bridged,_Bool,"Stream*, size_t, StreamWriteCB, const void*"
 stream_delete_and_insert_char,Function,Storage,not_bridged,_Bool,"Stream*, size_t, char"
 stream_delete_and_insert_cstring,Function,Storage,not_bridged,_Bool,"Stream*, size_t, const char*"
@@ -2358,26 +2358,26 @@ stream_delete_and_insert_format,Function,Storage,not_bridged,_Bool,"Stream*, siz
 stream_delete_and_insert_string,Function,Storage,not_bridged,_Bool,"Stream*, size_t, FuriString*"
 stream_delete_and_insert_vaformat,Function,Storage,not_bridged,_Bool,"Stream*, size_t, const char*, va_list"
 stream_dump_data,Function,Storage,not_bridged,void,Stream*
-stream_eof,Function,Storage,native_export_needs_arm_bridge,_Bool,Stream*
-stream_free,Function,Storage,native_export_needs_arm_bridge,void,Stream*
-stream_insert,Function,Storage,native_export_needs_arm_bridge,_Bool,"Stream*, const uint8_t*, size_t"
+stream_eof,Function,Storage,bridged_subset,_Bool,Stream*
+stream_free,Function,Storage,bridged_subset,void,Stream*
+stream_insert,Function,Storage,bridged_subset,_Bool,"Stream*, const uint8_t*, size_t"
 stream_insert_char,Function,Storage,not_bridged,_Bool,"Stream*, char"
 stream_insert_cstring,Function,Storage,not_bridged,_Bool,"Stream*, const char*"
 stream_insert_format,Function,Storage,not_bridged,_Bool,"Stream*, const char*, ..."
 stream_insert_string,Function,Storage,not_bridged,_Bool,"Stream*, FuriString*"
 stream_insert_vaformat,Function,Storage,not_bridged,_Bool,"Stream*, const char*, va_list"
 stream_load_from_file,Function,Storage,not_bridged,size_t,"Stream*, Storage*, const char*"
-stream_read,Function,Storage,native_export_needs_arm_bridge,size_t,"Stream*, uint8_t*, size_t"
-stream_read_line,Function,Storage,native_export_needs_arm_bridge,_Bool,"Stream*, FuriString*"
-stream_rewind,Function,Storage,native_export_needs_arm_bridge,_Bool,Stream*
+stream_read,Function,Storage,bridged_subset,size_t,"Stream*, uint8_t*, size_t"
+stream_read_line,Function,Storage,bridged_subset,_Bool,"Stream*, FuriString*"
+stream_rewind,Function,Storage,bridged_subset,_Bool,Stream*
 stream_save_to_file,Function,Storage,not_bridged,size_t,"Stream*, Storage*, const char*, FS_OpenMode"
-stream_seek,Function,Storage,native_export_needs_arm_bridge,_Bool,"Stream*, int32_t, StreamOffset"
-stream_seek_to_char,Function,Storage,native_export_needs_arm_bridge,_Bool,"Stream*, char, StreamDirection"
-stream_size,Function,Storage,native_export_needs_arm_bridge,size_t,Stream*
+stream_seek,Function,Storage,bridged_subset,_Bool,"Stream*, int32_t, StreamOffset"
+stream_seek_to_char,Function,Storage,bridged_subset,_Bool,"Stream*, char, StreamDirection"
+stream_size,Function,Storage,bridged_subset,size_t,Stream*
 stream_split,Function,Storage,not_bridged,_Bool,"Stream*, Stream*, Stream*"
-stream_tell,Function,Storage,native_export_needs_arm_bridge,size_t,Stream*
-stream_write,Function,Storage,native_export_needs_arm_bridge,size_t,"Stream*, const uint8_t*, size_t"
-stream_write_char,Function,Storage,native_export_needs_arm_bridge,size_t,"Stream*, char"
+stream_tell,Function,Storage,bridged_subset,size_t,Stream*
+stream_write,Function,Storage,bridged_subset,size_t,"Stream*, const uint8_t*, size_t"
+stream_write_char,Function,Storage,bridged_subset,size_t,"Stream*, char"
 stream_write_cstring,Function,Storage,not_bridged,size_t,"Stream*, const char*"
 stream_write_format,Function,Storage,not_bridged,size_t,"Stream*, const char*, ..."
 stream_write_string,Function,Storage,not_bridged,size_t,"Stream*, FuriString*"
@@ -2387,24 +2387,24 @@ strint_to_int16,Function,Other libraries and assets,not_bridged,StrintParseError
 strint_to_int32,Function,Other libraries and assets,not_bridged,StrintParseError,"const char*, char**, int32_t*, uint8_t"
 strint_to_int64,Function,Other libraries and assets,not_bridged,StrintParseError,"const char*, char**, int64_t*, uint8_t"
 strint_to_uint16,Function,Other libraries and assets,not_bridged,StrintParseError,"const char*, char**, uint16_t*, uint8_t"
-strint_to_uint32,Function,Other libraries and assets,native_export_needs_arm_bridge,StrintParseError,"const char*, char**, uint32_t*, uint8_t"
+strint_to_uint32,Function,Other libraries and assets,bridged_subset,StrintParseError,"const char*, char**, uint32_t*, uint8_t"
 strint_to_uint64,Function,Other libraries and assets,not_bridged,StrintParseError,"const char*, char**, uint64_t*, uint8_t"
 strlcat,Function,Other libraries and assets,bridged_subset,size_t,"char*, const char*, size_t"
 strlcpy,Function,Other libraries and assets,bridged_subset,size_t,"char*, const char*, size_t"
 strlen,Function,Other libraries and assets,bridged_subset,size_t,const char*
-strncasecmp,Function,Other libraries and assets,native_export_needs_arm_bridge,int,"const char*, const char*, size_t"
-strncmp,Function,Other libraries and assets,native_export_needs_arm_bridge,int,"const char*, const char*, size_t"
-strncpy,Function,Other libraries and assets,native_export_needs_arm_bridge,char*,"char*, const char*, size_t"
-strrchr,Function,Other libraries and assets,native_export_needs_arm_bridge,char*,"const char*, int"
+strncasecmp,Function,Other libraries and assets,bridged_subset,int,"const char*, const char*, size_t"
+strncmp,Function,Other libraries and assets,bridged_subset,int,"const char*, const char*, size_t"
+strncpy,Function,Other libraries and assets,bridged_subset,char*,"char*, const char*, size_t"
+strrchr,Function,Other libraries and assets,bridged_subset,char*,"const char*, int"
 strspn,Function,Other libraries and assets,not_bridged,size_t,"const char*, const char*"
-strstr,Function,Other libraries and assets,native_export_needs_arm_bridge,char*,"const char*, const char*"
+strstr,Function,Other libraries and assets,bridged_subset,char*,"const char*, const char*"
 strtod,Function,Other libraries and assets,not_bridged,double,"const char*, char**"
-strtof,Function,Other libraries and assets,native_export_needs_arm_bridge,float,"const char*, char**"
-strtol,Function,Other libraries and assets,native_export_needs_arm_bridge,long,"const char*, char**, int"
-strtoul,Function,Other libraries and assets,native_export_needs_arm_bridge,unsigned long,"const char*, char**, int"
-strtoull,Function,Other libraries and assets,native_export_needs_arm_bridge,unsigned long long,"const char*, char**, int"
-subghz_block_generic_deserialize,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzProtocolStatus,"SubGhzBlockGeneric*, FlipperFormat*"
-subghz_block_generic_deserialize_check_count_bit,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzProtocolStatus,"SubGhzBlockGeneric*, FlipperFormat*, uint16_t"
+strtof,Function,Other libraries and assets,bridged_subset,float,"const char*, char**"
+strtol,Function,Other libraries and assets,bridged_subset,long,"const char*, char**, int"
+strtoul,Function,Other libraries and assets,bridged_subset,unsigned long,"const char*, char**, int"
+strtoull,Function,Other libraries and assets,bridged_subset,unsigned long long,"const char*, char**, int"
+subghz_block_generic_deserialize,Function,Sub-GHz,bridged_subset,SubGhzProtocolStatus,"SubGhzBlockGeneric*, FlipperFormat*"
+subghz_block_generic_deserialize_check_count_bit,Function,Sub-GHz,bridged_subset,SubGhzProtocolStatus,"SubGhzBlockGeneric*, FlipperFormat*, uint16_t"
 subghz_block_generic_get_preset_name,Function,Sub-GHz,not_bridged,void,"const char*, FuriString*"
 subghz_block_generic_serialize,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzProtocolStatus,"SubGhzBlockGeneric*, FlipperFormat*, SubGhzRadioPreset*"
 subghz_device_cc1101_preset_2fsk_dev12khz_async_regs,Variable,Sub-GHz,not_bridged,const uint8_t[],
@@ -2414,45 +2414,45 @@ subghz_device_cc1101_preset_gfsk_9_99kb_async_regs,Variable,Sub-GHz,not_bridged,
 subghz_device_cc1101_preset_msk_99_97kb_async_regs,Variable,Sub-GHz,not_bridged,const uint8_t[],
 subghz_device_cc1101_preset_ook_270khz_async_regs,Variable,Sub-GHz,not_bridged,const uint8_t[],
 subghz_device_cc1101_preset_ook_650khz_async_regs,Variable,Sub-GHz,not_bridged,const uint8_t[],
-subghz_devices_begin,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,const SubGhzDevice*
-subghz_devices_deinit,Function,Sub-GHz,native_export_needs_arm_bridge,void,
-subghz_devices_end,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
-subghz_devices_flush_rx,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
+subghz_devices_begin,Function,Sub-GHz,bridged_subset,_Bool,const SubGhzDevice*
+subghz_devices_deinit,Function,Sub-GHz,bridged_subset,void,
+subghz_devices_end,Function,Sub-GHz,bridged_subset,void,const SubGhzDevice*
+subghz_devices_flush_rx,Function,Sub-GHz,bridged_subset,void,const SubGhzDevice*
 subghz_devices_flush_tx,Function,Sub-GHz,not_bridged,void,const SubGhzDevice*
-subghz_devices_get_by_name,Function,Sub-GHz,native_export_needs_arm_bridge,const SubGhzDevice*,const char*
+subghz_devices_get_by_name,Function,Sub-GHz,bridged_subset,const SubGhzDevice*,const char*
 subghz_devices_get_data_gpio,Function,Sub-GHz,not_bridged,const GpioPin*,const SubGhzDevice*
 subghz_devices_get_lqi,Function,Sub-GHz,not_bridged,uint8_t,const SubGhzDevice*
 subghz_devices_get_name,Function,Sub-GHz,not_bridged,const char*,const SubGhzDevice*
-subghz_devices_get_rssi,Function,Sub-GHz,native_export_needs_arm_bridge,float,const SubGhzDevice*
-subghz_devices_idle,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
-subghz_devices_init,Function,Sub-GHz,native_export_needs_arm_bridge,void,
+subghz_devices_get_rssi,Function,Sub-GHz,bridged_subset,float,const SubGhzDevice*
+subghz_devices_idle,Function,Sub-GHz,bridged_subset,void,const SubGhzDevice*
+subghz_devices_init,Function,Sub-GHz,bridged_subset,void,
 subghz_devices_is_async_complete_tx,Function,Sub-GHz,not_bridged,_Bool,const SubGhzDevice*
-subghz_devices_is_connect,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,const SubGhzDevice*
-subghz_devices_is_frequency_valid,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,"const SubGhzDevice*, uint32_t"
+subghz_devices_is_connect,Function,Sub-GHz,bridged_subset,_Bool,const SubGhzDevice*
+subghz_devices_is_frequency_valid,Function,Sub-GHz,bridged_subset,_Bool,"const SubGhzDevice*, uint32_t"
 subghz_devices_is_rx_data_crc_valid,Function,Sub-GHz,not_bridged,_Bool,const SubGhzDevice*
-subghz_devices_load_preset,Function,Sub-GHz,native_export_needs_arm_bridge,void,"const SubGhzDevice*, FuriHalSubGhzPreset, uint8_t*"
+subghz_devices_load_preset,Function,Sub-GHz,bridged_subset,void,"const SubGhzDevice*, FuriHalSubGhzPreset, uint8_t*"
 subghz_devices_read_packet,Function,Sub-GHz,not_bridged,void,"const SubGhzDevice*, uint8_t*, uint8_t*"
-subghz_devices_reset,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
+subghz_devices_reset,Function,Sub-GHz,bridged_subset,void,const SubGhzDevice*
 subghz_devices_rx_pipe_not_empty,Function,Sub-GHz,not_bridged,_Bool,const SubGhzDevice*
 subghz_devices_set_async_mirror_pin,Function,Sub-GHz,not_bridged,void,"const SubGhzDevice*, const GpioPin*"
-subghz_devices_set_frequency,Function,Sub-GHz,native_export_needs_arm_bridge,uint32_t,"const SubGhzDevice*, uint32_t"
-subghz_devices_set_rx,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
-subghz_devices_set_tx,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,const SubGhzDevice*
-subghz_devices_sleep,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
+subghz_devices_set_frequency,Function,Sub-GHz,bridged_subset,uint32_t,"const SubGhzDevice*, uint32_t"
+subghz_devices_set_rx,Function,Sub-GHz,bridged_subset,void,const SubGhzDevice*
+subghz_devices_set_tx,Function,Sub-GHz,bridged_subset,_Bool,const SubGhzDevice*
+subghz_devices_sleep,Function,Sub-GHz,bridged_subset,void,const SubGhzDevice*
 subghz_devices_start_async_rx,Function,Sub-GHz,native_export_needs_arm_bridge,void,"const SubGhzDevice*, void*, void*"
 subghz_devices_start_async_tx,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,"const SubGhzDevice*, void*, void*"
 subghz_devices_stop_async_rx,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
 subghz_devices_stop_async_tx,Function,Sub-GHz,native_export_needs_arm_bridge,void,const SubGhzDevice*
 subghz_devices_write_packet,Function,Sub-GHz,not_bridged,void,"const SubGhzDevice*, const uint8_t*, uint8_t"
-subghz_environment_alloc,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzEnvironment*,
-subghz_environment_free,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzEnvironment*
+subghz_environment_alloc,Function,Sub-GHz,bridged_subset,SubGhzEnvironment*,
+subghz_environment_free,Function,Sub-GHz,bridged_subset,void,SubGhzEnvironment*
 subghz_environment_get_alutech_at_4n_rainbow_table_file_name,Function,Sub-GHz,not_bridged,const char*,SubGhzEnvironment*
 subghz_environment_get_came_atomo_rainbow_table_file_name,Function,Sub-GHz,not_bridged,const char*,SubGhzEnvironment*
 subghz_environment_get_keystore,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzKeystore*,SubGhzEnvironment*
 subghz_environment_get_nice_flor_s_rainbow_table_file_name,Function,Sub-GHz,not_bridged,const char*,SubGhzEnvironment*
-subghz_environment_get_protocol_name_registry,Function,Sub-GHz,native_export_needs_arm_bridge,const char*,"SubGhzEnvironment*, size_t"
+subghz_environment_get_protocol_name_registry,Function,Sub-GHz,bridged_subset,const char*,"SubGhzEnvironment*, size_t"
 subghz_environment_get_protocol_registry,Function,Sub-GHz,not_bridged,const SubGhzProtocolRegistry*,SubGhzEnvironment*
-subghz_environment_load_keystore,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,"SubGhzEnvironment*, const char*"
+subghz_environment_load_keystore,Function,Sub-GHz,bridged_subset,_Bool,"SubGhzEnvironment*, const char*"
 subghz_environment_set_alutech_at_4n_rainbow_table_file_name,Function,Sub-GHz,not_bridged,void,"SubGhzEnvironment*, const char*"
 subghz_environment_set_came_atomo_rainbow_table_file_name,Function,Sub-GHz,not_bridged,void,"SubGhzEnvironment*, const char*"
 subghz_environment_set_nice_flor_s_rainbow_table_file_name,Function,Sub-GHz,not_bridged,void,"SubGhzEnvironment*, const char*"
@@ -2469,27 +2469,27 @@ subghz_keystore_free,Function,Sub-GHz,not_bridged,void,SubGhzKeystore*
 subghz_keystore_get_data,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzKeyArray_t*,SubGhzKeystore*
 subghz_keystore_load,Function,Sub-GHz,not_bridged,_Bool,"SubGhzKeystore*, const char*"
 subghz_keystore_raw_encrypted_save,Function,Sub-GHz,not_bridged,_Bool,"const char*, const char*, uint8_t*"
-subghz_keystore_raw_get_data,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,"const char*, size_t, uint8_t*, size_t"
+subghz_keystore_raw_get_data,Function,Sub-GHz,bridged_subset,_Bool,"const char*, size_t, uint8_t*, size_t"
 subghz_keystore_save,Function,Sub-GHz,not_bridged,_Bool,"SubGhzKeystore*, const char*, uint8_t*"
-subghz_protocol_blocks_add_bit,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzBlockDecoder*, uint8_t"
-subghz_protocol_blocks_add_bytes,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,"const uint8_t[], size_t"
-subghz_protocol_blocks_add_to_128_bit,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzBlockDecoder*, uint8_t, uint64_t*"
-subghz_protocol_blocks_crc16,Function,Sub-GHz,not_bridged,uint16_t,"const uint8_t[], size_t, uint16_t, uint16_t"
+subghz_protocol_blocks_add_bit,Function,Sub-GHz,bridged_subset,void,"SubGhzBlockDecoder*, uint8_t"
+subghz_protocol_blocks_add_bytes,Function,Sub-GHz,bridged_subset,uint8_t,"const uint8_t[], size_t"
+subghz_protocol_blocks_add_to_128_bit,Function,Sub-GHz,bridged_subset,void,"SubGhzBlockDecoder*, uint8_t, uint64_t*"
+subghz_protocol_blocks_crc16,Function,Sub-GHz,native_export_needs_arm_bridge,uint16_t,"const uint8_t[], size_t, uint16_t, uint16_t"
 subghz_protocol_blocks_crc16lsb,Function,Sub-GHz,not_bridged,uint16_t,"const uint8_t[], size_t, uint16_t, uint16_t"
-subghz_protocol_blocks_crc4,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
+subghz_protocol_blocks_crc4,Function,Sub-GHz,bridged_subset,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
 subghz_protocol_blocks_crc7,Function,Sub-GHz,not_bridged,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
-subghz_protocol_blocks_crc8,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
+subghz_protocol_blocks_crc8,Function,Sub-GHz,bridged_subset,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
 subghz_protocol_blocks_crc8le,Function,Sub-GHz,not_bridged,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
 subghz_protocol_blocks_get_bit_array,Function,Sub-GHz,not_bridged,_Bool,"uint8_t[], size_t"
-subghz_protocol_blocks_get_hash_data,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,"SubGhzBlockDecoder*, size_t"
+subghz_protocol_blocks_get_hash_data,Function,Sub-GHz,bridged_subset,uint8_t,"SubGhzBlockDecoder*, size_t"
 subghz_protocol_blocks_get_parity,Function,Sub-GHz,not_bridged,uint8_t,"uint64_t, uint8_t"
 subghz_protocol_blocks_get_upload_from_bit_array,Function,Sub-GHz,not_bridged,size_t,"uint8_t[], size_t, LevelDuration*, size_t, uint32_t, SubGhzProtocolBlockAlignBit"
 subghz_protocol_blocks_lfsr_digest16,Function,Sub-GHz,not_bridged,uint16_t,"const uint8_t[], size_t, uint16_t, uint16_t"
-subghz_protocol_blocks_lfsr_digest8,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
-subghz_protocol_blocks_lfsr_digest8_reflect,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
-subghz_protocol_blocks_parity8,Function,Sub-GHz,not_bridged,uint8_t,uint8_t
-subghz_protocol_blocks_parity_bytes,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,"const uint8_t[], size_t"
-subghz_protocol_blocks_reverse_key,Function,Sub-GHz,native_export_needs_arm_bridge,uint64_t,"uint64_t, uint8_t"
+subghz_protocol_blocks_lfsr_digest8,Function,Sub-GHz,bridged_subset,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
+subghz_protocol_blocks_lfsr_digest8_reflect,Function,Sub-GHz,bridged_subset,uint8_t,"const uint8_t[], size_t, uint8_t, uint8_t"
+subghz_protocol_blocks_parity8,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t,uint8_t
+subghz_protocol_blocks_parity_bytes,Function,Sub-GHz,bridged_subset,uint8_t,"const uint8_t[], size_t"
+subghz_protocol_blocks_reverse_key,Function,Sub-GHz,bridged_subset,uint64_t,"uint64_t, uint8_t"
 subghz_protocol_blocks_set_bit_array,Function,Sub-GHz,not_bridged,void,"_Bool, uint8_t[], size_t, size_t"
 subghz_protocol_blocks_xor_bytes,Function,Sub-GHz,not_bridged,uint8_t,"const uint8_t[], size_t"
 subghz_protocol_decoder_base_deserialize,Function,Sub-GHz,not_bridged,SubGhzProtocolStatus,"SubGhzProtocolDecoderBase*, FlipperFormat*"
@@ -2524,36 +2524,36 @@ subghz_protocol_registry_get_by_index,Function,Sub-GHz,native_export_needs_arm_b
 subghz_protocol_registry_get_by_name,Function,Sub-GHz,not_bridged,const SubGhzProtocol*,"const SubGhzProtocolRegistry*, const char*"
 subghz_protocol_secplus_v1_check_fixed,Function,Sub-GHz,not_bridged,_Bool,uint32_t
 subghz_protocol_secplus_v2_create_data,Function,Sub-GHz,not_bridged,_Bool,"void*, FlipperFormat*, uint32_t, uint8_t, uint32_t, SubGhzRadioPreset*"
-subghz_receiver_alloc_init,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzReceiver*,SubGhzEnvironment*
-subghz_receiver_decode,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzReceiver*, _Bool, uint32_t"
-subghz_receiver_free,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzReceiver*
-subghz_receiver_reset,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzReceiver*
+subghz_receiver_alloc_init,Function,Sub-GHz,bridged_subset,SubGhzReceiver*,SubGhzEnvironment*
+subghz_receiver_decode,Function,Sub-GHz,bridged_subset,void,"SubGhzReceiver*, _Bool, uint32_t"
+subghz_receiver_free,Function,Sub-GHz,bridged_subset,void,SubGhzReceiver*
+subghz_receiver_reset,Function,Sub-GHz,bridged_subset,void,SubGhzReceiver*
 subghz_receiver_search_decoder_base_by_name,Function,Sub-GHz,not_bridged,SubGhzProtocolDecoderBase*,"SubGhzReceiver*, const char*"
-subghz_receiver_set_filter,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzReceiver*, SubGhzProtocolFlag"
+subghz_receiver_set_filter,Function,Sub-GHz,bridged_subset,void,"SubGhzReceiver*, SubGhzProtocolFlag"
 subghz_receiver_set_rx_callback,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzReceiver*, SubGhzReceiverCallback, void*"
-subghz_setting_alloc,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzSetting*,
+subghz_setting_alloc,Function,Sub-GHz,bridged_subset,SubGhzSetting*,
 subghz_setting_delete_custom_preset,Function,Sub-GHz,not_bridged,_Bool,"SubGhzSetting*, const char*"
-subghz_setting_free,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzSetting*
-subghz_setting_get_default_frequency,Function,Sub-GHz,native_export_needs_arm_bridge,uint32_t,SubGhzSetting*
-subghz_setting_get_frequency,Function,Sub-GHz,native_export_needs_arm_bridge,uint32_t,"SubGhzSetting*, size_t"
-subghz_setting_get_frequency_count,Function,Sub-GHz,native_export_needs_arm_bridge,size_t,SubGhzSetting*
-subghz_setting_get_frequency_default_index,Function,Sub-GHz,native_export_needs_arm_bridge,uint32_t,SubGhzSetting*
-subghz_setting_get_hopper_frequency,Function,Sub-GHz,native_export_needs_arm_bridge,uint32_t,"SubGhzSetting*, size_t"
-subghz_setting_get_hopper_frequency_count,Function,Sub-GHz,native_export_needs_arm_bridge,size_t,SubGhzSetting*
-subghz_setting_get_inx_preset_by_name,Function,Sub-GHz,native_export_needs_arm_bridge,int,"SubGhzSetting*, const char*"
-subghz_setting_get_preset_count,Function,Sub-GHz,native_export_needs_arm_bridge,size_t,SubGhzSetting*
-subghz_setting_get_preset_data,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t*,"SubGhzSetting*, size_t"
-subghz_setting_get_preset_data_by_name,Function,Sub-GHz,native_export_needs_arm_bridge,uint8_t*,"SubGhzSetting*, const char*"
-subghz_setting_get_preset_data_size,Function,Sub-GHz,native_export_needs_arm_bridge,size_t,"SubGhzSetting*, size_t"
-subghz_setting_get_preset_name,Function,Sub-GHz,native_export_needs_arm_bridge,const char*,"SubGhzSetting*, size_t"
-subghz_setting_load,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzSetting*, const char*"
-subghz_setting_load_custom_preset,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,"SubGhzSetting*, const char*, FlipperFormat*"
-subghz_transmitter_alloc_init,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzTransmitter*,"SubGhzEnvironment*, const char*"
-subghz_transmitter_deserialize,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzProtocolStatus,"SubGhzTransmitter*, FlipperFormat*"
-subghz_transmitter_free,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzTransmitter*
+subghz_setting_free,Function,Sub-GHz,bridged_subset,void,SubGhzSetting*
+subghz_setting_get_default_frequency,Function,Sub-GHz,bridged_subset,uint32_t,SubGhzSetting*
+subghz_setting_get_frequency,Function,Sub-GHz,bridged_subset,uint32_t,"SubGhzSetting*, size_t"
+subghz_setting_get_frequency_count,Function,Sub-GHz,bridged_subset,size_t,SubGhzSetting*
+subghz_setting_get_frequency_default_index,Function,Sub-GHz,bridged_subset,uint32_t,SubGhzSetting*
+subghz_setting_get_hopper_frequency,Function,Sub-GHz,bridged_subset,uint32_t,"SubGhzSetting*, size_t"
+subghz_setting_get_hopper_frequency_count,Function,Sub-GHz,bridged_subset,size_t,SubGhzSetting*
+subghz_setting_get_inx_preset_by_name,Function,Sub-GHz,bridged_subset,int,"SubGhzSetting*, const char*"
+subghz_setting_get_preset_count,Function,Sub-GHz,bridged_subset,size_t,SubGhzSetting*
+subghz_setting_get_preset_data,Function,Sub-GHz,bridged_subset,uint8_t*,"SubGhzSetting*, size_t"
+subghz_setting_get_preset_data_by_name,Function,Sub-GHz,bridged_subset,uint8_t*,"SubGhzSetting*, const char*"
+subghz_setting_get_preset_data_size,Function,Sub-GHz,bridged_subset,size_t,"SubGhzSetting*, size_t"
+subghz_setting_get_preset_name,Function,Sub-GHz,bridged_subset,const char*,"SubGhzSetting*, size_t"
+subghz_setting_load,Function,Sub-GHz,bridged_subset,void,"SubGhzSetting*, const char*"
+subghz_setting_load_custom_preset,Function,Sub-GHz,bridged_subset,_Bool,"SubGhzSetting*, const char*, FlipperFormat*"
+subghz_transmitter_alloc_init,Function,Sub-GHz,bridged_subset,SubGhzTransmitter*,"SubGhzEnvironment*, const char*"
+subghz_transmitter_deserialize,Function,Sub-GHz,bridged_subset,SubGhzProtocolStatus,"SubGhzTransmitter*, FlipperFormat*"
+subghz_transmitter_free,Function,Sub-GHz,bridged_subset,void,SubGhzTransmitter*
 subghz_transmitter_get_protocol_instance,Function,Sub-GHz,not_bridged,SubGhzProtocolEncoderBase*,SubGhzTransmitter*
-subghz_transmitter_stop,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,SubGhzTransmitter*
-subghz_transmitter_yield,Function,Sub-GHz,native_export_needs_arm_bridge,LevelDuration,void*
+subghz_transmitter_stop,Function,Sub-GHz,bridged_subset,_Bool,SubGhzTransmitter*
+subghz_transmitter_yield,Function,Sub-GHz,bridged_subset,LevelDuration,void*
 subghz_tx_rx_worker_alloc,Function,Sub-GHz,not_bridged,SubGhzTxRxWorker*,
 subghz_tx_rx_worker_available,Function,Sub-GHz,not_bridged,size_t,SubGhzTxRxWorker*
 subghz_tx_rx_worker_free,Function,Sub-GHz,not_bridged,void,SubGhzTxRxWorker*
@@ -2563,26 +2563,26 @@ subghz_tx_rx_worker_set_callback_have_read,Function,Sub-GHz,not_bridged,void,"Su
 subghz_tx_rx_worker_start,Function,Sub-GHz,not_bridged,_Bool,"SubGhzTxRxWorker*, const SubGhzDevice*, uint32_t"
 subghz_tx_rx_worker_stop,Function,Sub-GHz,not_bridged,void,SubGhzTxRxWorker*
 subghz_tx_rx_worker_write,Function,Sub-GHz,not_bridged,_Bool,"SubGhzTxRxWorker*, uint8_t*, size_t"
-subghz_worker_alloc,Function,Sub-GHz,native_export_needs_arm_bridge,SubGhzWorker*,
-subghz_worker_free,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzWorker*
-subghz_worker_is_running,Function,Sub-GHz,native_export_needs_arm_bridge,_Bool,SubGhzWorker*
+subghz_worker_alloc,Function,Sub-GHz,bridged_subset,SubGhzWorker*,
+subghz_worker_free,Function,Sub-GHz,bridged_subset,void,SubGhzWorker*
+subghz_worker_is_running,Function,Sub-GHz,bridged_subset,_Bool,SubGhzWorker*
 subghz_worker_rx_callback,Function,Sub-GHz,native_export_needs_arm_bridge,void,"_Bool, uint32_t, void*"
-subghz_worker_set_context,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzWorker*, void*"
+subghz_worker_set_context,Function,Sub-GHz,bridged_subset,void,"SubGhzWorker*, void*"
 subghz_worker_set_filter,Function,Sub-GHz,not_bridged,void,"SubGhzWorker*, uint16_t"
-subghz_worker_set_overrun_callback,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzWorker*, SubGhzWorkerOverrunCallback"
-subghz_worker_set_pair_callback,Function,Sub-GHz,native_export_needs_arm_bridge,void,"SubGhzWorker*, SubGhzWorkerPairCallback"
-subghz_worker_start,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzWorker*
-subghz_worker_stop,Function,Sub-GHz,native_export_needs_arm_bridge,void,SubGhzWorker*
-submenu_add_item,Function,GUI modules,native_export_needs_arm_bridge,void,"Submenu*, const char*, uint32_t, SubmenuItemCallback, void*"
+subghz_worker_set_overrun_callback,Function,Sub-GHz,bridged_subset,void,"SubGhzWorker*, SubGhzWorkerOverrunCallback"
+subghz_worker_set_pair_callback,Function,Sub-GHz,bridged_subset,void,"SubGhzWorker*, SubGhzWorkerPairCallback"
+subghz_worker_start,Function,Sub-GHz,bridged_subset,void,SubGhzWorker*
+subghz_worker_stop,Function,Sub-GHz,bridged_subset,void,SubGhzWorker*
+submenu_add_item,Function,GUI modules,bridged_subset,void,"Submenu*, const char*, uint32_t, SubmenuItemCallback, void*"
 submenu_add_item_ex,Function,GUI modules,not_bridged,void,"Submenu*, const char*, uint32_t, SubmenuItemCallbackEx, void*"
-submenu_alloc,Function,GUI modules,native_export_needs_arm_bridge,Submenu*,
-submenu_change_item_label,Function,GUI modules,native_export_needs_arm_bridge,void,"Submenu*, uint32_t, const char*"
-submenu_free,Function,GUI modules,native_export_needs_arm_bridge,void,Submenu*
+submenu_alloc,Function,GUI modules,bridged_subset,Submenu*,
+submenu_change_item_label,Function,GUI modules,bridged_subset,void,"Submenu*, uint32_t, const char*"
+submenu_free,Function,GUI modules,bridged_subset,void,Submenu*
 submenu_get_selected_item,Function,GUI modules,not_bridged,uint32_t,Submenu*
-submenu_get_view,Function,GUI modules,native_export_needs_arm_bridge,View*,Submenu*
-submenu_reset,Function,GUI modules,native_export_needs_arm_bridge,void,Submenu*
-submenu_set_header,Function,GUI modules,native_export_needs_arm_bridge,void,"Submenu*, const char*"
-submenu_set_selected_item,Function,GUI modules,native_export_needs_arm_bridge,void,"Submenu*, uint32_t"
+submenu_get_view,Function,GUI modules,bridged_subset,View*,Submenu*
+submenu_reset,Function,GUI modules,bridged_subset,void,Submenu*
+submenu_set_header,Function,GUI modules,bridged_subset,void,"Submenu*, const char*"
+submenu_set_selected_item,Function,GUI modules,bridged_subset,void,"Submenu*, uint32_t"
 t5577_write,Function,Other libraries and assets,not_bridged,void,LFRFIDT5577*
 t5577_write_with_mask,Function,Other libraries and assets,not_bridged,void,"LFRFIDT5577*, uint8_t, _Bool, uint32_t"
 t5577_write_with_pass,Function,Other libraries and assets,not_bridged,void,"LFRFIDT5577*, uint32_t"
@@ -2603,22 +2603,22 @@ tar_archive_set_file_callback,Function,Other libraries and assets,not_bridged,vo
 tar_archive_store_data,Function,Other libraries and assets,not_bridged,_Bool,"TarArchive*, const char*, const uint8_t*, const int32_t"
 tar_archive_unpack_file,Function,Other libraries and assets,not_bridged,_Bool,"TarArchive*, const char*, const char*"
 tar_archive_unpack_to,Function,Other libraries and assets,not_bridged,_Bool,"TarArchive*, const char*, TarArchiveNameConverter"
-text_box_alloc,Function,GUI modules,native_export_needs_arm_bridge,TextBox*,
-text_box_free,Function,GUI modules,native_export_needs_arm_bridge,void,TextBox*
-text_box_get_view,Function,GUI modules,native_export_needs_arm_bridge,View*,TextBox*
-text_box_reset,Function,GUI modules,native_export_needs_arm_bridge,void,TextBox*
-text_box_set_focus,Function,GUI modules,native_export_needs_arm_bridge,void,"TextBox*, TextBoxFocus"
-text_box_set_font,Function,GUI modules,native_export_needs_arm_bridge,void,"TextBox*, TextBoxFont"
-text_box_set_text,Function,GUI modules,native_export_needs_arm_bridge,void,"TextBox*, const char*"
-text_input_alloc,Function,GUI modules,native_export_needs_arm_bridge,TextInput*,
-text_input_free,Function,GUI modules,native_export_needs_arm_bridge,void,TextInput*
+text_box_alloc,Function,GUI modules,bridged_subset,TextBox*,
+text_box_free,Function,GUI modules,bridged_subset,void,TextBox*
+text_box_get_view,Function,GUI modules,bridged_subset,View*,TextBox*
+text_box_reset,Function,GUI modules,bridged_subset,void,TextBox*
+text_box_set_focus,Function,GUI modules,bridged_subset,void,"TextBox*, TextBoxFocus"
+text_box_set_font,Function,GUI modules,bridged_subset,void,"TextBox*, TextBoxFont"
+text_box_set_text,Function,GUI modules,bridged_subset,void,"TextBox*, const char*"
+text_input_alloc,Function,GUI modules,bridged_subset,TextInput*,
+text_input_free,Function,GUI modules,bridged_subset,void,TextInput*
 text_input_get_validator_callback,Function,GUI modules,not_bridged,TextInputValidatorCallback,TextInput*
 text_input_get_validator_callback_context,Function,GUI modules,native_export_needs_arm_bridge,void*,TextInput*
-text_input_get_view,Function,GUI modules,native_export_needs_arm_bridge,View*,TextInput*
-text_input_reset,Function,GUI modules,native_export_needs_arm_bridge,void,TextInput*
-text_input_set_header_text,Function,GUI modules,native_export_needs_arm_bridge,void,"TextInput*, const char*"
-text_input_set_minimum_length,Function,GUI modules,native_export_needs_arm_bridge,void,"TextInput*, size_t"
-text_input_set_result_callback,Function,GUI modules,native_export_needs_arm_bridge,void,"TextInput*, TextInputCallback, void*, char*, size_t, _Bool"
+text_input_get_view,Function,GUI modules,bridged_subset,View*,TextInput*
+text_input_reset,Function,GUI modules,bridged_subset,void,TextInput*
+text_input_set_header_text,Function,GUI modules,bridged_subset,void,"TextInput*, const char*"
+text_input_set_minimum_length,Function,GUI modules,bridged_subset,void,"TextInput*, size_t"
+text_input_set_result_callback,Function,GUI modules,bridged_subset,void,"TextInput*, TextInputCallback, void*, char*, size_t, _Bool"
 text_input_set_validator,Function,GUI modules,native_export_needs_arm_bridge,void,"TextInput*, TextInputValidatorCallback, void*"
 uint8_to_hex_chars,Function,Other libraries and assets,not_bridged,void,"const uint8_t*, uint8_t*, int"
 usb_cdc_dual,Variable,Other libraries and assets,not_bridged,FuriHalUsbInterface,
@@ -2632,19 +2632,19 @@ validator_is_file_free,Function,Other libraries and assets,not_bridged,void,Vali
 value_index_bool,Function,Other libraries and assets,not_bridged,size_t,"const _Bool, const _Bool[], size_t"
 value_index_float,Function,Other libraries and assets,not_bridged,size_t,"const float, const float[], size_t"
 value_index_int32,Function,Other libraries and assets,not_bridged,size_t,"const int32_t, const int32_t[], size_t"
-value_index_uint32,Function,Other libraries and assets,native_export_needs_arm_bridge,size_t,"const uint32_t, const uint32_t[], size_t"
-variable_item_get_context,Function,GUI modules,native_export_needs_arm_bridge,void*,VariableItem*
-variable_item_get_current_value_index,Function,GUI modules,native_export_needs_arm_bridge,uint8_t,VariableItem*
-variable_item_list_add,Function,GUI modules,native_export_needs_arm_bridge,VariableItem*,"VariableItemList*, const char*, uint8_t, VariableItemChangeCallback, void*"
-variable_item_list_alloc,Function,GUI modules,native_export_needs_arm_bridge,VariableItemList*,
-variable_item_list_free,Function,GUI modules,native_export_needs_arm_bridge,void,VariableItemList*
+value_index_uint32,Function,Other libraries and assets,bridged_subset,size_t,"const uint32_t, const uint32_t[], size_t"
+variable_item_get_context,Function,GUI modules,bridged_subset,void*,VariableItem*
+variable_item_get_current_value_index,Function,GUI modules,bridged_subset,uint8_t,VariableItem*
+variable_item_list_add,Function,GUI modules,bridged_subset,VariableItem*,"VariableItemList*, const char*, uint8_t, VariableItemChangeCallback, void*"
+variable_item_list_alloc,Function,GUI modules,bridged_subset,VariableItemList*,
+variable_item_list_free,Function,GUI modules,bridged_subset,void,VariableItemList*
 variable_item_list_get_selected_item_index,Function,GUI modules,not_bridged,uint8_t,VariableItemList*
-variable_item_list_get_view,Function,GUI modules,native_export_needs_arm_bridge,View*,VariableItemList*
-variable_item_list_reset,Function,GUI modules,native_export_needs_arm_bridge,void,VariableItemList*
-variable_item_list_set_enter_callback,Function,GUI modules,native_export_needs_arm_bridge,void,"VariableItemList*, VariableItemListEnterCallback, void*"
-variable_item_list_set_selected_item,Function,GUI modules,native_export_needs_arm_bridge,void,"VariableItemList*, uint8_t"
-variable_item_set_current_value_index,Function,GUI modules,native_export_needs_arm_bridge,void,"VariableItem*, uint8_t"
-variable_item_set_current_value_text,Function,GUI modules,native_export_needs_arm_bridge,void,"VariableItem*, const char*"
+variable_item_list_get_view,Function,GUI modules,bridged_subset,View*,VariableItemList*
+variable_item_list_reset,Function,GUI modules,bridged_subset,void,VariableItemList*
+variable_item_list_set_enter_callback,Function,GUI modules,bridged_subset,void,"VariableItemList*, VariableItemListEnterCallback, void*"
+variable_item_list_set_selected_item,Function,GUI modules,bridged_subset,void,"VariableItemList*, uint8_t"
+variable_item_set_current_value_index,Function,GUI modules,bridged_subset,void,"VariableItem*, uint8_t"
+variable_item_set_current_value_text,Function,GUI modules,bridged_subset,void,"VariableItem*, const char*"
 variable_item_set_item_label,Function,GUI modules,not_bridged,void,"VariableItem*, const char*"
 variable_item_set_values_count,Function,GUI modules,not_bridged,void,"VariableItem*, uint8_t"
 varint_int32_length,Function,Other libraries and assets,not_bridged,size_t,int32_t
@@ -2671,32 +2671,32 @@ view_dispatcher_alloc,Function,Views and dispatcher,bridged_subset,ViewDispatche
 view_dispatcher_alloc_ex,Function,Views and dispatcher,not_bridged,ViewDispatcher*,FuriEventLoop*
 view_dispatcher_attach_to_gui,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, Gui*, ViewDispatcherType"
 view_dispatcher_check_id,Function,Views and dispatcher,not_bridged,_Bool,"ViewDispatcher*, uint32_t"
-view_dispatcher_enable_queue,Function,Views and dispatcher,native_export_needs_arm_bridge,void,ViewDispatcher*
+view_dispatcher_enable_queue,Function,Views and dispatcher,bridged_subset,void,ViewDispatcher*
 view_dispatcher_free,Function,Views and dispatcher,bridged_subset,void,ViewDispatcher*
 view_dispatcher_get_event_loop,Function,Views and dispatcher,not_bridged,FuriEventLoop*,ViewDispatcher*
 view_dispatcher_remove_view,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, uint32_t"
 view_dispatcher_run,Function,Views and dispatcher,bridged_subset,void,ViewDispatcher*
-view_dispatcher_send_custom_event,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"ViewDispatcher*, uint32_t"
+view_dispatcher_send_custom_event,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, uint32_t"
 view_dispatcher_send_to_back,Function,Views and dispatcher,not_bridged,void,ViewDispatcher*
 view_dispatcher_send_to_front,Function,Views and dispatcher,not_bridged,void,ViewDispatcher*
-view_dispatcher_set_custom_event_callback,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"ViewDispatcher*, ViewDispatcherCustomEventCallback"
+view_dispatcher_set_custom_event_callback,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, ViewDispatcherCustomEventCallback"
 view_dispatcher_set_event_callback_context,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, void*"
 view_dispatcher_set_navigation_event_callback,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, ViewDispatcherNavigationEventCallback"
 view_dispatcher_set_tick_event_callback,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, ViewDispatcherTickEventCallback, uint32_t"
 view_dispatcher_stop,Function,Views and dispatcher,bridged_subset,void,ViewDispatcher*
 view_dispatcher_switch_to_view,Function,Views and dispatcher,bridged_subset,void,"ViewDispatcher*, uint32_t"
 view_free,Function,Views and dispatcher,bridged_subset,void,View*
-view_free_model,Function,Views and dispatcher,native_export_needs_arm_bridge,void,View*
+view_free_model,Function,Views and dispatcher,bridged_subset,void,View*
 view_get_model,Function,Views and dispatcher,bridged_subset,void*,View*
-view_holder_alloc,Function,Views and dispatcher,native_export_needs_arm_bridge,ViewHolder*,
-view_holder_attach_to_gui,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"ViewHolder*, Gui*"
-view_holder_free,Function,Views and dispatcher,native_export_needs_arm_bridge,void,ViewHolder*
+view_holder_alloc,Function,Views and dispatcher,bridged_subset,ViewHolder*,
+view_holder_attach_to_gui,Function,Views and dispatcher,bridged_subset,void,"ViewHolder*, Gui*"
+view_holder_free,Function,Views and dispatcher,bridged_subset,void,ViewHolder*
 view_holder_get_free_context,Function,Views and dispatcher,not_bridged,void*,ViewHolder*
 view_holder_send_to_back,Function,Views and dispatcher,not_bridged,void,ViewHolder*
 view_holder_send_to_front,Function,Views and dispatcher,not_bridged,void,ViewHolder*
-view_holder_set_back_callback,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"ViewHolder*, BackCallback, void*"
+view_holder_set_back_callback,Function,Views and dispatcher,bridged_subset,void,"ViewHolder*, BackCallback, void*"
 view_holder_set_free_callback,Function,Views and dispatcher,not_bridged,void,"ViewHolder*, FreeCallback, void*"
-view_holder_set_view,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"ViewHolder*, View*"
+view_holder_set_view,Function,Views and dispatcher,bridged_subset,void,"ViewHolder*, View*"
 view_holder_update,Function,Views and dispatcher,not_bridged,void,"View*, void*"
 view_port_alloc,Function,Views and dispatcher,bridged_subset,ViewPort*,
 view_port_draw_callback_set,Function,Views and dispatcher,bridged_subset,void,"ViewPort*, ViewPortDrawCallback, void*"
@@ -2708,17 +2708,17 @@ view_port_get_width,Function,Views and dispatcher,not_bridged,uint8_t,const View
 view_port_input_callback_set,Function,Views and dispatcher,bridged_subset,void,"ViewPort*, ViewPortInputCallback, void*"
 view_port_is_enabled,Function,Views and dispatcher,not_bridged,_Bool,const ViewPort*
 view_port_set_height,Function,Views and dispatcher,not_bridged,void,"ViewPort*, uint8_t"
-view_port_set_orientation,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"ViewPort*, ViewPortOrientation"
+view_port_set_orientation,Function,Views and dispatcher,bridged_subset,void,"ViewPort*, ViewPortOrientation"
 view_port_set_width,Function,Views and dispatcher,not_bridged,void,"ViewPort*, uint8_t"
 view_port_update,Function,Views and dispatcher,bridged_subset,void,ViewPort*
 view_set_context,Function,Views and dispatcher,bridged_subset,void,"View*, void*"
 view_set_custom_callback,Function,Views and dispatcher,not_bridged,void,"View*, ViewCustomCallback"
 view_set_draw_callback,Function,Views and dispatcher,bridged_subset,void,"View*, ViewDrawCallback"
-view_set_enter_callback,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"View*, ViewCallback"
-view_set_exit_callback,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"View*, ViewCallback"
+view_set_enter_callback,Function,Views and dispatcher,bridged_subset,void,"View*, ViewCallback"
+view_set_exit_callback,Function,Views and dispatcher,bridged_subset,void,"View*, ViewCallback"
 view_set_input_callback,Function,Views and dispatcher,bridged_subset,void,"View*, ViewInputCallback"
-view_set_orientation,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"View*, ViewOrientation"
-view_set_previous_callback,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"View*, ViewNavigationCallback"
+view_set_orientation,Function,Views and dispatcher,bridged_subset,void,"View*, ViewOrientation"
+view_set_previous_callback,Function,Views and dispatcher,bridged_subset,void,"View*, ViewNavigationCallback"
 view_set_update_callback,Function,Views and dispatcher,not_bridged,void,"View*, ViewUpdateCallback"
 view_set_update_callback_context,Function,Views and dispatcher,not_bridged,void,"View*, void*"
 view_stack_add_view,Function,Views and dispatcher,not_bridged,void,"ViewStack*, View*"
@@ -2727,16 +2727,16 @@ view_stack_free,Function,Views and dispatcher,not_bridged,void,ViewStack*
 view_stack_get_view,Function,Views and dispatcher,not_bridged,View*,ViewStack*
 view_stack_remove_view,Function,Views and dispatcher,not_bridged,void,"ViewStack*, View*"
 view_tie_icon_animation,Function,Views and dispatcher,native_export_needs_arm_bridge,void,"View*, IconAnimation*"
-widget_add_button_element,Function,GUI modules,native_export_needs_arm_bridge,void,"Widget*, GuiButtonType, const char*, ButtonCallback, void*"
+widget_add_button_element,Function,GUI modules,bridged_subset,void,"Widget*, GuiButtonType, const char*, ButtonCallback, void*"
 widget_add_circle_element,Function,GUI modules,not_bridged,void,"Widget*, uint8_t, uint8_t, uint8_t, _Bool"
 widget_add_icon_element,Function,GUI modules,native_export_needs_arm_bridge,void,"Widget*, uint8_t, uint8_t, const Icon*"
 widget_add_line_element,Function,GUI modules,not_bridged,void,"Widget*, uint8_t, uint8_t, uint8_t, uint8_t"
-widget_add_rect_element,Function,GUI modules,native_export_needs_arm_bridge,void,"Widget*, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, _Bool"
-widget_add_string_element,Function,GUI modules,native_export_needs_arm_bridge,void,"Widget*, uint8_t, uint8_t, Align, Align, Font, const char*"
-widget_add_string_multiline_element,Function,GUI modules,native_export_needs_arm_bridge,void,"Widget*, uint8_t, uint8_t, Align, Align, Font, const char*"
-widget_add_text_box_element,Function,GUI modules,native_export_needs_arm_bridge,void,"Widget*, uint8_t, uint8_t, uint8_t, uint8_t, Align, Align, const char*, _Bool"
-widget_add_text_scroll_element,Function,GUI modules,native_export_needs_arm_bridge,void,"Widget*, uint8_t, uint8_t, uint8_t, uint8_t, const char*"
-widget_alloc,Function,GUI modules,native_export_needs_arm_bridge,Widget*,
-widget_free,Function,GUI modules,native_export_needs_arm_bridge,void,Widget*
-widget_get_view,Function,GUI modules,native_export_needs_arm_bridge,View*,Widget*
-widget_reset,Function,GUI modules,native_export_needs_arm_bridge,void,Widget*
+widget_add_rect_element,Function,GUI modules,bridged_subset,void,"Widget*, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, _Bool"
+widget_add_string_element,Function,GUI modules,bridged_subset,void,"Widget*, uint8_t, uint8_t, Align, Align, Font, const char*"
+widget_add_string_multiline_element,Function,GUI modules,bridged_subset,void,"Widget*, uint8_t, uint8_t, Align, Align, Font, const char*"
+widget_add_text_box_element,Function,GUI modules,bridged_subset,void,"Widget*, uint8_t, uint8_t, uint8_t, uint8_t, Align, Align, const char*, _Bool"
+widget_add_text_scroll_element,Function,GUI modules,bridged_subset,void,"Widget*, uint8_t, uint8_t, uint8_t, uint8_t, const char*"
+widget_alloc,Function,GUI modules,bridged_subset,Widget*,
+widget_free,Function,GUI modules,bridged_subset,void,Widget*
+widget_get_view,Function,GUI modules,bridged_subset,View*,Widget*
+widget_reset,Function,GUI modules,bridged_subset,void,Widget*

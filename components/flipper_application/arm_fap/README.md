@@ -1,5 +1,9 @@
 # ARM FAP compatibility: first implementation
 
+For the later libc, GUI-module, BitBuffer, storage-helper and data-import additions,
+see [Other-library bridges](../../../docs/arm_fap_other_bridges.md), including the
+106 added imports, limits, deferred symbols and verification results.
+
 This runtime executes the unchanged ARM binary from
 [xantopren/rock-paper-scissors](https://github.com/xantopren/rock-paper-scissors),
 commit `fffa4ea5233e1c56c18952b357ab34f409a9cf7d`. Its source is a test reference,

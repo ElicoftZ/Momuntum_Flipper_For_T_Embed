@@ -481,7 +481,10 @@ static bool emulate_context_try_init_transmitter(ProtoPirateApp* app, EmulateCon
     }
 
     const SubGhzProtocol* protocol = NULL;
-    const SubGhzProtocolRegistry* active_registry = app->txrx->protocol_registry;
+    // The RX side no longer keeps a per-instance mutable registry pointer on
+    // ProtoPirateTxRx (removed along with the old plugin-host system) -- it's
+    // just the one global registry now, same as everywhere else in the app.
+    const SubGhzProtocolRegistry* active_registry = &protopirate_protocol_registry;
     if(!active_registry) {
         FURI_LOG_E(TAG, "Active protocol registry unavailable");
         return false;

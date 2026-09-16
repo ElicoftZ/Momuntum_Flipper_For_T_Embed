@@ -13,6 +13,10 @@
 #include "../defines.h"
 
 #define FIAT_MARELLI_PROTOCOL_NAME "Fiat V1"
+// Alias matching the naming convention protopirate_emulate_plugin.c expects
+// (FIAT_V0_PROTOCOL_NAME / FIAT_V2_PROTOCOL_NAME); same string, kept
+// alongside the original name rather than renamed everywhere it's used.
+#define FIAT_V1_PROTOCOL_NAME FIAT_MARELLI_PROTOCOL_NAME
 
 typedef struct SubGhzProtocolDecoderFiatMarelli SubGhzProtocolDecoderFiatMarelli;
 
