@@ -129,7 +129,7 @@ if [[ -f "sdkconfig.defaults.${BOARD}" ]]; then
 fi
 
 # Set target (creates/updates sdkconfig)
-idf.py -B "${BUILD_DIR}" "${BOARD_DEFAULTS_OPTS[@]}" set-target "${TARGET}"
+idf.py -B "${BUILD_DIR}" "-DFLIPPER_BOARD=${BOARD}" "${BOARD_DEFAULTS_OPTS[@]}" set-target "${TARGET}"
 
 # Construct command
 COMMANDS=("reconfigure" "build")
