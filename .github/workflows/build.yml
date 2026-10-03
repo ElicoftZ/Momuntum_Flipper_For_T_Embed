@@ -69,6 +69,11 @@ jobs:
         run: |
           ~/esp/esp-idf/install.sh all
 
+      - name: Install Python build dependencies
+        run: |
+          source ~/esp/esp-idf/export.sh
+          python -m pip install Pillow
+
       - name: Verify ESP-IDF environment
         run: |
           source ~/esp/esp-idf/export.sh
