@@ -50,7 +50,7 @@ typedef enum {
 
 typedef struct {
     uint16_t command;
-    uint8_t status;
+    uint16_t status;
     uint16_t data_len;
     uint8_t data[CHAMELEON_RESP_DATA_MAX];
 } ChameleonResp;

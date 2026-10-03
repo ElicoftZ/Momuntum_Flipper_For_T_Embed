@@ -9,6 +9,7 @@
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_rom_uart.h>
+#include <esp_ota_ops.h>
 
 static const char* TAG = "Main";
 
@@ -197,6 +198,13 @@ void app_main(void) {
         "All services started: internal free=%u largest=%u; entering background",
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+
+    /* Keep an OTA image in pending-verify state until Furi and all registered
+     * services have started. A boot failure before this point lets the
+     * bootloader select the previously working image on the next reboot. */
+    if(esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+        ESP_LOGI(TAG, "OTA image passed startup and is marked valid");
+    }
 
     // This blocks forever (thread scrubber)
     furi_background();

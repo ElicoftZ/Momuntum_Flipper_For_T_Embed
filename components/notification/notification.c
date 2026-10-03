@@ -446,6 +446,33 @@ static bool notification_load_settings(NotificationApp* app) {
     }
     /* Sanity: never let a 0ms delay sneak through and instantly blank the screen. */
     if(app->settings.display_off_delay_ms < 2000) app->settings.display_off_delay_ms = 2000;
+
+    /* Sanity: a black "UI Background" (the field/backdrop behind every drawn
+     * element -- default Orange) makes the whole screen unreadable, including
+     * this very settings menu, with no way to see well enough to fix it by
+     * hand. Self-heal on load whenever the saved value would render black, so
+     * a stuck black-on-black board recovers on its very next boot with zero
+     * input needed.
+     *
+     * Two cases, handled differently so a genuine "Custom" choice isn't
+     * silently thrown away:
+     *   - The plain "Black" preset was selected directly: nothing custom to
+     *     preserve, so fall back to the flat Orange preset.
+     *   - "Custom" was selected but the picked color happened to land on
+     *     black (or near it): keep the selection as Custom -- don't lose that
+     *     the user had chosen a custom color at all -- and only replace the
+     *     unusable black VALUE with a safe, visible default. */
+    if(app->settings.ui_color_index == 0) {
+        FURI_LOG_W(TAG, "UI Background loaded as Black preset -- forcing Orange default");
+        app->settings.ui_color_index = 1; /* Orange */
+    } else if(app->settings.ui_color_index == UI_COLOR_CUSTOM_INDEX) {
+        uint32_t c = app->settings.ui_custom_color;
+        uint8_t r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+        if(r < 24 && g < 24 && b < 24) {
+            FURI_LOG_W(TAG, "UI Background custom color loaded black -- forcing a visible default");
+            app->settings.ui_custom_color = UI_CUSTOM_DEFAULT_RGB; /* stays Custom, just not black */
+        }
+    }
     return ok;
 }
 

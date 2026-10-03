@@ -200,6 +200,8 @@ struct WlanApp {
     WlanApRecord* ap_records;
     uint16_t ap_count;
     size_t ap_selected_index;
+    WlanConnectFilter ap_filter;
+    uint8_t connect_filter_channel;
 
     // Connection / Target State
     bool connected;

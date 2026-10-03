@@ -12,6 +12,7 @@
 #include <esp_attr.h>
 #include <esp_system.h>
 #include <esp_ota_ops.h>
+#include <launcher_bridge.h>
 #include <esp_partition.h>
 #include <esp_app_format.h>
 #include <esp_app_desc.h>
@@ -92,6 +93,7 @@ static const esp_partition_t* fw_ota_multiboot_target(void) {
 #endif
 
 bool fw_ota_is_supported(void) {
+    if(launcher_bridge_is_hosted()) return false;
 #ifdef CONFIG_MOMENTUM_MULTIBOOT
     return fw_ota_multiboot_target() != NULL;
 #else
@@ -300,10 +302,24 @@ bool fw_ota_flash_file(
     void* progress_ctx,
     char* err,
     size_t err_size) {
+    if(launcher_bridge_is_hosted()) {
+        fw_ota_set_err(err, err_size, "Update from Launcher > Flipper OTA");
+        return false;
+    }
 #ifdef CONFIG_MOMENTUM_MULTIBOOT
     const esp_partition_t* next = fw_ota_multiboot_target();
     if(!next) {
         fw_ota_set_err(err, err_size, "OTA not supported (no ota slot)");
+        return false;
+    }
+    FwOtaImageInfo info;
+    FwOtaImageStatus image_status = fw_ota_inspect_image(path, &info);
+    if(image_status != FwOtaImageOk) {
+        fw_ota_set_err(err, err_size, fw_ota_image_status_str(image_status));
+        return false;
+    }
+    if(info.size > next->size) {
+        fw_ota_set_err(err, err_size, "image too big for update slot");
         return false;
     }
     /* FACTORY can't go through esp_ota_begin -- write it raw instead. */
@@ -314,6 +330,16 @@ bool fw_ota_flash_file(
     const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
     if(!next) {
         fw_ota_set_err(err, err_size, "OTA not supported (no ota slot)");
+        return false;
+    }
+    FwOtaImageInfo info;
+    FwOtaImageStatus image_status = fw_ota_inspect_image(path, &info);
+    if(image_status != FwOtaImageOk) {
+        fw_ota_set_err(err, err_size, fw_ota_image_status_str(image_status));
+        return false;
+    }
+    if(info.size > next->size) {
+        fw_ota_set_err(err, err_size, "image too big for update slot");
         return false;
     }
 #endif

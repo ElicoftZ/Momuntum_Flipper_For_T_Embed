@@ -68,8 +68,28 @@ static void wlan_connect_view_draw_callback(Canvas* canvas, void* _model) {
             canvas, WLAN_VIEW_DISPLAY_W - 7 - cw, WLAN_VIEW_HEADER_BASELINE_Y, count_buf);
     }
 
+    static const char* const filter_labels[WlanConnectFilterCount] = {
+        "All", "Open", "Saved", "Strong", "Channel"};
+    canvas_set_font(canvas, FontSecondary);
+    char footer[32];
+    snprintf(
+        footer,
+        sizeof(footer),
+        "L:%s R:Ch%u",
+        filter_labels[model->filter],
+        (unsigned)model->filter_channel);
+    canvas_draw_str_aligned(canvas, 64, 63, AlignCenter, AlignBottom, footer);
+
     if(model->ap_count == 0) {
-        wlan_view_draw_empty_box(canvas, "No networks found");
+        static const char* const empty_labels[WlanConnectFilterCount] = {
+            "No networks found", "No open networks", "No saved networks", "No strong networks", "No channel networks"};
+        if(model->filter == WlanConnectFilterChannel) {
+            char empty[32];
+            snprintf(empty, sizeof(empty), "No channel %u networks", model->filter_channel);
+            wlan_view_draw_empty_box(canvas, empty);
+        } else {
+            wlan_view_draw_empty_box(canvas, empty_labels[model->filter]);
+        }
         return;
     }
 
@@ -150,7 +170,9 @@ static bool wlan_connect_view_input_callback(InputEvent* event, void* context) {
         }
     }
 
-    if(model->ap_count == 0) {
+    if(model->ap_count == 0 &&
+       !((event->key == InputKeyLeft || event->key == InputKeyRight) &&
+         event->type == InputTypeShort)) {
         view_commit_model(view, false);
         return false;
     }
@@ -185,6 +207,20 @@ static bool wlan_connect_view_input_callback(InputEvent* event, void* context) {
         if(ctx->view_dispatcher) {
             view_dispatcher_send_custom_event(
                 ctx->view_dispatcher, WlanAppCustomEventConnectLongOk);
+        }
+        consumed = true;
+    } else if(event->key == InputKeyLeft && event->type == InputTypeShort) {
+        view_commit_model(view, false);
+        if(ctx->view_dispatcher) {
+            view_dispatcher_send_custom_event(
+                ctx->view_dispatcher, WlanAppCustomEventConnectFilter);
+        }
+        consumed = true;
+    } else if(event->key == InputKeyRight && event->type == InputTypeShort) {
+        view_commit_model(view, false);
+        if(ctx->view_dispatcher) {
+            view_dispatcher_send_custom_event(
+                ctx->view_dispatcher, WlanAppCustomEventConnectChannel);
         }
         consumed = true;
     } else {
@@ -263,6 +299,25 @@ uint8_t wlan_connect_view_get_selected(View* view) {
     uint8_t s = model->selected;
     view_commit_model(view, false);
     return s;
+}
+
+uint16_t wlan_connect_view_get_selected_ap_id(View* view) {
+    WlanConnectViewModel* model = view_get_model(view);
+    uint16_t id = model->selected < model->ap_count ? model->aps[model->selected].user_id : UINT16_MAX;
+    view_commit_model(view, false);
+    return id;
+}
+
+void wlan_connect_view_set_filter(View* view, WlanConnectFilter filter) {
+    WlanConnectViewModel* model = view_get_model(view);
+    if(filter < WlanConnectFilterCount) model->filter = filter;
+    view_commit_model(view, true);
+}
+
+void wlan_connect_view_set_filter_channel(View* view, uint8_t channel) {
+    WlanConnectViewModel* model = view_get_model(view);
+    if(channel >= 1 && channel <= 13) model->filter_channel = channel;
+    view_commit_model(view, true);
 }
 
 void wlan_connect_view_clear_menu(View* view) {

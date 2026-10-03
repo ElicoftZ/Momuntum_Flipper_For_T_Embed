@@ -20,6 +20,7 @@
 
 #include "loader.h"
 #include "loader_menu.h"
+#include <launcher_bridge.h>
 
 #define TAG "LoaderMenu"
 
@@ -217,9 +218,16 @@ void loader_menu_free_fap_icon(const Icon* icon) {
  * does not include it. */
 /* Dual Boot is hideable from Momentum settings: it reboots the board into
  * another firmware, which is not something everyone wants one OK press away
- * on a device they hand to someone else. */
+ * on a device they hand to someone else. Bruce JS is hideable too, but for a
+ * different reason -- ON by default (see hide_bruce_js's own comment in
+ * settings_core.h) so it stays out of the main menu until the user
+ * explicitly reveals it, rather than needing an opt-in hide. */
 static bool loader_menu_entry_hidden(const char* name) {
-    return momentum_settings.hide_dualboot && name && strcmp(name, "Dual Boot") == 0;
+    if(!name) return false;
+    if((momentum_settings.hide_dualboot || launcher_bridge_is_hosted()) &&
+       strcmp(name, "Dual Boot") == 0) return true;
+    if(momentum_settings.hide_bruce_js && strcmp(name, "Bruce JS") == 0) return true;
+    return false;
 }
 
 static size_t loader_menu_pinned_index(void) {
@@ -276,6 +284,8 @@ static void loader_menu_find_add_app(
     FuriString* line,
     size_t pinned) {
     if(furi_string_start_with(line, "/")) {
+        const char* base = strrchr(furi_string_get_cstr(line), '/');
+        if(launcher_bridge_is_hosted() && base && !strcmp(base + 1, "dualboot.fap")) return;
         const char* launch = strdup(furi_string_get_cstr(line));
         const Icon* icon;
         /* line doubles as the label output: on success it becomes the manifest
@@ -405,6 +415,11 @@ static void loader_menu_build_menu(LoaderMenuApp* app, LoaderMenu* menu) {
         }
     } else {
         loader_menu_build_default(app, pinned);
+    }
+
+    if(launcher_bridge_is_hosted()) {
+        loader_menu_add_app_entry(
+            app, "Return to Launcher", &A_Plugins_14, "Return to Launcher", false, false);
     }
 
     free(seen_internal);

@@ -9,6 +9,7 @@
 #include <furi_hal_rtc.h>
 #include <wifi/wlan_hal.h>
 #include <stdio.h>
+#include <launcher_bridge.h>
 
 #include "../desktop_i.h"
 #include "../helpers/qflipper_bridge.h"
@@ -180,7 +181,7 @@ static void cc_ofw_label(
         snprintf(text, text_size, "Battery: %u%%", (unsigned)furi_hal_power_get_pct());
         break;
     case CcDualBoot:
-        strlcpy(text, "Dual Boot", text_size);
+        strlcpy(text, launcher_bridge_is_hosted() ? "Launcher" : "Dual Boot", text_size);
         break;
     case CcBrightness:
         snprintf(

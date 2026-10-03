@@ -100,6 +100,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         idf::esp_http_server
         idf::lfrfid
         idf::mjs
+        idf::mquickjs
         idf::momentum
         idf::libsmb2
         idf::mbedtls
@@ -120,6 +121,8 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
             "${ESP32_DIR}/lib/lfrfid/tools"
             "${ESP32_DIR}/lib/mjs"
             "${ESP32_DIR}/lib/mjs/common"
+            "${ESP32_DIR}/lib/mquickjs"
+            "${ESP32_DIR}/applications/system/bruce_js_app/gen"
             "${ESP32_DIR}"
             "${ESP32_DIR}/applications"
             "${ESP32_DIR}/applications/main"

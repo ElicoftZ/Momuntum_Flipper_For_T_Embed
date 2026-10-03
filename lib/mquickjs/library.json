@@ -1,0 +1,15 @@
+{
+  "name": "mquickjs",
+  "version": "0.0.6",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "libArchive": false,
+    "srcFilter": [
+      "+<mquickjs.c>",
+      "+<cutils.c>",
+      "+<dtoa.c>",
+      "+<libm.c>"
+    ]
+  }
+}

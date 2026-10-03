@@ -671,6 +671,16 @@ static void momentum_settings_hide_dualboot_changed(VariableItem* item) {
     app->dirty = true;
 }
 
+static void momentum_settings_hide_bruce_js_changed(VariableItem* item) {
+    MomentumSettingsApp* app = variable_item_get_context(item);
+    const uint8_t index = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, momentum_unlock_anim_text[index]);
+    /* Same "row reads Show/Hide, index 1 means hide" convention as Dual Boot
+     * above -- the setting itself is hide_bruce_js. */
+    app->settings.hide_bruce_js = (index != 0);
+    app->dirty = true;
+}
+
 static void momentum_settings_unlock_anims_changed(VariableItem* item) {
     MomentumSettingsApp* app = variable_item_get_context(item);
     uint8_t index = variable_item_get_current_value_index(item);
@@ -1464,6 +1474,18 @@ static void momentum_settings_show_page(
             momentum_settings_hide_dualboot_changed,
             app);
         value_index = app->settings.hide_dualboot ? 1U : 0U;
+        variable_item_set_current_value_index(item, value_index);
+        variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
+
+        /* Bruce JS defaults to hidden (see hide_bruce_js's own comment in
+         * settings_core.h) -- this is the one OK press that reveals it. */
+        item = variable_item_list_add(
+            app->variable_item_list,
+            "Hide Bruce JS",
+            COUNT_OF(momentum_unlock_anim_text),
+            momentum_settings_hide_bruce_js_changed,
+            app);
+        value_index = app->settings.hide_bruce_js ? 1U : 0U;
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, momentum_unlock_anim_text[value_index]);
 

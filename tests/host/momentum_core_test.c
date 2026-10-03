@@ -13,6 +13,8 @@ static void test_defaults_and_sanitizing(void) {
     assert(settings.asset_pack[0] == '\0');
     assert(settings.anim_speed == 100U);
     assert(settings.cycle_anims == 0);
+    assert(!settings.hide_dualboot);
+    assert(settings.hide_bruce_js);
     assert(!settings.unlock_anims);
     assert(settings.menu_style == MenuStyleList);
     assert(settings.lockscreen_poweroff);

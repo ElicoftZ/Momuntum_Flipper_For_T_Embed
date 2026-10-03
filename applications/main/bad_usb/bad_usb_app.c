@@ -184,7 +184,7 @@ BadUsbApp* bad_usb_app_alloc(char* arg) {
 
     if(!furi_string_empty(app->file_path)) {
         scene_manager_set_scene_state(app->scene_manager, BadUsbSceneWork, true);
-        scene_manager_next_scene(app->scene_manager, BadUsbSceneWork);
+        scene_manager_next_scene(app->scene_manager, BadUsbScenePreview);
     } else {
         furi_string_set(app->file_path, BAD_USB_APP_BASE_FOLDER);
         scene_manager_next_scene(app->scene_manager, BadUsbSceneFileSelect);

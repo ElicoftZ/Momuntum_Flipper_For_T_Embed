@@ -1,4 +1,5 @@
 #include "multiboot.h"
+#include "launcher_bridge.h"
 #include <furi.h>
 #include <storage/storage.h>
 #include <esp_flash.h>
@@ -41,7 +42,7 @@ static bool multiboot_env_ok(void) {
 #ifndef CONFIG_MOMENTUM_MULTIBOOT
     return false;
 #else
-    if(esp_flash_encryption_enabled()) return false;
+    if(launcher_bridge_is_hosted() || esp_flash_encryption_enabled()) return false;
     const esp_partition_t* running = esp_ota_get_running_partition();
     /* WiFi updates alternate between factory and otaupd, so either one can be
      * the running Momentum. */

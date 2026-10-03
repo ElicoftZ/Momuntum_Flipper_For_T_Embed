@@ -8,6 +8,15 @@
 #define WLAN_CONNECT_VIEW_MAX_MENU_ITEMS 6
 #define WLAN_CONNECT_VIEW_MENU_LABEL_MAX 20
 
+typedef enum {
+    WlanConnectFilterAll,
+    WlanConnectFilterOpen,
+    WlanConnectFilterSaved,
+    WlanConnectFilterStrong,
+    WlanConnectFilterChannel,
+    WlanConnectFilterCount,
+} WlanConnectFilter;
+
 typedef struct {
     char ssid[WLAN_CONNECT_VIEW_SSID_MAX];
     bool unlocked; // true = offen oder Passwort bekannt
@@ -24,6 +33,8 @@ typedef struct {
     uint8_t ap_count;
     uint8_t selected;
     uint8_t window_offset;
+    WlanConnectFilter filter;
+    uint8_t filter_channel;
 
     bool menu_open;
     WlanConnectMenuItem menu_items[WLAN_CONNECT_VIEW_MAX_MENU_ITEMS];
@@ -40,6 +51,9 @@ void wlan_connect_view_add_ap(View* view, const char* ssid, bool unlocked, uint1
 
 void wlan_connect_view_set_selected(View* view, uint8_t index);
 uint8_t wlan_connect_view_get_selected(View* view);
+uint16_t wlan_connect_view_get_selected_ap_id(View* view);
+void wlan_connect_view_set_filter(View* view, WlanConnectFilter filter);
+void wlan_connect_view_set_filter_channel(View* view, uint8_t channel);
 
 /* ----- Modal-Submenu (Long-OK auf SSID) ----- */
 void wlan_connect_view_clear_menu(View* view);

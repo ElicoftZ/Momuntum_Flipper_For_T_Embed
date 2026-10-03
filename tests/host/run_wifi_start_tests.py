@@ -29,7 +29,7 @@ fixture = r'''
 #define RECORD_BT "bt"
 typedef int Bt;
 static Bt fake_bt;
-static bool s_started, s_bt_suspended, s_user_enabled;
+static bool s_started, s_bt_suspended, s_user_enabled, s_post_update_held;
 static bool ble_enabled, record_exists, attempts[2], can_suspend;
 static void* s_cmd_queue;
 static int tries, released, reserved, stops, shutdowns, restores, worker_frees;
@@ -68,9 +68,12 @@ static void reset(void) {
 }
 int main(void) {
     reset(); attempts[0]=true;
-    assert(wlan_hal_start() && s_started && !s_bt_suspended);
+    assert(wlan_hal_start() && s_started && s_bt_suspended);
+    assert(!s_post_update_held);
     assert(tries==1 && released==1 && reserved==1 && stops==0);
     assert(wlan_hal_start() && tries==1); /* Idempotent */
+    s_post_update_held=true;
+    assert(wlan_hal_start() && !s_post_update_held && tries==1);
     reset(); attempts[1]=true;
     assert(wlan_hal_start() && s_bt_suspended);
     assert(tries==2 && stops==1 && shutdowns==0);
@@ -79,7 +82,7 @@ int main(void) {
     wlan_restore_ble();
     assert(restores==1 && !s_bt_suspended);
     reset(); can_suspend=false;
-    assert(!wlan_hal_start() && tries==1 && shutdowns==1 && restores==0);
+    assert(!wlan_hal_start() && tries==2 && shutdowns==1 && restores==0);
     reset(); /* Both attempts fail: return BLE to user */
     assert(!wlan_hal_start() && tries==2 && shutdowns==1 && restores==1);
     reset(); s_cmd_queue=NULL; attempts[1]=true;
@@ -90,7 +93,7 @@ int main(void) {
     reset(); s_bt_suspended=s_user_enabled=s_started=true;
     wlan_hal_finish_foreground_session();
     assert(stops==10 && worker_frees==0 && restores==0 && s_bt_suspended);
-    puts("PASS: WiFi startup, BLE fallback, failed retry cleanup, deferred restore, persistent WiFi");
+    puts("PASS: WiFi startup suspends BLE, failed retry cleanup, deferred restore, persistent WiFi, update hold cleared");
     return 0;
 }
 '''

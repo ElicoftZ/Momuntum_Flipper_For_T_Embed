@@ -12,6 +12,7 @@
 #define TAG "LoaderApplications"
 
 #define JS_RUNNER_APP "JS Runner"
+#define BRUCE_JS_RUNNER_APP "Bruce JS"
 
 struct LoaderApplications {
     FuriThread* thread;
@@ -98,7 +99,7 @@ static bool loader_applications_item_callback(
 
 static bool loader_applications_select_app(LoaderApplicationsApp* loader_applications_app) {
     const DialogsFileBrowserOptions browser_options = {
-        .extension = ".fap|.js",
+        .extension = ".fap|.js|.bjs",
         .skip_assets = true,
         .icon = &I_unknown_10px,
         .hide_ext = true,
@@ -152,11 +153,14 @@ static int32_t loader_applications_thread(void* p) {
     view_holder_set_view(app->view_holder, loading_get_view(app->loading));
 
     while(loader_applications_select_app(app)) {
-        if(!furi_string_end_with(app->file_path, ".js")) {
-            loader_applications_start_app(app, furi_string_get_cstr(app->file_path), NULL);
-        } else {
+        if(furi_string_end_with(app->file_path, ".bjs")) {
+            loader_applications_start_app(
+                app, BRUCE_JS_RUNNER_APP, furi_string_get_cstr(app->file_path));
+        } else if(furi_string_end_with(app->file_path, ".js")) {
             loader_applications_start_app(
                 app, JS_RUNNER_APP, furi_string_get_cstr(app->file_path));
+        } else {
+            loader_applications_start_app(app, furi_string_get_cstr(app->file_path), NULL);
         }
     }
 

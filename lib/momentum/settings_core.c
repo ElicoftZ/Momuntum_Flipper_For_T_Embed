@@ -24,6 +24,7 @@ const MomentumSettingsEntry momentum_settings_entries[] = {
         MOMENTUM_CYCLE_ANIMS_MAX,
         MOMENTUM_CYCLE_ANIMS_DEFAULT),
     ENTRY_BOOL(hide_dualboot, false),
+    ENTRY_BOOL(hide_bruce_js, true),
     ENTRY_BOOL(unlock_anims, false),
     ENTRY_ENUM(menu_style, MenuStyleCount, MenuStyleList),
     ENTRY_BOOL(lock_on_boot, true),

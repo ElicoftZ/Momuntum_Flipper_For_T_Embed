@@ -69,6 +69,8 @@ APPS = [
     # The name therefore reverted on every boot and every deep-sleep wake.
     "namechanger_srv",
     "js_app",
+    "bruce_js_app",
+    "bruce_js_app_start",
     "js_event_loop",
     "js_gui",
     "js_gui__loading",

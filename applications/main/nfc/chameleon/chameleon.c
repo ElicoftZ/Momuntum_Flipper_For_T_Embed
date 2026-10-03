@@ -15,6 +15,7 @@
 #include <host/ble_gap.h>
 #include <host/ble_gatt.h>
 #include <host/ble_hs.h>
+#include <host/ble_sm.h>
 #include <nimble_glue.h>
 #include <string.h>
 
@@ -41,6 +42,10 @@ static const ble_uuid16_t CCCD_UUID = BLE_UUID16_INIT(0x2902);
 
 static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static volatile bool s_connected = false;
+static volatile bool s_ready = false;
+static volatile bool s_mtu_done = false;
+static volatile bool s_security_done = false;
+static volatile int s_security_status = 0;
 static bool s_hal_started = false;
 /* True if BT was disabled in settings when we connected: we force-started the
  * stack so the ESP controller gets initialized, and must disable it again on
@@ -61,6 +66,9 @@ static uint16_t s_notify_handle = 0;
 static uint16_t s_cccd_handle = 0;
 static volatile bool s_cccd_done = false;
 static volatile bool s_cccd_written = false;
+static volatile int s_cccd_status = 0;
+static volatile bool s_write_done = false;
+static volatile int s_write_status = 0;
 
 static int s_device_mode = -1; /* cache to skip redundant CHANGE_DEVICE_MODE */
 
@@ -69,6 +77,7 @@ static uint8_t s_acc[CHAMELEON_RESP_DATA_MAX + 32];
 static size_t s_acc_len = 0;
 static ChameleonResp s_last_resp;
 static volatile bool s_resp_ready = false;
+static uint16_t s_expected_command = 0;
 
 static uint8_t cham_lrc(const uint8_t* d, size_t n) {
     uint8_t s = 0;
@@ -78,31 +87,46 @@ static uint8_t cham_lrc(const uint8_t* d, size_t n) {
 
 /* Try to extract one complete frame from the accumulation buffer. */
 static void cham_try_parse(void) {
-    /* Resync to SOF 0x11 0xEF */
-    while(s_acc_len >= 2 && !(s_acc[0] == 0x11 && s_acc[1] == 0xEF)) {
-        memmove(s_acc, s_acc + 1, --s_acc_len);
+    while(!s_resp_ready) {
+        /* Resync to SOF 0x11 0xEF */
+        while(s_acc_len >= 2 && !(s_acc[0] == 0x11 && s_acc[1] == 0xEF)) {
+            memmove(s_acc, s_acc + 1, --s_acc_len);
+        }
+        if(s_acc_len < 9) return;
+
+        if(cham_lrc(s_acc, 8) != s_acc[8]) {
+            memmove(s_acc, s_acc + 1, --s_acc_len);
+            continue;
+        }
+
+        uint16_t data_len = ((uint16_t)s_acc[6] << 8) | s_acc[7];
+        if(data_len > CHAMELEON_RESP_DATA_MAX) {
+            /* Bogus length — drop SOF and resync */
+            memmove(s_acc, s_acc + 2, s_acc_len -= 2);
+            continue;
+        }
+        size_t frame_len = 10u + data_len;
+        if(s_acc_len < frame_len) return;
+
+        if(cham_lrc(s_acc, frame_len - 1) != s_acc[frame_len - 1]) {
+            memmove(s_acc, s_acc + 1, --s_acc_len);
+            continue;
+        }
+
+        uint16_t command = ((uint16_t)s_acc[2] << 8) | s_acc[3];
+        if(command == s_expected_command) {
+            s_last_resp.command = command;
+            s_last_resp.status = ((uint16_t)s_acc[4] << 8) | s_acc[5];
+            s_last_resp.data_len = data_len;
+            if(data_len) memcpy(s_last_resp.data, &s_acc[9], data_len);
+            s_resp_ready = true;
+        }
+
+        /* Consume the frame; keep any trailing bytes for the next parse */
+        size_t rest = s_acc_len - frame_len;
+        if(rest) memmove(s_acc, s_acc + frame_len, rest);
+        s_acc_len = rest;
     }
-    if(s_acc_len < 10) return;
-
-    uint16_t data_len = ((uint16_t)s_acc[6] << 8) | s_acc[7];
-    if(data_len > CHAMELEON_RESP_DATA_MAX) {
-        /* Bogus length — drop SOF and resync */
-        memmove(s_acc, s_acc + 2, s_acc_len -= 2);
-        return;
-    }
-    size_t frame_len = 10u + data_len;
-    if(s_acc_len < frame_len) return;
-
-    s_last_resp.command = ((uint16_t)s_acc[2] << 8) | s_acc[3];
-    s_last_resp.status = s_acc[5];
-    s_last_resp.data_len = data_len;
-    if(data_len) memcpy(s_last_resp.data, &s_acc[9], data_len);
-    s_resp_ready = true;
-
-    /* Consume the frame; keep any trailing bytes for the next parse */
-    size_t rest = s_acc_len - frame_len;
-    if(rest) memmove(s_acc, s_acc + frame_len, rest);
-    s_acc_len = rest;
 }
 
 /* ------------------------------------------------------------ NimBLE GAP --- */
@@ -142,6 +166,16 @@ static void cham_receive_notification(struct os_mbuf* om) {
     }
 }
 
+static int cham_mtu_cb(
+    uint16_t conn_handle, const struct ble_gatt_error* error, uint16_t mtu, void* context) {
+    (void)conn_handle;
+    (void)error;
+    (void)mtu;
+    (void)context;
+    s_mtu_done = true;
+    return 0;
+}
+
 static int cham_gap_cb(struct ble_gap_event* event, void* context) {
     (void)context;
     switch(event->type) {
@@ -163,7 +197,8 @@ static int cham_gap_cb(struct ble_gap_event* event, void* context) {
         if(event->connect.status == 0) {
             s_conn_handle = event->connect.conn_handle;
             s_connected = true;
-            ble_gattc_exchange_mtu(s_conn_handle, NULL, NULL);
+            s_mtu_done = false;
+            if(ble_gattc_exchange_mtu(s_conn_handle, cham_mtu_cb, NULL) != 0) s_mtu_done = true;
         } else {
             s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
             s_connected = false;
@@ -172,6 +207,20 @@ static int cham_gap_cb(struct ble_gap_event* event, void* context) {
     case BLE_GAP_EVENT_DISCONNECT:
         s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         s_connected = false;
+        s_ready = false;
+        s_device_mode = -1;
+        break;
+    case BLE_GAP_EVENT_PASSKEY_ACTION: {
+        struct ble_sm_io io = {.action = event->passkey.params.action};
+        if(io.action == BLE_SM_IOACT_INPUT) {
+            io.passkey = 123456; /* ChameleonUltra's factory PIN. */
+            ble_sm_inject_io(event->passkey.conn_handle, &io);
+        }
+        break;
+    }
+    case BLE_GAP_EVENT_ENC_CHANGE:
+        s_security_status = event->enc_change.status;
+        s_security_done = true;
         break;
     case BLE_GAP_EVENT_NOTIFY_RX:
         if(event->notify_rx.attr_handle == s_notify_handle) {
@@ -249,6 +298,7 @@ static int cham_cccd_write_cb(
     (void)attr;
     (void)context;
     s_cccd_written = error->status == 0;
+    s_cccd_status = error->status;
     s_cccd_done = true;
     return 0;
 }
@@ -262,6 +312,8 @@ static int cham_write_cb(
     (void)attr;
     (void)context;
     if(error->status != 0) ESP_LOGW(TAG, "GATT write failed: %d", error->status);
+    s_write_status = error->status;
+    s_write_done = true;
     return 0;
 }
 
@@ -278,7 +330,7 @@ static bool cham_hal_start(void) {
 
     esp_err_t err = nimble_glue_init("Chameleon Client");
     if(err != ESP_OK) return false;
-    nimble_glue_configure_security(false, false, false, BLE_HS_IO_NO_INPUT_OUTPUT);
+    nimble_glue_configure_security(true, true, true, BLE_HS_IO_KEYBOARD_ONLY);
     ble_att_set_preferred_mtu(247);
     err = nimble_glue_start(NULL, NULL);
     if(err != ESP_OK) {
@@ -287,6 +339,7 @@ static bool cham_hal_start(void) {
     }
 
     s_connected = false;
+    s_ready = false;
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_hal_started = true;
     return true;
@@ -310,6 +363,7 @@ static void cham_hal_stop(void) {
     s_bt_was_disabled = false;
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_connected = false;
+    s_ready = false;
     s_scanning = false;
     s_hal_started = false;
     s_device_mode = -1;
@@ -318,7 +372,7 @@ static void cham_hal_stop(void) {
 /* ----------------------------------------------------- public API -------- */
 
 bool chameleon_connect(volatile bool* abort_flag) {
-    if(s_connected) return true;
+    if(s_ready && s_connected) return true;
     if(!cham_hal_start()) {
         ESP_LOGE(TAG, "HAL start failed");
         cham_hal_stop();
@@ -390,6 +444,16 @@ bool chameleon_connect(volatile bool* abort_flag) {
         return false;
     }
 
+    /* Complete MTU negotiation before starting the next ATT procedure. */
+    for(int i = 0; i < 150 && s_connected && !s_mtu_done; i++) {
+        if(abort_flag && *abort_flag) break;
+        furi_delay_ms(20);
+    }
+    if(!s_connected || !s_mtu_done || (abort_flag && *abort_flag)) {
+        cham_hal_stop();
+        return false;
+    }
+
     /* Discover services and match Nordic UART Service. */
     s_search_done = false;
     rc = ble_gattc_disc_all_svcs(s_conn_handle, cham_service_cb, NULL);
@@ -416,7 +480,7 @@ bool chameleon_connect(volatile bool* abort_flag) {
         return false;
     }
     for(int i = 0; i < 100 && !s_chars_done; i++) furi_delay_ms(20);
-    if(s_write_handle == 0 || s_notify_handle == 0) {
+    if(!s_chars_done || !s_connected || s_write_handle == 0 || s_notify_handle == 0) {
         ESP_LOGW(TAG, "NUS chars missing (w=%u n=%u)", s_write_handle, s_notify_handle);
         cham_hal_stop();
         return false;
@@ -431,7 +495,7 @@ bool chameleon_connect(volatile bool* abort_flag) {
         return false;
     }
     for(int i = 0; i < 100 && !s_dsc_done; i++) furi_delay_ms(20);
-    if(s_cccd_handle == 0) {
+    if(!s_dsc_done || !s_connected || s_cccd_handle == 0) {
         ESP_LOGW(TAG, "CCCD descriptor not found");
         cham_hal_stop();
         return false;
@@ -452,13 +516,41 @@ bool chameleon_connect(volatile bool* abort_flag) {
         return false;
     }
     for(int i = 0; i < 60 && !s_cccd_done; i++) furi_delay_ms(20);
-    if(!s_cccd_written) {
+    if(s_cccd_done &&
+       (s_cccd_status == BLE_HS_ATT_ERR(BLE_ATT_ERR_INSUFFICIENT_AUTHEN) ||
+        s_cccd_status == BLE_HS_ATT_ERR(BLE_ATT_ERR_INSUFFICIENT_ENC))) {
+        s_security_done = false;
+        rc = ble_gap_security_initiate(s_conn_handle);
+        if(rc == 0) {
+            for(int i = 0; i < 500 && s_connected && !s_security_done; i++) {
+                if(abort_flag && *abort_flag) break;
+                furi_delay_ms(20);
+            }
+        }
+        if(rc != 0 || !s_connected || !s_security_done || s_security_status != 0 ||
+           (abort_flag && *abort_flag)) {
+            ESP_LOGW(TAG, "pairing failed; check Chameleon PIN/bonds");
+            cham_hal_stop();
+            return false;
+        }
+        s_cccd_done = false;
+        s_cccd_written = false;
+        rc = ble_gattc_write_flat(s_conn_handle, s_cccd_handle, cccd_value,
+                                 sizeof(cccd_value), cham_cccd_write_cb, NULL);
+        if(rc != 0) {
+            cham_hal_stop();
+            return false;
+        }
+        for(int i = 0; i < 60 && s_connected && !s_cccd_done; i++) furi_delay_ms(20);
+    }
+    if(!s_cccd_written || !s_connected || (abort_flag && *abort_flag)) {
         ESP_LOGW(TAG, "CCCD write failed");
         cham_hal_stop();
         return false;
     }
 
     ESP_LOGD(TAG, "connected & subscribed");
+    s_ready = true;
     return true;
 }
 
@@ -469,7 +561,7 @@ void chameleon_disconnect(void) {
 }
 
 bool chameleon_is_connected(void) {
-    return s_connected;
+    return s_connected && s_ready;
 }
 
 bool chameleon_cmd(
@@ -479,7 +571,7 @@ bool chameleon_cmd(
     ChameleonResp* out,
     uint32_t timeout_ms) {
     if(!s_connected || s_write_handle == 0) return false;
-    if(len > CHAMELEON_RESP_DATA_MAX) return false;
+    if(len > CHAMELEON_RESP_DATA_MAX || (len && !data)) return false;
 
     uint8_t frame[CHAMELEON_RESP_DATA_MAX + 16];
     frame[0] = 0x11;
@@ -496,17 +588,28 @@ bool chameleon_cmd(
 
     s_resp_ready = false;
     s_acc_len = 0;
+    s_expected_command = cmd;
 
-    int rc = ble_gattc_write_flat(
-        s_conn_handle, s_write_handle, frame, 10 + len, cham_write_cb, NULL);
-    ESP_LOGD(TAG, "cmd %u write -> %d (wh=%u)", cmd, rc, s_write_handle);
-    if(rc != 0) {
-        ESP_LOGW(TAG, "write_char: %d", rc);
-        return false;
+    /* NUS is a byte stream; ordinary writes must fit the negotiated ATT MTU. */
+    uint16_t mtu = ble_att_mtu(s_conn_handle);
+    if(mtu <= 3) return false;
+    size_t chunk_max = mtu - 3;
+    for(size_t offset = 0; offset < 10u + len;) {
+        size_t chunk = 10u + len - offset;
+        if(chunk > chunk_max) chunk = chunk_max;
+        s_write_done = false;
+        s_write_status = 0;
+        int rc = ble_gattc_write_flat(
+            s_conn_handle, s_write_handle, frame + offset, chunk, cham_write_cb, NULL);
+        if(rc != 0) return false;
+        for(uint32_t waited = 0; s_connected && !s_write_done && waited < timeout_ms; waited += 10)
+            furi_delay_ms(10);
+        if(!s_connected || !s_write_done || s_write_status != 0) return false;
+        offset += chunk;
     }
 
     uint32_t waited = 0;
-    while(!s_resp_ready && waited < timeout_ms) {
+    while(s_connected && !s_resp_ready && waited < timeout_ms) {
         furi_delay_ms(10);
         waited += 10;
     }

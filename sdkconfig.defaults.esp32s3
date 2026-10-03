@@ -7,10 +7,24 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 
-# Dual-OTA partition table for the 16 MB flash (self-update). See partitions_ota_16mb.csv.
+# Dual Boot 2.0 (dynamic multiboot pool) partition table for the 16 MB flash.
+# See partitions_multiboot_16mb.csv and components/multiboot/layout.c (the
+# recovery bootloader in bootloader_components/multiboot_recovery/ memcmp's
+# its own hardcoded system_entries[] against whatever table is live, so this
+# filename and CONFIG_MOMENTUM_MULTIBOOT below must both stay set together --
+# either alone leaves Dual Boot install/boot/remove failing with
+# "No free slot / flash space" for every single firmware, not a specific one.
+# Found 2026-09-17: this had drifted to plain partitions_ota_16mb.csv with
+# CONFIG_MOMENTUM_MULTIBOOT unset, silently breaking Dual Boot entirely --
+# both are pinned here now so a future `idf.py reconfigure` (or a wiped
+# sdkconfig, see [[build-and-flash-gotchas]]) restores the working pair
+# instead of quietly regressing it again, the same way the factory-reset
+# escape hatch regressed once already (see the CONFIG_BOOTLOADER_FACTORY_RESET
+# block below).
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_ota_16mb.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_ota_16mb.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_multiboot_16mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_multiboot_16mb.csv"
+CONFIG_MOMENTUM_MULTIBOOT=y
 
 # ESP32-S3 is dual-core Xtensa — keep unicore for Furi compatibility
 CONFIG_FREERTOS_UNICORE=y

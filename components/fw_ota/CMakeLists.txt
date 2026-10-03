@@ -4,5 +4,5 @@
 idf_component_register(
     SRCS "fw_ota.c"
     INCLUDE_DIRS "." ".."
-    REQUIRES furi storage toolbox app_update esp_partition esp_app_format bootloader_support esp_system soc
+    REQUIRES furi storage toolbox app_update esp_partition esp_app_format bootloader_support esp_system soc multiboot
 )

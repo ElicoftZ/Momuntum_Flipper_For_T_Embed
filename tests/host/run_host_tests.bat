@@ -40,7 +40,7 @@ cl /nologo /std:c17 /W4 /WX /D_CRT_SECURE_NO_WARNINGS /I "%REPO%\lib" ^
 if errorlevel 1 exit /b %errorlevel%
 
 "%REPO%\build_host\momentum_core_test.exe"
-if errorlevel 1 exit /b %errorlevel%
+if %errorlevel% neq 0 exit /b %errorlevel%
 
 rem The CTAP2 CBOR codec is deliberately free of furi and ESP-IDF includes for
 rem exactly this reason: it is the one part of the FIDO2 work that can be

@@ -1,4 +1,5 @@
 ADD_SCENE(nfc, start, Start)
+ADD_SCENE(nfc, nfc_source, NfcSource)
 ADD_SCENE(nfc, file_select, FileSelect)
 ADD_SCENE(nfc, saved_menu, SavedMenu)
 ADD_SCENE(nfc, save_name, SaveName)

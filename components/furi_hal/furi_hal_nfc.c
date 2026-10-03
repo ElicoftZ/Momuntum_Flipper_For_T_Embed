@@ -194,6 +194,47 @@ static void block_tx_timer_cb(void* arg) {
 
 /* ──────────────────────────── PN532 I2C Low-Level ───────────────────────── */
 
+/* Runtime-selectable NFC I2C target -- were plain compile-time macros
+ * (BOARD_NFC_I2C_PORT/BOARD_PIN_NFC_SDA/SCL) until this port's "NFC Source"
+ * feature (Settings > NFC Source, in the NFC app's own start menu, same
+ * pattern as Infrared's GPIO Settings). Default is the onboard PN532
+ * (I2C_NUM_0, GPIO 8/18 -- confirmed shared with furi_hal_power's own
+ * BQ25896/BQ27220 driver, NEVER touched by this feature: switching to Qwiic
+ * only ever INSTALLS A SEPARATE driver on I2C_NUM_1, it never deletes or
+ * reconfigures I2C_NUM_0). "Qwiic" mode points the ENTIRE nfc HAL (every
+ * pn532_i2c_* call below, not just init) at GPIO 43 (SDA) / 44 (SCL) instead
+ * -- the real physical Qwiic connector on this board (confirmed with the
+ * user 2026-09-17; a DIFFERENT "BOARD_PIN_QWIIC_SDA/SCL" pair also exists in
+ * the board header pointing at GPIO 8/18, but that one is a stale/incorrect
+ * label left over from an earlier session -- GPIO 8/18 is internal-only,
+ * shared with NFC+power, not an external connector). Lets a user wire a
+ * better/higher-range external PN532 module to Qwiic instead of relying on
+ * the onboard chip's antenna, without needing two NFC HALs -- the whole
+ * subsystem just points at whichever bus is selected, one at a time,
+ * matching this connector's existing single-foreground-use sharing with
+ * RFID/IR (see furi_hal_infrared.c's own ir_tx_gpio/ir_rx_gpio for the exact
+ * same pattern, just for RMT pins instead of an I2C port). */
+/* Capture the board constants before the macros below become runtime aliases. */
+enum {
+    BOARD_PIN_NFC_SDA_DEFAULT = BOARD_PIN_NFC_SDA,
+    BOARD_PIN_NFC_SCL_DEFAULT = BOARD_PIN_NFC_SCL,
+    BOARD_NFC_I2C_PORT_DEFAULT = BOARD_NFC_I2C_PORT,
+};
+#define BOARD_PIN_NFC_SDA_QWIIC 43
+#define BOARD_PIN_NFC_SCL_QWIIC 44
+#define BOARD_NFC_I2C_PORT_QWIIC I2C_NUM_1
+
+static int nfc_sda_gpio = BOARD_PIN_NFC_SDA_DEFAULT;
+static int nfc_scl_gpio = BOARD_PIN_NFC_SCL_DEFAULT;
+static i2c_port_t nfc_i2c_port = BOARD_NFC_I2C_PORT_DEFAULT;
+static bool nfc_using_qwiic = false;
+#undef BOARD_PIN_NFC_SDA
+#undef BOARD_PIN_NFC_SCL
+#undef BOARD_NFC_I2C_PORT
+#define BOARD_PIN_NFC_SDA nfc_sda_gpio
+#define BOARD_PIN_NFC_SCL nfc_scl_gpio
+#define BOARD_NFC_I2C_PORT nfc_i2c_port
+
 static esp_err_t pn532_i2c_init(void) {
     /* I2C bus may already be initialized by furi_hal_power (shared QWIIC/NFC pins).
      * Try to install; if already running, just reuse it. */
@@ -221,13 +262,16 @@ static esp_err_t pn532_i2c_init(void) {
 /** Wait for PN532 ready: IRQ pin LOW or I2C RDY byte polling */
 static bool pn532_wait_ready(uint32_t timeout_ms) {
 #ifdef BOARD_PIN_NFC_IRQ
-    uint32_t start = furi_get_tick();
-    while((furi_get_tick() - start) < timeout_ms) {
-        if(gpio_get_level(BOARD_PIN_NFC_IRQ) == 0) return true;
-        furi_delay_ms(2);
+    if(nfc_i2c_port == (i2c_port_t)BOARD_NFC_I2C_PORT_DEFAULT) {
+        uint32_t start = furi_get_tick();
+        while((furi_get_tick() - start) < timeout_ms) {
+            if(gpio_get_level(BOARD_PIN_NFC_IRQ) == 0) return true;
+            furi_delay_ms(2);
+        }
+        return false;
     }
-    return false;
-#else
+#endif
+    /* The external reader is not wired to the onboard reader's IRQ pin. */
     uint8_t status;
     uint32_t start = furi_get_tick();
     while((furi_get_tick() - start) < timeout_ms) {
@@ -237,7 +281,6 @@ static bool pn532_wait_ready(uint32_t timeout_ms) {
         furi_delay_ms(5);
     }
     return false;
-#endif
 }
 
 /** Read a PN532 I2C response frame.
@@ -383,6 +426,48 @@ static FuriHalNfcError pn532_status_to_error(uint8_t status) {
     }
 }
 
+/* Shared by furi_hal_nfc_init() (onboard, at boot) and
+ * furi_hal_nfc_set_use_qwiic() (either bus, at runtime): I2C install +
+ * GetFirmwareVersion + SAMConfiguration + retry config, all against
+ * whatever nfc_i2c_port/nfc_sda_gpio/nfc_scl_gpio currently point at. */
+static FuriHalNfcError pn532_handshake(void) {
+    esp_err_t err = pn532_i2c_init();
+    if(err != ESP_OK) {
+        FURI_LOG_E(TAG, "I2C init failed: %s", esp_err_to_name(err));
+        return FuriHalNfcErrorCommunication;
+    }
+
+    furi_delay_ms(150);
+
+    /* Verify PN532 with GetFirmwareVersion */
+    uint8_t cmd[] = {PN532_CMD_GETFIRMWAREVERSION};
+    uint8_t resp[4];
+    size_t resp_len = sizeof(resp);
+    FuriHalNfcError nfc_err = pn532_send_command(cmd, sizeof(cmd), resp, &resp_len, 2000);
+    if(nfc_err != FuriHalNfcErrorNone || resp_len != sizeof(resp)) {
+        FURI_LOG_E(TAG, "PN532 not found");
+        return FuriHalNfcErrorCommunication;
+    }
+
+    FURI_LOG_I(TAG, "PN532 IC=0x%02X FW=%d.%d Support=0x%02X", resp[0], resp[1], resp[2], resp[3]);
+
+    /* SAM Configuration: normal mode, timeout=0x14 (1s), use IRQ pin
+     * (matches Adafruit_PN532::SAMConfig) */
+    uint8_t sam_cmd[] = {PN532_CMD_SAMCONFIGURATION, 0x01, 0x14, 0x01};
+    nfc_err = pn532_send_command(sam_cmd, sizeof(sam_cmd), NULL, NULL, 1000);
+    if(nfc_err != FuriHalNfcErrorNone) {
+        FURI_LOG_E(TAG, "SAM config failed");
+        return FuriHalNfcErrorCommunication;
+    }
+
+    /* Configure retries: ATR_RES=0xFF, PSL_RES=0x01, passive_activation=0xFF
+     * (match PN532 defaults / Adafruit behavior for reliable detection) */
+    uint8_t retry_cmd[] = {PN532_CMD_RFCONFIGURATION, PN532_RFCFG_RETRIES, 0xFF, 0x01, 0xFF};
+    pn532_send_command(retry_cmd, sizeof(retry_cmd), NULL, NULL, 1000);
+
+    return FuriHalNfcErrorNone;
+}
+
 /* ──────────────────────────── HAL Public API ─────────────────────────────── */
 
 FuriHalNfcError furi_hal_nfc_init(void) {
@@ -417,40 +502,8 @@ FuriHalNfcError furi_hal_nfc_init(void) {
     gpio_set_level(BOARD_PIN_NFC_RST, 1);
 #endif
 
-    /* Init I2C (bus likely already initialized by furi_hal_power) */
-    esp_err_t err = pn532_i2c_init();
-    if(err != ESP_OK) {
-        FURI_LOG_E(TAG, "I2C init failed: %s", esp_err_to_name(err));
-        return FuriHalNfcErrorCommunication;
-    }
-
-    furi_delay_ms(150);
-
-    /* Verify PN532 with GetFirmwareVersion */
-    uint8_t cmd[] = {PN532_CMD_GETFIRMWAREVERSION};
-    uint8_t resp[4];
-    size_t resp_len = sizeof(resp);
-    FuriHalNfcError nfc_err = pn532_send_command(cmd, sizeof(cmd), resp, &resp_len, 2000);
-    if(nfc_err != FuriHalNfcErrorNone) {
-        FURI_LOG_E(TAG, "PN532 not found");
-        return FuriHalNfcErrorCommunication;
-    }
-
-    FURI_LOG_I(TAG, "PN532 IC=0x%02X FW=%d.%d Support=0x%02X", resp[0], resp[1], resp[2], resp[3]);
-
-    /* SAM Configuration: normal mode, timeout=0x14 (1s), use IRQ pin
-     * (matches Adafruit_PN532::SAMConfig) */
-    uint8_t sam_cmd[] = {PN532_CMD_SAMCONFIGURATION, 0x01, 0x14, 0x01};
-    nfc_err = pn532_send_command(sam_cmd, sizeof(sam_cmd), NULL, NULL, 1000);
-    if(nfc_err != FuriHalNfcErrorNone) {
-        FURI_LOG_E(TAG, "SAM config failed");
-        return FuriHalNfcErrorCommunication;
-    }
-
-    /* Configure retries: ATR_RES=0xFF, PSL_RES=0x01, passive_activation=0xFF
-     * (match PN532 defaults / Adafruit behavior for reliable detection) */
-    uint8_t retry_cmd[] = {PN532_CMD_RFCONFIGURATION, PN532_RFCFG_RETRIES, 0xFF, 0x01, 0xFF};
-    pn532_send_command(retry_cmd, sizeof(retry_cmd), NULL, NULL, 1000);
+    FuriHalNfcError err = pn532_handshake();
+    if(err != FuriHalNfcErrorNone) return err;
 
     nfc_hal_ready = true;
     pn532_target_number = 0;
@@ -458,13 +511,56 @@ FuriHalNfcError furi_hal_nfc_init(void) {
     return FuriHalNfcErrorNone;
 }
 
+/* Switches the WHOLE nfc HAL (every pn532_i2c_* call, not just init) between
+ * the onboard PN532 and an external one wired to the Qwiic connector -- see
+ * the big comment above pn532_i2c_init() for the pin/bus rationale. Re-runs
+ * the full handshake (firmware version + SAM config + retries) on the new
+ * bus to confirm a real PN532 actually answers there, since "switch and
+ * hope" would silently leave a user with a dead NFC app if nothing is
+ * plugged into Qwiic. On failure, reverts to whichever bus was working
+ * before rather than leaving the HAL pointed at a dead one. Returns true iff
+ * the switch succeeded (a PN532 answered on the requested bus). */
+bool furi_hal_nfc_set_use_qwiic(bool use_qwiic) {
+    /* An active NFC worker owns this mutex for its entire card session. */
+    if(!nfc_mutex || furi_mutex_acquire(nfc_mutex, 0) != FuriStatusOk) return false;
+    nfc_hal_ready = false;
+
+    nfc_i2c_port = use_qwiic ? BOARD_NFC_I2C_PORT_QWIIC : BOARD_NFC_I2C_PORT_DEFAULT;
+    nfc_sda_gpio = use_qwiic ? BOARD_PIN_NFC_SDA_QWIIC : BOARD_PIN_NFC_SDA_DEFAULT;
+    nfc_scl_gpio = use_qwiic ? BOARD_PIN_NFC_SCL_QWIIC : BOARD_PIN_NFC_SCL_DEFAULT;
+
+    if(pn532_handshake() == FuriHalNfcErrorNone) {
+        nfc_using_qwiic = use_qwiic;
+        nfc_hal_ready = true;
+        pn532_target_number = 0;
+        furi_mutex_release(nfc_mutex);
+        return true;
+    }
+
+    FURI_LOG_W(TAG, "NFC source switch to %s failed, reverting", use_qwiic ? "Qwiic" : "Onboard");
+    nfc_i2c_port = nfc_using_qwiic ? BOARD_NFC_I2C_PORT_QWIIC : BOARD_NFC_I2C_PORT_DEFAULT;
+    nfc_sda_gpio = nfc_using_qwiic ? BOARD_PIN_NFC_SDA_QWIIC : BOARD_PIN_NFC_SDA_DEFAULT;
+    nfc_scl_gpio = nfc_using_qwiic ? BOARD_PIN_NFC_SCL_QWIIC : BOARD_PIN_NFC_SCL_DEFAULT;
+    nfc_hal_ready = pn532_handshake() == FuriHalNfcErrorNone;
+    pn532_target_number = 0;
+    furi_mutex_release(nfc_mutex);
+    return false;
+}
+
+bool furi_hal_nfc_is_using_qwiic(void) {
+    return nfc_using_qwiic;
+}
+
 FuriHalNfcError furi_hal_nfc_is_hal_ready(void) {
     return nfc_hal_ready ? FuriHalNfcErrorNone : FuriHalNfcErrorCommunication;
 }
 
 FuriHalNfcError furi_hal_nfc_acquire(void) {
-    if(!nfc_hal_ready) return FuriHalNfcErrorCommunication;
     furi_check(furi_mutex_acquire(nfc_mutex, FuriWaitForever) == FuriStatusOk);
+    if(!nfc_hal_ready) {
+        furi_mutex_release(nfc_mutex);
+        return FuriHalNfcErrorCommunication;
+    }
     return FuriHalNfcErrorNone;
 }
 
@@ -2069,6 +2165,8 @@ FuriHalNfcError furi_hal_nfc_init(void) {
 }
 
 FuriHalNfcError furi_hal_nfc_is_hal_ready(void) { return FuriHalNfcErrorCommunication; }
+bool furi_hal_nfc_set_use_qwiic(bool use_qwiic) { UNUSED(use_qwiic); return false; }
+bool furi_hal_nfc_is_using_qwiic(void) { return false; }
 FuriHalNfcError furi_hal_nfc_acquire(void) { return FuriHalNfcErrorCommunication; }
 FuriHalNfcError furi_hal_nfc_release(void) { return FuriHalNfcErrorNone; }
 FuriHalNfcError furi_hal_nfc_low_power_mode_start(void) { return FuriHalNfcErrorNone; }

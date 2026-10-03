@@ -55,6 +55,7 @@ struct BadUsbApp {
     BadUsbHidConfig user_hid_cfg;
     BadUsbHidConfig script_hid_cfg;
     FuriHalUsbInterface* usb_if_prev;
+    uint32_t recent_script_item_index;
 };
 
 typedef enum {

@@ -54,7 +54,16 @@
 #define BOARD_LCD_GAP_X         0       /* TODO: verify gap on hardware */
 #define BOARD_LCD_GAP_Y         35      /* TODO: verify gap on hardware */
 #define BOARD_LCD_BL_ACTIVE_LOW false   /* Backlight is active-high */
-#define BOARD_LCD_COLOR_ORDER_BGR 1     /* Panel expects BGR; RGB swaps red and blue */
+/* Was 1 ("panel expects BGR") -- confirmed WRONG on hardware 2026-09-18: with the
+ * MADCTL BGR bit set, BOARD_LCD_FG_COLOR (packed as plain RGB565, no channel
+ * swap) rendered as the wrong color instead of orange. All three software
+ * packers (furi_hal_display.c's display_pack_swap, notification.c's
+ * ui_color_pack_swap, the color picker's own copy) already pack R/G/B in
+ * their normal bit positions and only byte-swap for SPI -- there is no
+ * software-side channel swap anywhere else to stack against this flag. So
+ * this panel is natively RGB, not BGR; disabling the hardware swap is the
+ * one and only correction needed. */
+#define BOARD_LCD_COLOR_ORDER_BGR 0
 
 /* Flipper framebuffer → display color mapping (RGB565, native byte order) */
 #define BOARD_LCD_FG_COLOR      0xA0FD  /* Flipper Orange 0xFDA0 byte-swapped for S3 SPI */
@@ -142,8 +151,8 @@
 #define BOARD_HAS_RFID          1
 
 /* ---- RFID / RDM6300 (UART, 125kHz read-only) ---- */
-#define BOARD_PIN_RFID_RX       44      /* GROVE / SERIAL_RX */
-#define BOARD_PIN_RFID_TX       43      /* GROVE / SERIAL_TX */
+#define BOARD_PIN_RFID_RX       44      /* QWIIC / SERIAL_RX */
+#define BOARD_PIN_RFID_TX       43      /* QWIIC / SERIAL_TX */
 #define BOARD_RFID_UART_NUM     1       /* UART1 */
 #define BOARD_HAS_NFC           1
 #define BOARD_HAS_SUBGHZ        1       /* Built-in CC1101 */

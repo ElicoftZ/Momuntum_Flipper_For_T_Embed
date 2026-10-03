@@ -1,8 +1,12 @@
 #include "../infrared_app_i.h"
 
+/* "Qwiic" replaces Flipper's real "2 (A7)" external-pin label -- this ESP32
+ * port has no such pin, and repurposes the same enum slot to route IR TX/RX
+ * through the bottom Qwiic connector (GPIO 43/44) instead, see
+ * furi_hal_infrared.c's furi_hal_infrared_set_tx_output(). */
 static const char* infrared_scene_gpio_settings_pin_text[] = {
     "Flipper",
-    "2 (A7)",
+    "Qwiic (43/44)",
     "Detect",
 };
 

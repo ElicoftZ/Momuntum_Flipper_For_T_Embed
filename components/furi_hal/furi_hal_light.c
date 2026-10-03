@@ -59,12 +59,48 @@ static void furi_hal_light_ws2812_push(void) {
     led_strip_refresh(led_strip);
 }
 
+/* This board's real, physical LED (whatever chip it actually is) has its own
+ * FIXED wire-position -> sub-LED mapping that this port's original
+ * .._FMT_GRB config never matched -- confirmed on real hardware 2026-09-17
+ * two different ways: (1) a custom color with B intentionally higher than R
+ * photographed with red as the dominant channel and blue the weakest at
+ * every sampled point (green tracked lowest in both requested and observed
+ * color -- objectively measured from video frames, not eyeballed), and (2)
+ * setting orange (high R, near-zero B) was reported showing blue.
+ *
+ * Working backwards from symptom (1) under the ORIGINAL .._FMT_GRB config
+ * (r_pos=1, g_pos=0, b_pos=2 -- i.e. wire bytes transmitted as
+ * [G_input, R_input, B_input]) pins down the chip's actual fixed behavior:
+ * displayed_R came from wire byte 2 (which GRB put B_input into), displayed_G
+ * from wire byte 0 (G_input, correct), displayed_B from wire byte 1 (which
+ * GRB put R_input into). So this chip's own native order reads wire bytes as
+ * [G, B, R], not [G, R, B] like a real WS2812.
+ *
+ * A FIRST fix attempt here swapped r_pos/b_pos relative to
+ * LED_STRIP_COLOR_COMPONENT_FMT_RGB's identity layout (giving r_pos=2,
+ * g_pos=1, b_pos=0) -- wrong reference point: that also moved g_pos from 0
+ * to 1, rotating all three channels instead of swapping just R and B, which
+ * is why orange (high R) still came out blue instead of correct. The right
+ * fix keeps g_pos at its ORIGINAL GRB value (0) and only swaps where R's and
+ * B's VALUES land (r_pos 1->2, b_pos 2->1) so the chip's real [G,B,R]-reading
+ * wire order receives [G_input, B_input, R_input] -- i.e. this format is
+ * really "GBR" transmission order, not "BGR". led_strip's own header (see
+ * managed_components/espressif__led_strip/include/led_strip_types.h) ships
+ * no such variant, so it's hand-built from the same struct fields. */
+#define LED_STRIP_COLOR_COMPONENT_FMT_GBR                                                      \
+    (led_color_component_format_t) {                                                           \
+        .format = {                                                                            \
+            .r_pos = 2, .g_pos = 0, .b_pos = 1, .w_pos = 3, .reserved = 0,                      \
+            .bytes_per_color = 1, .num_components = 3                                          \
+        }                                                                                       \
+    }
+
 static void furi_hal_light_ws2812_init(void) {
     led_strip_config_t strip_config = {
         .strip_gpio_num = BOARD_PIN_WS2812_DATA,
         .max_leds = BOARD_WS2812_LED_COUNT,
         .led_model = LED_MODEL_WS2812,
-        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GBR,
         .flags = { .invert_out = false },
     };
     led_strip_rmt_config_t rmt_config = {

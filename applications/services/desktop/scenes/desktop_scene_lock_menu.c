@@ -19,6 +19,7 @@
 #include "sdkconfig.h"
 
 #include <esp_ota_ops.h>
+#include <launcher_bridge.h>
 #include <esp_partition.h>
 #include <esp_system.h>
 
@@ -147,7 +148,7 @@ void desktop_scene_lock_menu_refresh(Desktop* desktop) {
         desktop_lock_menu_wifi_active(),
         s_wake_mode,
         momentum_settings.dark_mode,
-        desktop_lock_menu_dualboot_partition() != NULL);
+        launcher_bridge_is_hosted() || desktop_lock_menu_dualboot_partition() != NULL);
 }
 
 void desktop_scene_lock_menu_on_enter(void* context) {
@@ -258,6 +259,11 @@ bool desktop_scene_lock_menu_on_event(void* context, SceneManagerEvent event) {
             break;
 
         case DesktopLockMenuEventDualBoot:
+            if(launcher_bridge_is_hosted()) {
+                loader_start_detached_with_gui_error(desktop->loader, "Return to Launcher", NULL);
+                consumed = true;
+                break;
+            }
             /* The two-tab tile opens the manager. Booting directly here made
              * an empty/corrupt slot look like a dead button and skipped the
              * Recovery 2.0 compatibility checks. */

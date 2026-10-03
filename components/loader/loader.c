@@ -1,4 +1,5 @@
 #include "loader.h"
+#include <launcher_bridge.h>
 #include <momentum/settings.h>
 #include "loader_i.h"
 #include <applications.h>
@@ -503,10 +504,18 @@ static LoaderMessageLoaderStatusResult loader_do_start_by_name(
          * saved menu. One OK press reboots the board into another firmware,
          * so for a public build the menu filter alone is not enough. This is
          * the single choke point every launch goes through. */
-        if(momentum_settings.hide_dualboot && loader_name_is_dualboot(name)) {
+        if(strcmp(name, "Return to Launcher") == 0) {
+            esp_err_t err = launcher_bridge_return();
+            status.value = LoaderStatusErrorUnknownApp;
+            if(error_message) furi_string_printf(error_message, "Launcher return failed: %s", esp_err_to_name(err));
+            break;
+        }
+
+        if((momentum_settings.hide_dualboot || launcher_bridge_is_hosted()) &&
+           loader_name_is_dualboot(name)) {
             status.value = LoaderStatusErrorUnknownApp;
             if(error_message) {
-                furi_string_set(error_message, "Dual Boot is disabled in settings");
+                furi_string_set(error_message, "Dual Boot disabled; use Return to Launcher");
             }
             FURI_LOG_W(TAG, "blocked hidden app: %s", name);
             break;

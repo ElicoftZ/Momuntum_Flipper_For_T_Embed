@@ -11,5 +11,5 @@ idf_component_register(
     # <dolphin/dolphin.h>, a shim forwarding into applications/. Same trick as
     # components/gui uses for the PS4 menu style.
     PRIV_INCLUDE_DIRS ".."
-    REQUIRES furi furi_hal gui toolbox assets storage archive dialogs flipper_application
+    REQUIRES furi furi_hal gui toolbox assets storage archive dialogs flipper_application multiboot
 )

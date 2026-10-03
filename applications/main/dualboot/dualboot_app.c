@@ -19,9 +19,11 @@
 
 #include <esp_app_format.h>
 #include <esp_crt_bundle.h>
+#include <esp_flash_partitions.h>
 #include <esp_heap_caps.h>
 #include <esp_http_client.h>
 #include <esp_ota_ops.h>
+#include <launcher_bridge.h>
 #include <esp_partition.h>
 #include <multiboot.h>
 #include <fw_ota.h>
@@ -393,22 +395,7 @@ static size_t dualboot_choice_file_index(const DualBoot* app, size_t choice) {
 /* File validation                                                             */
 /* -------------------------------------------------------------------------- */
 
-#define DUALBOOT_PART_TABLE_OFFSET 0x8000
-#define DUALBOOT_PART_TABLE_MAGIC  0x50AAU
-#define DUALBOOT_PART_TYPE_APP     0x00
-#define DUALBOOT_PART_ENTRY_MAX    95
-
-typedef struct __attribute__((packed)) {
-    uint16_t magic;
-    uint8_t type;
-    uint8_t subtype;
-    uint32_t offset;
-    uint32_t size;
-    uint8_t label[16];
-    uint32_t flags;
-} DualBootPartEntry;
-
-static void dualboot_read_app_description(File* file, uint64_t offset, DualBootImage* out) {
+static bool dualboot_read_app_description(File* file, uint64_t offset, DualBootImage* out) {
     esp_app_desc_t description;
     const uint64_t location =
         offset + sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t);
@@ -418,10 +405,70 @@ static void dualboot_read_app_description(File* file, uint64_t offset, DualBootI
         dualboot_copy_metadata(out->project, description.project_name, sizeof(description.project_name));
         dualboot_copy_metadata(out->version, description.version, sizeof(description.version));
         memcpy(out->app_sha, description.app_elf_sha256, sizeof(out->app_sha));
-    } else {
-        strlcpy(out->project, "Unknown", sizeof(out->project));
-        strlcpy(out->version, "Unknown", sizeof(out->version));
+        return true;
     }
+    strlcpy(out->project, "Unknown", sizeof(out->project));
+    strlcpy(out->version, "Unknown", sizeof(out->version));
+    return false;
+}
+
+/* Universal partition-table discovery: a genuine SCAN, not a hand-maintained
+ * list of offsets seen in bug reports so far. ESP-IDF's default partition-
+ * table offset is 0x8000, but a build with a bigger bootloader (secure boot,
+ * or this very project's own factory-reset bootloader feature, see
+ * [[bruce-dualboot-integration]]) moves it to make room -- and there is no
+ * fixed universe of "the offsets people use," so a candidate list only ever
+ * covers builds already reported broken. Instead this checks every
+ * 0x1000-aligned position from the default up through a generous ceiling
+ * (128 KB, comfortably past any realistic bootloader+table region for any
+ * config) using esp_partition_table_verify() -- ESP-IDF's OWN official
+ * partition-table validator (the exact function
+ * components/multiboot/multiboot.c already uses for the live on-device
+ * table, via table_valid()), not a hand-rolled magic-byte-per-entry loop
+ * that has to be separately kept correct. Silently treating offset 0 as the
+ * app when no table is found would actually flash that image's BOOTLOADER
+ * (which also starts with a valid esp_image_header_t and passes the chip-ID
+ * check, since it targets the same chip) into the app slot: it "installs"
+ * fine and then never boots -- the actual failure shape this exists to
+ * catch. */
+#define DUALBOOT_TABLE_SCAN_START 0x8000U
+#define DUALBOOT_TABLE_SCAN_END   0x20000U
+#define DUALBOOT_TABLE_SCAN_STEP  0x1000U
+
+static void dualboot_find_app_via_partition_table(File* file, uint64_t size, DualBootImage* out) {
+    /* Matches components/multiboot/multiboot.c's own load_table() convention
+     * for the same kind of short-lived flash-read buffer. */
+    uint8_t* buf = heap_caps_malloc(ESP_PARTITION_TABLE_MAX_LEN, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if(!buf) return;
+
+    for(uint32_t off = DUALBOOT_TABLE_SCAN_START;
+        off < DUALBOOT_TABLE_SCAN_END && (uint64_t)off + ESP_PARTITION_TABLE_MAX_LEN <= size;
+        off += DUALBOOT_TABLE_SCAN_STEP) {
+        if(!storage_file_seek(file, off, true)) break;
+        if(storage_file_read(file, buf, ESP_PARTITION_TABLE_MAX_LEN) != ESP_PARTITION_TABLE_MAX_LEN)
+            break;
+
+        int count = 0;
+        if(esp_partition_table_verify((const esp_partition_info_t*)buf, false, &count) != ESP_OK)
+            continue;
+
+        /* A genuine, officially-validated table was found at this offset --
+         * stop scanning regardless of whether it happens to contain an APP
+         * entry (a table with no app entry at all is a different, real
+         * problem, not a reason to keep guessing at other offsets). */
+        const esp_partition_info_t* entries = (const esp_partition_info_t*)buf;
+        for(int i = 0; i < count; ++i) {
+            if(entries[i].type != PART_TYPE_APP || entries[i].pos.offset >= size) continue;
+            out->offset = entries[i].pos.offset;
+            out->length = size - entries[i].pos.offset;
+            if(out->length > entries[i].pos.size) out->length = entries[i].pos.size;
+            out->extracted = true;
+            break;
+        }
+        break;
+    }
+
+    heap_caps_free(buf);
 }
 
 /** Accept either a raw app or the first app embedded in a merged flash image. */
@@ -434,20 +481,7 @@ static const char* dualboot_locate_image(File* file, uint64_t size, DualBootImag
     if(storage_file_read(file, &header, sizeof(header)) != sizeof(header)) return "File too small";
     if(header.magic != ESP_IMAGE_HEADER_MAGIC) return "Not a firmware image";
 
-    if(size > DUALBOOT_PART_TABLE_OFFSET + sizeof(DualBootPartEntry) &&
-       storage_file_seek(file, DUALBOOT_PART_TABLE_OFFSET, true)) {
-        for(size_t i = 0; i < DUALBOOT_PART_ENTRY_MAX; ++i) {
-            DualBootPartEntry entry;
-            if(storage_file_read(file, &entry, sizeof(entry)) != sizeof(entry)) break;
-            if(entry.magic != DUALBOOT_PART_TABLE_MAGIC) break;
-            if(entry.type != DUALBOOT_PART_TYPE_APP || entry.offset >= size) continue;
-            out->offset = entry.offset;
-            out->length = size - entry.offset;
-            if(out->length > entry.size) out->length = entry.size;
-            out->extracted = true;
-            break;
-        }
-    }
+    dualboot_find_app_via_partition_table(file, size, out);
 
     if(out->offset > UINT32_MAX || !storage_file_seek(file, (uint32_t)out->offset, true)) {
         return "Cannot read file";
@@ -455,7 +489,8 @@ static const char* dualboot_locate_image(File* file, uint64_t size, DualBootImag
     if(storage_file_read(file, &header, sizeof(header)) != sizeof(header)) return "Truncated image";
     if(header.magic != ESP_IMAGE_HEADER_MAGIC) return "No app inside image";
     if(header.chip_id != ESP_CHIP_ID_ESP32S3) return "Wrong device: not ESP32-S3";
-    if(header.segment_count == 0 || header.segment_count > 16) return "Corrupt image header";
+    if(header.segment_count == 0 || header.segment_count > ESP_IMAGE_MAX_SEGMENTS)
+        return "Corrupt image header";
 
     /* Derive the app's actual encoded length. Merged images may contain
      * padding and filesystem data after the app; none belongs in its slot. */
@@ -475,7 +510,16 @@ static const char* dualboot_locate_image(File* file, uint64_t size, DualBootImag
         return "Truncated / oversized app";
     out->length = end - out->offset;
 
-    dualboot_read_app_description(file, out->offset, out);
+    bool has_app_desc = dualboot_read_app_description(file, out->offset, out);
+    /* No partition table was found at any known offset AND there's no app
+     * descriptor either -- this combination means "offset 0" is only a
+     * guess, not a confirmed app, and for a full merged image that guess is
+     * usually its BOOTLOADER (also a valid esp_image_header_t, same chip ID,
+     * but not what should go in an app slot). A raw, table-less app image
+     * legitimately lacks a partition table too, but real app builds always
+     * embed CONFIG_APP_PROJECT_VER/ESP_APP_DESC_MAGIC_WORD -- only a
+     * non-app image fails both checks at once. */
+    if(!out->extracted && !has_app_desc) return "Could not find app (nonstandard partition table?)";
     if(!storage_file_seek(file, (uint32_t)out->offset, true)) return "Cannot read file";
     return NULL;
 }
@@ -1693,6 +1737,7 @@ static bool dualboot_quick_route(DualBoot* app) {
 /* -------------------------------------------------------------------------- */
 
 int32_t dualboot_app(void* argument) {
+    if(launcher_bridge_is_hosted()) return -1;
     DualBoot* app = heap_caps_calloc(
         1, sizeof(DualBoot), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if(!app) return -1;

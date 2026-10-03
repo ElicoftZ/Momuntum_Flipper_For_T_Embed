@@ -10,13 +10,17 @@ typedef enum {
     WalkScanStatusConnecting,
     WalkScanStatusConnected,
     WalkScanStatusFailed,
+    WalkScanStatusSaved,
 } WalkScanStatus;
 
 typedef struct {
     BleWalkDevice devices[BLE_WALK_MAX_DEVICES];
+    uint8_t source_indices[BLE_WALK_MAX_DEVICES];
+    bool watchlisted[BLE_WALK_MAX_DEVICES];
     uint16_t count;
     uint16_t selected;
     uint16_t window_offset;
+    uint8_t filter;
     bool scanning;
     WalkScanStatus connect_status;
 } BleWalkScanModel;

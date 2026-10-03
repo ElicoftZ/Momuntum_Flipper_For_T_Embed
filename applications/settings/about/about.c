@@ -3,6 +3,7 @@
 #include <gui/gui.h>
 #include <gui/view_holder.h>
 #include <gui/modules/empty_screen.h>
+#include <fw_ota.h>
 
 #include <dialogs/dialogs.h>
 #include <assets_icons.h>
@@ -177,6 +178,8 @@ static DialogMessageButton fw_version_screen(DialogsApp* dialogs, DialogMessage*
             c2_ver ? c2_ver->StackTypeString : "<none>",
             version_get_target(ver),
             version_get_gitbranch(ver));
+        furi_string_cat_printf(
+            buffer, "\nPartition: %s", fw_ota_running_partition_label());
     }
 
     dialog_message_set_header(message, "FW Version Info:", 0, 0, AlignLeft, AlignTop);

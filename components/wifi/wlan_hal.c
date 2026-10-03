@@ -1644,6 +1644,13 @@ uint32_t wlan_hal_get_gw_ip(void) {
     return info.gw.addr;
 }
 
+uint32_t wlan_hal_get_dns_ip(void) {
+    if(!s_netif_sta) return 0;
+    esp_netif_dns_info_t info;
+    if(esp_netif_get_dns_info(s_netif_sta, ESP_NETIF_DNS_MAIN, &info) != ESP_OK) return 0;
+    return info.ip.u_addr.ip4.addr;
+}
+
 bool wlan_hal_send_eth_raw(const uint8_t* data, uint16_t len) {
     if(!s_started || !s_cmd_queue) {
         ESP_LOGW(TAG, "send_eth_raw: not started (s=%d q=%p)", s_started, s_cmd_queue);

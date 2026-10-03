@@ -1,4 +1,7 @@
 #include "../ble_spam_app.h"
+#include <furi_hal_bt.h>
+#include <wlan_hal.h>
+#include <stdio.h>
 
 enum MainMenuIndex {
     MainMenuIndexBleKeyboard,
@@ -13,6 +16,7 @@ enum MainMenuIndex {
     MainMenuIndexBleTracker,
     MainMenuIndexBleRaceDetector,
     MainMenuIndexWhisperPair,
+    MainMenuIndexRadioStatus,
 };
 
 static void main_menu_callback(void* context, uint32_t index) {
@@ -49,6 +53,8 @@ void ble_spam_scene_main_on_enter(void* context) {
 
     submenu_add_item(
         app->submenu, "WhisperPair", MainMenuIndexWhisperPair, main_menu_callback, app);
+    submenu_add_item(
+        app->submenu, "Radio Status", MainMenuIndexRadioStatus, main_menu_callback, app);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, BleSpamViewSubmenu);
 }
@@ -112,6 +118,18 @@ bool ble_spam_scene_main_on_event(void* context, SceneManagerEvent event) {
             scene_manager_next_scene(app->scene_manager, BleSpamSceneWhisperPair);
             consumed = true;
             break;
+        case MainMenuIndexRadioStatus: {
+            char status[40];
+            snprintf(
+                status,
+                sizeof(status),
+                "WiFi %s | BLE %s",
+                wlan_hal_is_started() ? "on" : "off",
+                furi_hal_bt_is_active() ? "on" : "off");
+            submenu_set_header(app->submenu, status);
+            consumed = true;
+            break;
+        }
         }
     }
 

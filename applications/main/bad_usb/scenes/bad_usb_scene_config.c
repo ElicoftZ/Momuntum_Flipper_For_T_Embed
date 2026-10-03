@@ -1,4 +1,5 @@
 #include "../bad_usb_app_i.h"
+#include <storage/storage.h>
 
 enum ConfigIndex {
     ConfigIndexKeyboardLayout,
@@ -14,6 +15,30 @@ enum ConfigIndexBle {
     ConfigIndexBleRestoreDefaults,
     ConfigIndexBleRemovePairing,
 };
+
+enum { ConfigIndexRunRecent = 0x100 };
+#define BAD_USB_RECENT_PATH BAD_USB_APP_BASE_FOLDER "/.recent"
+
+static bool bad_usb_recent_path_read(FuriString* out_path) {
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    File* file = storage_file_alloc(storage);
+    char path[256];
+    bool ok = storage_file_open(file, BAD_USB_RECENT_PATH, FSAM_READ, FSOM_OPEN_EXISTING);
+    if(ok) {
+        uint16_t length = storage_file_read(file, path, sizeof(path) - 1);
+        path[length] = '\0';
+        while(length && (path[length - 1] == '\r' || path[length - 1] == '\n')) {
+            path[--length] = '\0';
+        }
+        FileInfo info;
+        ok = length > 0 && storage_common_stat(storage, path, &info) == FSE_OK;
+        if(ok) furi_string_set(out_path, path);
+        storage_file_close(file);
+    }
+    storage_file_free(file);
+    furi_record_close(RECORD_STORAGE);
+    return ok;
+}
 
 enum ConfigIndexUsb {
     ConfigIndexUsbSetManufacturerName = ConfigIndexConnection + 1,
@@ -65,7 +90,7 @@ void bad_usb_scene_config_ble_pairing_mode_callback(VariableItem* item) {
 
 void bad_usb_scene_config_select_callback(void* context, uint32_t index) {
     BadUsbApp* bad_usb = context;
-
+    if(index == bad_usb->recent_script_item_index) index = ConfigIndexRunRecent;
     view_dispatcher_send_custom_event(bad_usb->view_dispatcher, index);
 }
 
@@ -129,6 +154,14 @@ static void draw_menu(BadUsbApp* bad_usb) {
 
         variable_item_list_add(var_item_list, "Restore USB Defaults", 0, NULL, NULL);
     }
+
+    FuriString* recent = furi_string_alloc();
+    bad_usb->recent_script_item_index = UINT32_MAX;
+    if(bad_usb_recent_path_read(recent)) {
+        bad_usb->recent_script_item_index = bad_usb->interface == BadUsbHidInterfaceBle ? 9 : 7;
+        variable_item_list_add(var_item_list, "Run Recent Script", 0, NULL, NULL);
+    }
+    furi_string_free(recent);
 }
 
 void bad_usb_scene_config_on_enter(void* context) {
@@ -149,6 +182,20 @@ bool bad_usb_scene_config_on_event(void* context, SceneManagerEvent event) {
     bool consumed = false;
 
     if(event.type == SceneManagerEventTypeCustom) {
+        if(event.event == ConfigIndexRunRecent) {
+            FuriString* recent = furi_string_alloc();
+            if(bad_usb_recent_path_read(recent)) {
+                if(bad_usb->bad_usb_script) {
+                    bad_usb_script_close(bad_usb->bad_usb_script);
+                    bad_usb->bad_usb_script = NULL;
+                }
+                furi_string_set(bad_usb->file_path, recent);
+                scene_manager_set_scene_state(bad_usb->scene_manager, BadUsbSceneWork, true);
+                scene_manager_next_scene(bad_usb->scene_manager, BadUsbScenePreview);
+            }
+            furi_string_free(recent);
+            return true;
+        }
         scene_manager_set_scene_state(bad_usb->scene_manager, BadUsbSceneConfig, event.event);
         consumed = true;
         const BadUsbHidApi* hid = bad_usb_hid_get_interface(bad_usb->interface);

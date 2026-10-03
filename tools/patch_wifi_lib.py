@@ -86,7 +86,8 @@ def main():
 
         if existing == PATCH_ENTRY + PATCH_BODY:
             print(f"Already patched at 0x{file_off:x}, skipping")
-            shutil.copy2(lib_work, lib_out)
+            if os.path.realpath(lib_in) != os.path.realpath(lib_out):
+                shutil.copy2(lib_work, lib_out)
             return
 
         if existing[:3] != PATCH_ENTRY:

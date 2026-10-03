@@ -29,9 +29,10 @@ static void walk_scan_draw_callback(Canvas* canvas, void* _model) {
 
         char line[40];
         if(dev->name[0]) {
-            snprintf(line, sizeof(line), "%d %.18s", dev->rssi, dev->name);
+            snprintf(line, sizeof(line), "%c%d %.16s", model->watchlisted[idx] ? '*' : ' ', dev->rssi, dev->name);
         } else {
-            snprintf(line, sizeof(line), "%d %02X:%02X:%02X:%02X:%02X:%02X",
+            snprintf(line, sizeof(line), "%c%d %02X:%02X:%02X:%02X:%02X:%02X",
+                     model->watchlisted[idx] ? '*' : ' ',
                      dev->rssi,
                      dev->addr[0], dev->addr[1], dev->addr[2],
                      dev->addr[3], dev->addr[4], dev->addr[5]);
@@ -50,7 +51,10 @@ static void walk_scan_draw_callback(Canvas* canvas, void* _model) {
     }
 
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str_aligned(canvas, 64, 63, AlignCenter, AlignBottom, "OK:Connect");
+    static const char* const filter_labels[] = {"All", "Named", "Strong", "Watched"};
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str(canvas, 1, 63, "L:filter R:CSV hold:watch");
+    canvas_draw_str_aligned(canvas, 127, 10, AlignRight, AlignBottom, filter_labels[model->filter]);
 
     // Draw centered status overlay
     if(model->connect_status != WalkScanStatusNone) {
@@ -59,6 +63,7 @@ static void walk_scan_draw_callback(Canvas* canvas, void* _model) {
         case WalkScanStatusConnecting: msg = "Connecting..."; break;
         case WalkScanStatusConnected:  msg = "Connected!"; break;
         case WalkScanStatusFailed:     msg = "Failed!"; break;
+        case WalkScanStatusSaved:      msg = "CSV saved"; break;
         default: break;
         }
 
@@ -83,6 +88,17 @@ static bool walk_scan_input_callback(InputEvent* event, void* context) {
             view_dispatcher_send_custom_event(vd, event->key);
             return true;
         }
+        if(event->key == InputKeyLeft) {
+            view_dispatcher_send_custom_event(vd, 0x7210);
+            return true;
+        }
+        if(event->key == InputKeyRight) {
+            view_dispatcher_send_custom_event(vd, 0x7211);
+            return true;
+        }
+    } else if(event->type == InputTypeLong && event->key == InputKeyOk) {
+        view_dispatcher_send_custom_event(vd, 0x7212);
+        return true;
     }
     return false;
 }

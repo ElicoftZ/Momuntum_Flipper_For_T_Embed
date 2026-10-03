@@ -6,9 +6,10 @@
 #define CONNECT_MENU_DEAUTH    2
 #define CONNECT_MENU_SNIFFER   3
 #define CONNECT_MENU_PORTAL    4
+#define CONNECT_MENU_FORGET    5
 
 static void connect_open_menu_for_selected(WlanApp* app) {
-    uint8_t sel = wlan_connect_view_get_selected(app->view_connect);
+    uint16_t sel = wlan_connect_view_get_selected_ap_id(app->view_connect);
     if(sel >= app->ap_count) return;
     app->ap_selected_index = sel;
 
@@ -17,6 +18,9 @@ static void connect_open_menu_for_selected(WlanApp* app) {
     wlan_connect_view_add_menu_item(app->view_connect, "Deauth", CONNECT_MENU_DEAUTH);
     wlan_connect_view_add_menu_item(app->view_connect, "Sniffer", CONNECT_MENU_SNIFFER);
     wlan_connect_view_add_menu_item(app->view_connect, "Evil Portal", CONNECT_MENU_PORTAL);
+    if(app->ap_records[sel].has_password && app->ap_records[sel].ssid[0]) {
+        wlan_connect_view_add_menu_item(app->view_connect, "Forget Profile", CONNECT_MENU_FORGET);
+    }
     wlan_connect_view_open_menu(app->view_connect);
 }
 
@@ -55,25 +59,43 @@ static void wlan_app_scene_connect_run_scan(WlanApp* app) {
     if(raw) free(raw);
 }
 
-void wlan_app_scene_connect_on_enter(void* context) {
-    WlanApp* app = context;
+static bool connect_filter_matches(
+    const WlanApRecord* ap,
+    WlanConnectFilter filter,
+    uint8_t filter_channel) {
+    switch(filter) {
+    case WlanConnectFilterOpen:
+        return ap->is_open;
+    case WlanConnectFilterSaved:
+        return ap->has_password;
+    case WlanConnectFilterStrong:
+        return ap->rssi >= -65;
+    case WlanConnectFilterChannel:
+        return ap->channel == filter_channel;
+    case WlanConnectFilterAll:
+    case WlanConnectFilterCount:
+    default:
+        return true;
+    }
+}
 
-    // Während des Scans Loading-View zeigen.
-    view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewLoading);
-
-    wlan_app_scene_connect_run_scan(app);
-
+static void wlan_app_scene_connect_render(WlanApp* app, uint16_t preferred_record) {
     wlan_connect_view_clear(app->view_connect);
+    wlan_connect_view_set_filter(app->view_connect, app->ap_filter);
+    wlan_connect_view_set_filter_channel(app->view_connect, app->connect_filter_channel);
+    uint8_t visible_count = 0;
+    uint8_t preferred_visible = 0;
+    bool preferred_found = false;
+
     for(uint16_t i = 0; i < app->ap_count; ++i) {
         WlanApRecord* r = &app->ap_records[i];
-        bool unlocked = r->is_open || r->has_password;
+        if(!connect_filter_matches(r, app->ap_filter, app->connect_filter_channel)) continue;
+
         char display_name[WLAN_CONNECT_VIEW_SSID_MAX];
         if(r->ssid[0]) {
             strncpy(display_name, r->ssid, sizeof(display_name) - 1);
             display_name[sizeof(display_name) - 1] = '\0';
         } else {
-            /* A hidden AP does not transmit a name, so expose enough stable
-             * identity to distinguish it from the other hidden entries. */
             snprintf(
                 display_name,
                 sizeof(display_name),
@@ -82,8 +104,29 @@ void wlan_app_scene_connect_on_enter(void* context) {
                 r->bssid[4],
                 r->bssid[5]);
         }
-        wlan_connect_view_add_ap(app->view_connect, display_name, unlocked, i);
+        wlan_connect_view_add_ap(
+            app->view_connect,
+            display_name,
+            r->is_open || r->has_password,
+            i);
+        if(i == preferred_record) {
+            preferred_visible = visible_count;
+            preferred_found = true;
+        }
+        visible_count++;
     }
+
+    if(preferred_found) wlan_connect_view_set_selected(app->view_connect, preferred_visible);
+}
+
+void wlan_app_scene_connect_on_enter(void* context) {
+    WlanApp* app = context;
+
+    // Während des Scans Loading-View zeigen.
+    view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewLoading);
+
+    wlan_app_scene_connect_run_scan(app);
+    if(app->connect_filter_channel == 0) app->connect_filter_channel = 1;
 
     uint8_t restore = scene_manager_get_scene_state(app->scene_manager, WlanAppSceneConnect);
     /* On a fresh app instance, focus the saved network instead of whichever AP
@@ -98,7 +141,7 @@ void wlan_app_scene_connect_on_enter(void* context) {
             }
         }
     }
-    wlan_connect_view_set_selected(app->view_connect, restore);
+    wlan_app_scene_connect_render(app, restore);
 
     view_dispatcher_switch_to_view(app->view_dispatcher, WlanAppViewConnect);
 }
@@ -109,12 +152,25 @@ bool wlan_app_scene_connect_on_event(void* context, SceneManagerEvent event) {
 
     if(event.type == SceneManagerEventTypeCustom &&
        event.event == WlanAppCustomEventApSelected) {
-        uint8_t sel = wlan_connect_view_get_selected(app->view_connect);
+        uint16_t sel = wlan_connect_view_get_selected_ap_id(app->view_connect);
         if(sel < app->ap_count) {
             app->ap_selected_index = sel;
             scene_manager_set_scene_state(app->scene_manager, WlanAppSceneConnect, sel);
             scene_manager_next_scene(app->scene_manager, WlanAppSceneSsidScreen);
         }
+        consumed = true;
+    } else if(event.type == SceneManagerEventTypeCustom &&
+              event.event == WlanAppCustomEventConnectFilter) {
+        uint16_t selected = wlan_connect_view_get_selected_ap_id(app->view_connect);
+        app->ap_filter = (app->ap_filter + 1) % WlanConnectFilterCount;
+        wlan_app_scene_connect_render(app, selected);
+        consumed = true;
+    } else if(event.type == SceneManagerEventTypeCustom &&
+              event.event == WlanAppCustomEventConnectChannel) {
+        app->connect_filter_channel = app->connect_filter_channel >= 13 ?
+                                          1 : app->connect_filter_channel + 1;
+        const uint16_t selected = wlan_connect_view_get_selected_ap_id(app->view_connect);
+        wlan_app_scene_connect_render(app, selected);
         consumed = true;
     } else if(event.type == SceneManagerEventTypeCustom &&
               event.event == WlanAppCustomEventConnectLongOk) {
@@ -126,7 +182,7 @@ bool wlan_app_scene_connect_on_event(void* context, SceneManagerEvent event) {
         WlanConnectMenuItem mit = wlan_connect_view_get_menu_item(app->view_connect, mi);
         wlan_connect_view_close_menu(app->view_connect);
 
-        if(app->ap_selected_index < app->ap_count) {
+        if(mit.user_id != CONNECT_MENU_FORGET && app->ap_selected_index < app->ap_count) {
             // SSID als Target merken (analog SSID-Screen "Attack").
             memcpy(&app->target_ap, &app->ap_records[app->ap_selected_index],
                 sizeof(WlanApRecord));
@@ -154,6 +210,19 @@ bool wlan_app_scene_connect_on_event(void* context, SceneManagerEvent event) {
                 app->evil_portal_channel = app->target_ap.channel;
             }
             scene_manager_next_scene(app->scene_manager, WlanAppSceneEvilPortalMenu);
+            break;
+        case CONNECT_MENU_FORGET:
+            if(app->ap_selected_index < app->ap_count) {
+                WlanApRecord* ap = &app->ap_records[app->ap_selected_index];
+                if(wlan_password_delete(ap->ssid)) {
+                    for(uint16_t i = 0; i < app->ap_count; ++i) {
+                        if(strcmp(app->ap_records[i].ssid, ap->ssid) == 0) {
+                            app->ap_records[i].has_password = false;
+                        }
+                    }
+                    wlan_app_scene_connect_render(app, app->ap_selected_index);
+                }
+            }
             break;
         }
         consumed = true;

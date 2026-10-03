@@ -1,0 +1,32 @@
+App(
+    appid="bruce_js_app",
+    name="Bruce JS",
+    apptype=FlipperAppType.MENUEXTERNAL,
+    entry_point="bruce_js_app",
+    # Was 4KB, sized for Phase 1's trivial "40+2" test script and never
+    # revisited once real scripts (games, the App Store) became the actual
+    # target. mquickjs (a QuickJS-family engine) recurses through the C
+    # stack for nested JS function calls, same as real QuickJS -- a script
+    # with meaningfully deep call chains (a downloaded game's own render/
+    # update logic, not anything unusually pathological) can genuinely
+    # overflow 4KB. Found 2026-09-18 via a real hardware crash: "Guru
+    # Meditation Error: ... panic'ed (IllegalInstruction)" with a
+    # "<-CORRUPTED" backtrace -- the signature of stack corruption, not a
+    # clean exception -- right after opening a freshly-downloaded game
+    # through "Add from File". Raised to 32KB for headroom; this board has
+    # 8MB PSRAM and CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM is already
+    # enabled project-wide, so this is a small ask either way.
+    stack_size=32 * 1024,
+    sources=["bruce_js_app.c"],
+    requires=["gui", "input", "wifi"],
+    icon="I_BruceJs_14",
+    order=85,
+)
+
+App(
+    appid="bruce_js_app_start",
+    apptype=FlipperAppType.STARTUP,
+    entry_point="bruce_js_app_on_system_start",
+    order=111,
+    sources=["bruce_js_app.c"],
+)

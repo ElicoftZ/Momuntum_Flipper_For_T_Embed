@@ -21,6 +21,8 @@ typedef enum {
     WlanAppCustomEventApSelected = 140,
     WlanAppCustomEventConnectLongOk = 141,
     WlanAppCustomEventConnectMenuOk = 142,
+    WlanAppCustomEventConnectFilter = 143,
+    WlanAppCustomEventConnectChannel = 144,
 
     WlanAppCustomEventSsidConnect = 105,
     WlanAppCustomEventSsidSelect = 106,

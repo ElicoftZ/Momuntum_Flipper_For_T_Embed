@@ -104,6 +104,26 @@ typedef enum {
 FuriHalNfcError furi_hal_nfc_init(void);
 
 /**
+ * @brief Switch the NFC HAL between the onboard PN532 and an external one
+ * wired to the board's Qwiic connector (GPIO 43 SDA / 44 SCL). Re-runs the
+ * full PN532 handshake on the requested bus to confirm a module actually
+ * answers there; on failure, reverts to whichever bus was working before.
+ *
+ * @param[in] use_qwiic true to switch to the Qwiic-connected module, false
+ *                       to switch back to the onboard one.
+ * @returns true if a PN532 answered on the requested bus, false otherwise
+ *          (in which case the previous bus is still in use).
+ */
+bool furi_hal_nfc_set_use_qwiic(bool use_qwiic);
+
+/**
+ * @brief Check which NFC bus is currently active.
+ * @returns true if currently using the Qwiic-connected module, false if
+ *          using the onboard PN532 (the default).
+ */
+bool furi_hal_nfc_is_using_qwiic(void);
+
+/**
  * @brief Check whether the NFC HAL was properly initialised and is ready.
  *
  * @returns FuriHalNfcErrorNone if ready, any other error code if not ready.

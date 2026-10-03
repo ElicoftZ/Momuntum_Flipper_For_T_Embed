@@ -51,6 +51,11 @@ typedef struct {
      * is how you reach the other firmware, so hiding it is a deliberate
      * choice, not something to inherit silently. */
     bool hide_dualboot;
+    /* Hide the Bruce JS entry from the main menu. ON by default (opposite of
+     * hide_dualboot): the user wants it out of the way until they explicitly
+     * turn this off in Momentum settings to reveal it, rather than visible
+     * by default with an opt-in to hide. */
+    bool hide_bruce_js;
     bool unlock_anims;
     MenuStyle menu_style;
     bool lock_on_boot;
@@ -109,7 +114,7 @@ typedef struct {
 /* Tripwire: adding a field to MomentumSettings without adding its table row
  * would leave it unsaved and invisible to change detection. Bump this only
  * together with the corresponding momentum_settings_entries row. */
-#define MOMENTUM_SETTINGS_ENTRY_COUNT 30
+#define MOMENTUM_SETTINGS_ENTRY_COUNT 31
 
 extern const MomentumSettingsEntry momentum_settings_entries[];
 extern const size_t momentum_settings_entry_count;

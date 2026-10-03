@@ -140,6 +140,9 @@ bool wlan_hal_get_own_mac(uint8_t out[6]);
 /** Gateway-IP (Network-Byte-Order). 0 wenn nicht verbunden. */
 uint32_t wlan_hal_get_gw_ip(void);
 
+/** Primary DNS server for the active STA connection (Network-Byte-Order). */
+uint32_t wlan_hal_get_dns_ip(void);
+
 /** Sende einen rohen Ethernet-Frame (Eth-Header + Payload) über die STA-IF
  *  via esp_wifi_internal_tx(). Für ARP-Injection durch wlan_netcut. */
 bool wlan_hal_send_eth_raw(const uint8_t* data, uint16_t len);

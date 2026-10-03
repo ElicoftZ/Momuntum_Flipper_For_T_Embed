@@ -39,6 +39,7 @@ static const Icon* ArchiveItemIcons[] = {
     [ArchiveFileTypeUnknown] = &I_unknown_10px,
     [ArchiveFileTypeLoading] = &I_loading_10px,
     [ArchiveFileTypeJS] = &I_js_script_10px,
+    [ArchiveFileTypeBJS] = &I_BruceJs_14,
     [ArchiveFileTypeAppOrJs] = &I_unknown_10px,
 };
 

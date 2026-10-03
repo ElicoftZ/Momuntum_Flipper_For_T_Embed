@@ -24,12 +24,32 @@
 /* ---- Configuration ---- */
 
 #if BOARD_HAS_IR
-#define IR_TX_GPIO  BOARD_PIN_IR_TX
-#define IR_RX_GPIO  BOARD_PIN_IR_RX
+#define IR_TX_GPIO_DEFAULT BOARD_PIN_IR_TX
+#define IR_RX_GPIO_DEFAULT BOARD_PIN_IR_RX
 #else
-#define IR_TX_GPIO  GPIO_NUM_NC
-#define IR_RX_GPIO  GPIO_NUM_NC
+#define IR_TX_GPIO_DEFAULT GPIO_NUM_NC
+#define IR_RX_GPIO_DEFAULT GPIO_NUM_NC
 #endif
+
+/* Runtime-selectable TX/RX pins, settable via furi_hal_infrared_set_tx_output()
+ * -- were plain compile-time macros until this port's "Pin Config" feature
+ * (inspired by Bruce's own configPins.cpp): the RMT TX/RX channels are
+ * always created fresh per async session (furi_hal_infrared_async_tx_start/
+ * _rx_start below call rmt_new_tx_channel/rmt_new_rx_channel every time, and
+ * tear them down again on stop), so reading the GPIO from a variable instead
+ * of a macro takes effect on the very next start with no extra plumbing.
+ * FuriHalInfraredTxPinExtPA7 (Flipper's real external-pin option, which this
+ * ESP32 port never implemented -- it used to be a pure no-op, see the old
+ * furi_hal_infrared_set_tx_output() comment) is repurposed here to mean
+ * "route through the bottom Qwiic connector" (GPIO 43/44 -- the exact
+ * same physical pins BOARD_PIN_RFID_TX/RX already name for that connector,
+ * per board_lilygo_t_embed_cc1101.h) rather than adding a new enum value and
+ * touching every `tx_pin < FuriHalInfraredTxPinMax` check across
+ * infrared_app.c/xremote.c/infrared_test.c. */
+static int ir_tx_gpio = IR_TX_GPIO_DEFAULT;
+static int ir_rx_gpio = IR_RX_GPIO_DEFAULT;
+#define IR_TX_GPIO ir_tx_gpio
+#define IR_RX_GPIO ir_rx_gpio
 
 #define IR_RMT_RX_MEM_BLOCK_SYMBOLS 128
 #define IR_RMT_RX_RESOLUTION_HZ     1000000 /* 1 MHz = 1 us per tick */
@@ -543,6 +563,23 @@ FuriHalInfraredTxPin furi_hal_infrared_detect_tx_output(void) {
 }
 
 void furi_hal_infrared_set_tx_output(FuriHalInfraredTxPin tx_pin) {
-    /* Only internal pin supported, ignore */
-    (void)tx_pin;
+    /* Only takes effect on the next async session -- an in-progress TX/RX
+     * already has its RMT channel open on the old pin. The settings scene
+     * that calls this only runs when IR is idle, so that's never an issue
+     * in practice; no extra guard needed here. */
+#if BOARD_HAS_IR && defined(BOARD_PIN_RFID_TX) && defined(BOARD_PIN_RFID_RX)
+    if(tx_pin == FuriHalInfraredTxPinExtPA7) {
+        /* "Qwiic" on this ESP32 port -- see the ir_tx_gpio/ir_rx_gpio
+         * comment above for why this repurposes ExtPA7 instead of adding a
+         * new enum value. */
+        ir_tx_gpio = BOARD_PIN_RFID_TX;
+        ir_rx_gpio = BOARD_PIN_RFID_RX;
+    } else
+#else
+    UNUSED(tx_pin);
+#endif
+    {
+        ir_tx_gpio = IR_TX_GPIO_DEFAULT;
+        ir_rx_gpio = IR_RX_GPIO_DEFAULT;
+    }
 }

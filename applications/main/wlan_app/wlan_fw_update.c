@@ -9,6 +9,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_http_client.h>
+#include <esp_crt_bundle.h>
 #include <esp_heap_caps.h>
 #include <fw_ota/fw_ota.h>
 #include <wifi/wlan_hal.h>
@@ -72,11 +73,7 @@ static void fw_http_cfg(esp_http_client_config_t* cfg, const char* url) {
     cfg->url = url;
     cfg->timeout_ms = 40000;
     cfg->transport_type = HTTP_TRANSPORT_OVER_SSL;
-    // SSL-Verifikation deaktiviert (kein CA gesetzt; benötigt
-    // CONFIG_ESP_TLS_INSECURE / SKIP_SERVER_CERT_VERIFY, wie beim SD-Update).
-    cfg->skip_cert_common_name_check = true;
-    cfg->crt_bundle_attach = NULL;
-    cfg->use_global_ca_store = false;
+    cfg->crt_bundle_attach = esp_crt_bundle_attach;
     cfg->buffer_size = FW_CHUNK;
     cfg->buffer_size_tx = 1024;
     cfg->keep_alive_enable = true;
